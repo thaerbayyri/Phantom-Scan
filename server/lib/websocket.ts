@@ -25,6 +25,7 @@ export class SignalProcessingServer {
   private wss: WebSocketServer | null = null;
   private clients: Map<string, WSClient> = new Map();
   private processingInterval: NodeJS.Timeout | null = null;
+  private isStopping: boolean = false;
 
   private config: ProcessingConfig = {
     nullingEnabled: true,
@@ -111,6 +112,7 @@ export class SignalProcessingServer {
   private startProcessing() {
     if (this.status.isProcessing) return;
 
+    this.isStopping = false;
     this.status.isProcessing = true;
     this.demoGenerator.reset();
     this.gestureDetector.reset();
@@ -131,21 +133,24 @@ export class SignalProcessingServer {
   private stopProcessing() {
     if (!this.status.isProcessing) return;
 
-    // Clear interval first to stop new frames
+    // Set stopping flag immediately to prevent any in-flight frames
+    this.isStopping = true;
+
+    // Clear interval to stop new frames
     if (this.processingInterval) {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
     }
 
-    // Update status after clearing interval
+    // Update status
     this.status.isProcessing = false;
     this.status.lastUpdate = Date.now();
 
-    // Broadcast immediately and again after small delay to ensure delivery
+    // Broadcast immediately
     this.broadcast("status", this.status);
-    setTimeout(() => {
-      this.broadcast("status", this.status);
-    }, 50);
+
+    // Reset stopping flag after broadcast
+    this.isStopping = false;
 
     console.log("Processing stopped");
   }
@@ -166,8 +171,8 @@ export class SignalProcessingServer {
   }
 
   private processFrame() {
-    // Guard: don't process if stopped
-    if (!this.status.isProcessing) {
+    // Guard: don't process if stopped or stopping
+    if (!this.status.isProcessing || this.isStopping) {
       return;
     }
 

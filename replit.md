@@ -39,11 +39,12 @@ Preferred communication style: Simple, everyday language.
 4. React components render visualizations using Plotly.js
 
 ### Signal Processing Pipeline
-- **Complex number utilities**: Custom implementation for DSP operations
-- **Signal nulling**: Removes static reflections using precoding ratio calculation
-- **MUSIC algorithm**: Computes AoA spectrum for direction estimation
-- **Gesture detection**: Identifies movement patterns from centroid tracking
-- **Heatmap accumulation**: Builds time-angle intensity maps
+- **Complex number utilities**: Custom implementation for DSP operations (add, subtract, multiply, divide, magnitude, phase)
+- **Signal nulling**: Removes static reflections using iterative nulling algorithm (p = -h1/h2)
+- **MUSIC algorithm**: Computes AoA spectrum using eigendecomposition via power iteration to separate signal and noise subspaces
+- **Gesture detection**: Matched-filter approach using normalized cross-correlation with forward-backward (Bit 0) and backward-forward (Bit 1) templates
+- **Heatmap accumulation**: Builds time-angle intensity maps with configurable history
+- **CSI Data Parser**: Supports CSV and JSON formats from USRP/ESP32 hardware traces
 
 ### Database
 - **ORM**: Drizzle ORM configured for PostgreSQL
