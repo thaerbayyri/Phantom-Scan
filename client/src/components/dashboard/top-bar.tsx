@@ -65,6 +65,7 @@ export function TopBar({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="demo">Demo</SelectItem>
+              <SelectItem value="hardware">Hardware</SelectItem>
               <SelectItem value="file">File</SelectItem>
               <SelectItem value="usrp">USRP</SelectItem>
               <SelectItem value="esp32">ESP32</SelectItem>

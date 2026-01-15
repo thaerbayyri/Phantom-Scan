@@ -4,6 +4,7 @@ import type {
   ProcessingConfig,
   SystemStatus,
   DataSource,
+  CSISample,
 } from "@shared/schema";
 import {
   applyNulling,
@@ -52,6 +53,7 @@ export class SignalProcessingServer {
   private heatmapAccumulator = new HeatmapAccumulator();
   private sampleBuffer: { re: number; im: number }[] = [];
   private pointCloudHistory: { x: number; y: number; z: number; amplitude: number; timestamp: number }[] = [];
+  private hardwareSampleQueue: CSISample[] = [];
 
   initialize(server: Server) {
     this.wss = new WebSocketServer({ server, path: "/ws" });
@@ -167,6 +169,11 @@ export class SignalProcessingServer {
 
   private setDataSource(source: DataSource) {
     this.status.dataSource = source;
+    
+    // Clear sample buffer and hardware queue when switching modes
+    this.sampleBuffer = [];
+    this.hardwareSampleQueue = [];
+    
     this.broadcast("status", this.status);
   }
 
@@ -176,8 +183,27 @@ export class SignalProcessingServer {
       return;
     }
 
-    // Generate sample (demo mode)
-    const sample = this.demoGenerator.generateSample();
+    let sample: CSISample;
+    
+    // Get sample based on data source
+    if (this.status.dataSource === "hardware") {
+      // Hardware mode: consume from queue
+      const queuedSample = this.hardwareSampleQueue.shift();
+      if (!queuedSample) {
+        // No samples in queue, skip this frame
+        return;
+      }
+      sample = queuedSample;
+      
+      // Limit queue size to prevent memory issues (keep last 1000)
+      if (this.hardwareSampleQueue.length > 1000) {
+        this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
+      }
+    } else {
+      // Demo mode: generate sample
+      sample = this.demoGenerator.generateSample();
+    }
+    
     this.status.samplesReceived++;
 
     // Apply nulling
@@ -278,6 +304,32 @@ export class SignalProcessingServer {
 
   getConfig(): ProcessingConfig {
     return this.config;
+  }
+
+  // Hardware ingestion methods
+  ingestSample(sample: CSISample): void {
+    // Add to queue - will be consumed by processFrame when in hardware mode
+    this.hardwareSampleQueue.push(sample);
+    
+    // Limit queue size to prevent memory issues
+    if (this.hardwareSampleQueue.length > 1000) {
+      this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
+    }
+  }
+
+  ingestSamples(samples: CSISample[]): void {
+    for (const sample of samples) {
+      this.hardwareSampleQueue.push(sample);
+    }
+    
+    // Limit queue size
+    if (this.hardwareSampleQueue.length > 1000) {
+      this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
+    }
+  }
+
+  getQueueLength(): number {
+    return this.hardwareSampleQueue.length;
   }
 }
 

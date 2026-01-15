@@ -84,8 +84,18 @@ export const processingConfigSchema = z.object({
 export type ProcessingConfig = z.infer<typeof processingConfigSchema>;
 
 // Data source configuration
-export const dataSourceSchema = z.enum(["demo", "file", "usrp", "esp32"]);
+export const dataSourceSchema = z.enum(["demo", "file", "usrp", "esp32", "hardware"]);
 export type DataSource = z.infer<typeof dataSourceSchema>;
+
+// Hardware ingestion sample (for REST API)
+export const hardwareIngestSchema = z.object({
+  samples: z.array(csiSampleSchema),
+});
+export type HardwareIngest = z.infer<typeof hardwareIngestSchema>;
+
+// Single sample ingestion
+export const singleSampleIngestSchema = csiSampleSchema;
+export type SingleSampleIngest = z.infer<typeof singleSampleIngestSchema>;
 
 // System status
 export const systemStatusSchema = z.object({

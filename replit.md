@@ -62,8 +62,20 @@ Preferred communication style: Simple, everyday language.
 │   ├── lib/             # Signal processing, WebSocket server
 │   └── routes.ts        # API endpoints
 ├── shared/              # Shared TypeScript types and Zod schemas
+├── scripts/             # Utility scripts
+│   └── csi_capture.py   # Python capture script for hardware CSI ingestion
+├── docs/                # Documentation
+│   └── LOCAL_DEPLOYMENT.md  # Local deployment and hardware setup guide
 └── migrations/          # Drizzle database migrations
 ```
+
+### Hardware Ingestion API
+The dashboard includes REST endpoints for receiving CSI data from external capture tools:
+- `POST /api/csi/ingest` - Ingest single CSI sample
+- `POST /api/csi/ingest/batch` - Ingest multiple samples
+- `GET /api/csi/queue` - Check ingestion queue status
+
+See `docs/LOCAL_DEPLOYMENT.md` for complete hardware setup instructions.
 
 ## External Dependencies
 
