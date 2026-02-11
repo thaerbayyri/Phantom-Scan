@@ -1,8 +1,8 @@
-# Wi-Vi Dashboard - CSI Signal Processing
+# Phantom Scan - CSI Signal Processing
 
 ## Overview
 
-This is a Wi-Fi Vision (Wi-Vi) signal processing dashboard for real-time CSI (Channel State Information) imaging, human tracking, and gesture recognition. The application processes Wi-Fi signals using ISAR (Inverse Synthetic Aperture Radar) and MUSIC (Multiple Signal Classification) algorithms to detect and track human movement through walls.
+This is the Phantom Scan signal processing dashboard for real-time CSI (Channel State Information) imaging, human tracking, and gesture recognition. The application processes Wi-Fi signals using ISAR (Inverse Synthetic Aperture Radar) and MUSIC (Multiple Signal Classification) algorithms to detect and track human movement through walls.
 
 The dashboard provides:
 - Real-time 3D point cloud visualization of detected objects

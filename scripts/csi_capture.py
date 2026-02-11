@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Wi-Vi CSI Capture Script Template
+Phantom Scan CSI Capture Script Template
 
 This script captures CSI (Channel State Information) data from your Wi-Fi hardware
-and streams it to the Wi-Vi Dashboard for visualization and processing.
+and streams it to the Phantom Scan Dashboard for visualization and processing.
 
 SUPPORTED HARDWARE:
 - Intel Wi-Fi 6 AX201 (requires PicoScenes or custom firmware)

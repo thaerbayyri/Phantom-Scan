@@ -30,7 +30,7 @@ export function TopBar({
     <header className="h-16 border-b bg-card flex items-center justify-between px-6 gap-4 flex-wrap">
       <div className="flex items-center gap-3">
         <Radio className="h-6 w-6 text-primary" />
-        <h1 className="text-xl font-semibold">Wi-Vi Dashboard</h1>
+        <h1 className="text-xl font-semibold">Phantom Scan</h1>
         <Badge
           variant={isConnected ? "default" : "destructive"}
           className="gap-1"

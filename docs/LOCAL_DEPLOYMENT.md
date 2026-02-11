@@ -1,6 +1,6 @@
 # Local Deployment Guide
 
-This guide explains how to run the Wi-Vi Dashboard locally and connect it to your Wi-Fi hardware for real CSI capture.
+This guide explains how to run Phantom Scan locally and connect it to your Wi-Fi hardware for real CSI capture.
 
 ## Prerequisites
 
@@ -46,7 +46,7 @@ Full control with Software Defined Radio:
 
 1. Install UHD driver
 2. Use GNU Radio or custom capture
-3. Full flexibility for Wi-Vi research
+3. Full flexibility for Phantom Scan research
 
 ## Quick Start
 
