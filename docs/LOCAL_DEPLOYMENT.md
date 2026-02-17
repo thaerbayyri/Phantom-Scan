@@ -79,15 +79,20 @@ In the dashboard UI:
 
 ### 4. Run the Capture Script
 
+#### For ESP32-S3 (Serial)
+Ensure your ESP32-S3 is running the ESP-CSI firmware and connected via USB.
+
 ```bash
-# Install Python dependencies
-pip install requests numpy
+# Install dependencies
+pip install requests numpy pyserial
 
-# Run in demo mode (simulated data) to test
-python scripts/csi_capture.py --demo --server http://localhost:5000
+# Run capture (adjust --port as needed)
+python scripts/csi_capture.py --esp32 --port /dev/ttyUSB0 --baud 115200
+```
 
-# Run with real hardware (after implementing capture logic)
-python scripts/csi_capture.py --server http://localhost:5000
+#### For Demo Mode (No Hardware)
+```bash
+python scripts/csi_capture.py --demo
 ```
 
 ## API Endpoints

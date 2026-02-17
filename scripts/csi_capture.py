@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Phantom Scan CSI Capture Script Template
+Phantom Scan CSI Capture Script
 
 This script captures CSI (Channel State Information) data from your Wi-Fi hardware
 and streams it to the Phantom Scan Dashboard for visualization and processing.
 
-SUPPORTED HARDWARE:
-- Intel Wi-Fi 6 AX201 (requires PicoScenes or custom firmware)
-- Intel 5300 (with Linux CSI Tool)
-- ESP32 (with ESP-IDF CSI)
-- USRP SDR (with UHD)
+SUPPORTED MODES:
+- --demo: Simulated data for testing
+- --esp32: Real-time capture from ESP32-S3 via Serial (ESP-CSI firmware)
+- --file: Replay from saved CSV/JSON files
+- --intel: (Template) Intel AX201 via PicoScenes
 
 INSTALLATION:
 1. Install Python dependencies:
@@ -310,10 +310,21 @@ def main():
         help="Read samples from CSV/JSON file"
     )
     parser.add_argument(
-        "--batch-size",
+        "--esp32",
+        action="store_true",
+        help="Capture CSI from ESP32-S3 via Serial"
+    )
+    parser.add_argument(
+        "--port",
+        type=str,
+        default="/dev/ttyUSB0",
+        help="Serial port for ESP32 (default: /dev/ttyUSB0)"
+    )
+    parser.add_argument(
+        "--baud",
         type=int,
-        default=1,
-        help="Number of samples per batch (default: 1)"
+        default=115200,
+        help="Baud rate for ESP32 (default: 115200)"
     )
     
     args = parser.parse_args()
@@ -338,6 +349,41 @@ def main():
         print("Running in demo mode with simulated data")
         source = DemoCSIGenerator()
         get_sample = source.generate_sample
+    elif args.esp32:
+        print(f"Capturing from ESP32 on {args.port}...")
+        try:
+            import serial
+        except ImportError:
+            print("ERROR: pyserial is required for ESP32 capture")
+            print("Run: pip install pyserial")
+            sys.exit(1)
+            
+        ser = serial.Serial(args.port, args.baud, timeout=1)
+        
+        def get_esp32_sample():
+            while True:
+                line = ser.readline().decode('utf-8', errors='ignore').strip()
+                if "CSI_DATA" not in line:
+                    continue
+                try:
+                    parts = line.split(',')
+                    # Format: CSI_DATA,type,role,mac,rssi,...,data
+                    raw_data = parts[-1].replace('[', '').replace(']', '').split(' ')
+                    data_ints = [int(x) for x in raw_data if x]
+                    complex_data = []
+                    for i in range(0, len(data_ints) - 1, 2):
+                        complex_data.append({"re": data_ints[i], "im": data_ints[i+1]})
+                    
+                    return CSISample(
+                        data=complex_data,
+                        timestamp=int(time.time() * 1000),
+                        rssi=int(parts[4]) if parts[4].lstrip('-').isdigit() else -50
+                    )
+                except Exception as e:
+                    print(f"Parse error: {e}")
+                    continue
+        
+        get_sample = get_esp32_sample
     else:
         print("Initializing hardware capture...")
         source = IntelAX201Capture()
