@@ -48,7 +48,8 @@ export async function registerRoutes(
       res.json({
         success: true,
         queueLength: signalServer.getQueueLength(),
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        isProcessing: signalServer.getStatus().isProcessing
       });
     } catch (error) {
       console.error("CSI ingestion error:", error);

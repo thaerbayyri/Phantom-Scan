@@ -18,7 +18,7 @@ import json
 import os
 import sys
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 
 try:
@@ -170,13 +170,25 @@ def check_server(url: str, session: requests.Session) -> bool:
         return False
 
 
-def send_sample(url: str, sample: CSISample, session: requests.Session) -> bool:
+def check_processing_status(url: str, session: requests.Session) -> bool:
+    try:
+        r = session.get(f"{url}/api/status", timeout=2)
+        if r.status_code == 200:
+            return r.json().get("isProcessing", True)
+        return True
+    except requests.exceptions.RequestException:
+        return True
+
+def send_sample(url: str, sample: CSISample, session: requests.Session) -> Tuple[bool, bool]:
     try:
         r = session.post(f"{url}/api/csi/ingest", json=sample.to_dict(), timeout=1)
-        return r.status_code == 200
+        if r.status_code == 200:
+            data = r.json()
+            return True, data.get("isProcessing", True)
+        return False, True
     except requests.exceptions.RequestException as e:
         print(f"Send error: {e}")
-        return False
+        return False, True
 
 
 def send_batch(url: str, samples: List[CSISample], session: requests.Session) -> bool:
@@ -299,6 +311,7 @@ def main():
                     csv_file.flush()
 
             if args.batch_size > 1:
+                # Batch logic pending update for isProcessing, skipping for now as default is 1
                 batch_buf.append(sample)
                 if len(batch_buf) >= args.batch_size:
                     if send_batch(args.server, batch_buf, session):
@@ -307,10 +320,24 @@ def main():
                         errors += 1
                     batch_buf = []
             else:
-                if send_sample(args.server, sample, session):
+                success, should_process = send_sample(args.server, sample, session)
+                if success:
                     samples_sent += 1
                 else:
                     errors += 1
+                
+                if not should_process:
+                    print("\n🛑 Capture PAUSED (Dashboard stopped processing)")
+                    print("   Draining serial buffer...", end="", flush=True)
+                    while not should_process:
+                        # Drain serial buffer to prevent overflow
+                        if ser.in_waiting:
+                            ser.read(ser.in_waiting)
+                        
+                        time.sleep(0.5)
+                        should_process = check_processing_status(args.server, session)
+                        print(".", end="", flush=True)
+                    print("\n▶️ Capture RESUMED\n")
 
             if samples_sent > 0 and samples_sent % 100 == 0:
                 print(f"  Sent: {samples_sent}  |  Errors: {errors}")
