@@ -2,7 +2,7 @@
 
 **Phantom Scan** is an advanced Wi-Fi Sensing and 3D Visualization system that uses Channel State Information (CSI) from standard ESP32 devices to detect, track, and visualize human movement in real-time without cameras.
 
-![Dashboard Preview](client/public/favicon.png)
+![Dashboard Preview](client/public/favicon1.png)
 
 ## 🚀 Key Features
 
