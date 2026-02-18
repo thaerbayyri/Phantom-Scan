@@ -94,5 +94,3 @@ This script generates a `tracking_session.csv` with the smoothed trajectory data
 *   **Dashboard Blank/Crash:** Ensure you are using a modern browser with WebGL support for the 3D scene.
 *   **No Data:** Check the USB cable and ensure the correct COM port is specified in the python script.
 
-## 📄 License
-MIT License
