@@ -14,8 +14,14 @@ import {
   GestureDetector,
   HeatmapAccumulator,
   DemoDataGenerator,
+  BackgroundSubtractor,
+  MotionGate,
+  DopplerComputer,
 } from "./signal-processing";
+import { TrackingProcessor } from "./tracking";
 import { magnitude } from "./complex";
+import * as fs from "fs";
+import * as path from "path";
 
 interface WSClient {
   ws: WebSocket;
@@ -37,6 +43,10 @@ export class SignalProcessingServer {
     aoaRangeMax: 60,
     gestureEnabled: true,
     centroidThreshold: 5,
+    clutterRemovalEnabled: true,
+    clutterWindowSize: 50,
+    motionGateEnabled: false,
+    motionThreshold: 0.05,
   };
 
   private status: SystemStatus = {
@@ -48,12 +58,31 @@ export class SignalProcessingServer {
     isProcessing: false,
   };
 
+  // Processing engines
   private demoGenerator = new DemoDataGenerator();
   private gestureDetector = new GestureDetector(5);
   private heatmapAccumulator = new HeatmapAccumulator();
+  private backgroundSubtractor = new BackgroundSubtractor(50);
+  private motionGate = new MotionGate();
+  private dopplerComputer = new DopplerComputer();
+  private trackingProcessor = new TrackingProcessor();
+
+  // Buffers
   private sampleBuffer: { re: number; im: number }[] = [];
-  private pointCloudHistory: { x: number; y: number; z: number; amplitude: number; timestamp: number }[] = [];
+  private pointCloudHistory: {
+    x: number;
+    y: number;
+    z: number;
+    amplitude: number;
+    timestamp: number;
+  }[] = [];
   private hardwareSampleQueue: CSISample[] = [];
+
+  // Recording state
+  private isRecording = false;
+  private recordingBuffer: CSISample[] = [];
+  private recordingStartTime = 0;
+  private lastRecordingFile = "";
 
   initialize(server: Server) {
     this.wss = new WebSocketServer({ server, path: "/ws" });
@@ -67,6 +96,13 @@ export class SignalProcessingServer {
       // Send initial state
       this.sendToClient(clientId, "status", this.status);
       this.sendToClient(clientId, "config", this.config);
+      this.sendToClient(clientId, "recordingStatus", {
+        isRecording: this.isRecording,
+        sampleCount: this.recordingBuffer.length,
+        durationMs: this.isRecording
+          ? Date.now() - this.recordingStartTime
+          : 0,
+      });
 
       ws.on("message", (data: Buffer) => {
         try {
@@ -108,6 +144,12 @@ export class SignalProcessingServer {
       case "setDataSource":
         this.setDataSource(message.data as DataSource);
         break;
+      case "startRecording":
+        this.startRecording();
+        break;
+      case "stopRecording":
+        this.stopRecording();
+        break;
     }
   }
 
@@ -119,6 +161,10 @@ export class SignalProcessingServer {
     this.demoGenerator.reset();
     this.gestureDetector.reset();
     this.heatmapAccumulator.reset();
+    this.backgroundSubtractor.reset();
+    this.motionGate.reset();
+    this.dopplerComputer.reset();
+    this.trackingProcessor.reset();
     this.sampleBuffer = [];
     this.pointCloudHistory = [];
 
@@ -135,23 +181,18 @@ export class SignalProcessingServer {
   private stopProcessing() {
     if (!this.status.isProcessing) return;
 
-    // Set stopping flag immediately to prevent any in-flight frames
     this.isStopping = true;
 
-    // Clear interval to stop new frames
     if (this.processingInterval) {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
     }
 
-    // Update status
     this.status.isProcessing = false;
     this.status.lastUpdate = Date.now();
 
-    // Broadcast immediately
     this.broadcast("status", this.status);
 
-    // Reset stopping flag after broadcast
     this.isStopping = false;
 
     console.log("Processing stopped");
@@ -163,68 +204,197 @@ export class SignalProcessingServer {
     if (updates.centroidThreshold !== undefined) {
       this.gestureDetector.updateThreshold(updates.centroidThreshold);
     }
+    if (updates.clutterWindowSize !== undefined) {
+      this.backgroundSubtractor.setWindowSize(updates.clutterWindowSize);
+    }
 
     this.broadcast("config", this.config);
   }
 
   private setDataSource(source: DataSource) {
     this.status.dataSource = source;
-    
-    // Clear sample buffer and hardware queue when switching modes
+
+    // Clear buffers when switching modes
     this.sampleBuffer = [];
     this.hardwareSampleQueue = [];
-    
+    this.backgroundSubtractor.reset();
+    this.motionGate.reset();
+    this.dopplerComputer.reset();
+    this.trackingProcessor.reset();
+
     this.broadcast("status", this.status);
   }
 
+  // ── Recording ──────────────────────────────────────────────────
+
+  private startRecording() {
+    if (this.isRecording) return;
+    this.isRecording = true;
+    this.recordingBuffer = [];
+    this.recordingStartTime = Date.now();
+
+    console.log("[REC] Recording started");
+    this.broadcastRecordingStatus();
+  }
+
+  private stopRecording() {
+    if (!this.isRecording) return;
+    this.isRecording = false;
+
+    const sampleCount = this.recordingBuffer.length;
+    const durationMs = Date.now() - this.recordingStartTime;
+
+    // Serialize to CSV
+    if (sampleCount > 0) {
+      try {
+        this.lastRecordingFile = this.serializeToCSV();
+        console.log(
+          `[REC] Recording saved: ${sampleCount} samples, ${(durationMs / 1000).toFixed(1)}s → ${this.lastRecordingFile}`
+        );
+      } catch (err) {
+        console.error("[REC] Failed to save recording:", err);
+      }
+    } else {
+      console.log("[REC] No samples recorded");
+    }
+
+    this.broadcastRecordingStatus();
+  }
+
+  private broadcastRecordingStatus() {
+    this.broadcast("recordingStatus", {
+      isRecording: this.isRecording,
+      sampleCount: this.recordingBuffer.length,
+      durationMs: this.isRecording
+        ? Date.now() - this.recordingStartTime
+        : 0,
+      lastFile: this.lastRecordingFile ? path.basename(this.lastRecordingFile) : undefined,
+    });
+  }
+
+  private serializeToCSV(): string {
+    const dir = path.resolve("recordings");
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const filePath = path.join(dir, `csi_session_${ts}.csv`);
+
+    const header =
+      "timestamp,subcarrier_index,h1_re,h1_im,h2_re,h2_im,rssi\n";
+    const rows = this.recordingBuffer.map(
+      (s) =>
+        `${s.timestamp},${s.subcarrierIndex ?? 0},${s.h1.re},${s.h1.im},${s.h2.re},${s.h2.im},${s.rssi ?? ""}`
+    );
+
+    fs.writeFileSync(filePath, header + rows.join("\n"), "utf-8");
+    this.recordingBuffer = [];
+
+    return filePath;
+  }
+
+  // ── Main processing pipeline ───────────────────────────────────
+
   private processFrame() {
-    // Guard: don't process if stopped or stopping
     if (!this.status.isProcessing || this.isStopping) {
       return;
     }
 
     let sample: CSISample;
-    
+
     // Get sample based on data source
-    if (this.status.dataSource === "hardware") {
-      // Hardware mode: consume from queue
+    if (
+      this.status.dataSource === "hardware" ||
+      this.status.dataSource === "esp32"
+    ) {
       const queuedSample = this.hardwareSampleQueue.shift();
-      if (!queuedSample) {
-        // No samples in queue, skip this frame
-        return;
+      if (queuedSample) {
+        sample = queuedSample;
+      } else {
+        // No hardware data yet — fall back to demo so the UI stays alive
+        sample = this.demoGenerator.generateSample();
       }
-      sample = queuedSample;
-      
-      // Limit queue size to prevent memory issues (keep last 1000)
+
       if (this.hardwareSampleQueue.length > 1000) {
         this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
       }
     } else {
-      // Demo mode: generate sample
       sample = this.demoGenerator.generateSample();
     }
-    
+
     this.status.samplesReceived++;
 
-    // Apply nulling
-    let estimate = applyNulling(sample, this.config);
+    // ── Record raw sample if recording ──
+    if (this.isRecording) {
+      this.recordingBuffer.push({ ...sample });
+      // Broadcast recording status every 50 samples
+      if (this.recordingBuffer.length % 50 === 0) {
+        this.broadcastRecordingStatus();
+      }
+    }
+
+    // ── 1. Background subtraction (clutter removal) ──
+    let h1Proc = sample.h1;
+    let h2Proc = sample.h2;
+    let dynamicAmplitude = 0;
+
+    if (this.config.clutterRemovalEnabled) {
+      const dynamic = this.backgroundSubtractor.process(sample.h1, sample.h2);
+      h1Proc = dynamic.h1Dynamic;
+      h2Proc = dynamic.h2Dynamic;
+      dynamicAmplitude = magnitude(h1Proc);
+    } else {
+      dynamicAmplitude = magnitude(sample.h1);
+    }
+
+    // ── 2. Motion gate ──
+    const motionResult = this.motionGate.update(
+      dynamicAmplitude,
+      this.config.motionGateEnabled ? this.config.motionThreshold : undefined
+    );
+
+    // Broadcast motion status every frame
+    this.broadcast("motionStatus", motionResult);
+
+    // If motion gate is ON and no motion detected, broadcast but skip rendering
+    if (this.config.motionGateEnabled && !motionResult.motionDetected) {
+      this.status.framesProcessed++;
+      this.status.lastUpdate = Date.now();
+      if (this.status.framesProcessed % 20 === 0) {
+        this.broadcast("status", this.status);
+      }
+      return;
+    }
+
+    // ── 3. Apply nulling (on clutter-removed signal) ──
+    const processedSample: CSISample = {
+      ...sample,
+      h1: h1Proc,
+      h2: h2Proc,
+    };
+
+    let estimate = applyNulling(processedSample, this.config);
 
     if (!this.config.nullingEnabled) {
-      estimate = {
-        ...estimate,
-        nulledSignal: sample.h1,
-      };
+      estimate = { ...estimate, nulledSignal: h1Proc };
     }
 
     this.broadcast("csiFrame", estimate);
 
-    // Add to sample buffer for MUSIC
+    // ── 4. Doppler spectrogram ──
+    this.dopplerComputer.addSample(estimate.timestamp, dynamicAmplitude);
+    if (this.status.framesProcessed % 3 === 0) {
+      // Broadcast every 3rd frame to reduce load
+      this.broadcast("dopplerFrame", this.dopplerComputer.getData());
+    }
+
+    // ── 5. MUSIC spectrum (on clutter-removed signal buffer) ──
     this.sampleBuffer.push(estimate.nulledSignal);
     if (this.sampleBuffer.length > this.config.arrayLength) {
       this.sampleBuffer.shift();
     }
 
-    // Compute ISAR/MUSIC spectrum
     if (
       this.config.isarEnabled &&
       this.sampleBuffer.length >= this.config.arrayLength
@@ -250,18 +420,51 @@ export class SignalProcessingServer {
       this.heatmapAccumulator.addSpectrum(estimate.timestamp, spectrum);
       this.broadcast("heatmap", this.heatmapAccumulator.getData());
 
-      // Generate point cloud
-      const amplitude = magnitude(estimate.nulledSignal);
-      const point = aoaToPoint(peak.angle, amplitude, estimate.timestamp);
+      // ── 6. Point cloud from spectrum ──
+      const pointCloud: {
+        x: number;
+        y: number;
+        z: number;
+        amplitude: number;
+        timestamp: number;
+      }[] = [];
+      const maxPower = Math.max(...spectrum.map((s) => s.power));
+      const pThreshold = maxPower - 10;
 
-      this.pointCloudHistory.push(point);
-      if (this.pointCloudHistory.length > 50) {
-        this.pointCloudHistory.shift();
+      for (const sp of spectrum) {
+        if (sp.power > pThreshold) {
+          const relPower = Math.max(0, sp.power - pThreshold) / 10;
+          const dist = 1 + (1 - relPower) * 4;
+          const thetaRad = (sp.angle * Math.PI) / 180;
+          pointCloud.push({
+            x: dist * Math.sin(thetaRad),
+            y: dist * Math.cos(thetaRad),
+            z:
+              dynamicAmplitude *
+              Math.sin(this.status.framesProcessed * 0.05) *
+              0.3,
+            amplitude: Math.pow(10, sp.power / 20),
+            timestamp: estimate.timestamp,
+          });
+        }
       }
 
+      // Broadcast point cloud
+      this.pointCloudHistory.push(...pointCloud);
+      if (this.pointCloudHistory.length > 200) {
+        this.pointCloudHistory = this.pointCloudHistory.slice(-200);
+      }
       this.broadcast("pointCloud", this.pointCloudHistory);
 
-      // Gesture detection
+      // ── 7. Advanced Tracking (DBSCAN + Kalman) ──
+      const trackedTarget = this.trackingProcessor.process(pointCloud);
+      if (trackedTarget) {
+        this.broadcast("trackedTarget", trackedTarget);
+      } else {
+        this.broadcast("trackedTarget", null);
+      }
+
+      // ── 8. Gesture recognition (on processed timestamps/features) ──
       if (this.config.gestureEnabled) {
         const gesture = this.gestureDetector.addSample(
           estimate.timestamp,
@@ -276,11 +479,12 @@ export class SignalProcessingServer {
     this.status.framesProcessed++;
     this.status.lastUpdate = Date.now();
 
-    // Periodically broadcast status
     if (this.status.framesProcessed % 20 === 0) {
       this.broadcast("status", this.status);
     }
   }
+
+  // ── Messaging ──────────────────────────────────────────────────
 
   private sendToClient(clientId: string, type: string, data: unknown) {
     const client = this.clients.get(clientId);
@@ -291,12 +495,15 @@ export class SignalProcessingServer {
 
   private broadcast(type: string, data: unknown) {
     const message = JSON.stringify({ type, data });
-    for (const client of this.clients.values()) {
+    const clients = Array.from(this.clients.values());
+    for (const client of clients) {
       if (client.ws.readyState === WebSocket.OPEN) {
         client.ws.send(message);
       }
     }
   }
+
+  // ── Public API ─────────────────────────────────────────────────
 
   getStatus(): SystemStatus {
     return this.status;
@@ -306,12 +513,21 @@ export class SignalProcessingServer {
     return this.config;
   }
 
+  getLastRecordingFile(): string {
+    return this.lastRecordingFile;
+  }
+
   // Hardware ingestion methods
   ingestSample(sample: CSISample): void {
-    // Add to queue - will be consumed by processFrame when in hardware mode
     this.hardwareSampleQueue.push(sample);
-    
-    // Limit queue size to prevent memory issues
+
+    const qLen = this.hardwareSampleQueue.length;
+    if (qLen === 1 || qLen % 100 === 0) {
+      console.log(
+        `[ESP32] Queue: ${qLen} | h1=(${sample.h1.re.toFixed(2)}, ${sample.h1.im.toFixed(2)}) h2=(${sample.h2.re.toFixed(2)}, ${sample.h2.im.toFixed(2)}) rssi=${sample.rssi ?? "N/A"}`
+      );
+    }
+
     if (this.hardwareSampleQueue.length > 1000) {
       this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
     }
@@ -321,8 +537,7 @@ export class SignalProcessingServer {
     for (const sample of samples) {
       this.hardwareSampleQueue.push(sample);
     }
-    
-    // Limit queue size
+
     if (this.hardwareSampleQueue.length > 1000) {
       this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
     }

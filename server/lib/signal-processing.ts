@@ -186,7 +186,7 @@ export function computeMUSICSpectrum(
     // MUSIC pseudo-spectrum: 1 / (a^H * En * En^H * a)
     // Compute En^H * a first
     let denominator: Complex = { re: 0, im: 0 };
-    
+
     for (const noiseVec of En) {
       // Project steering vector onto noise eigenvector
       let projection: Complex = { re: 0, im: 0 };
@@ -263,25 +263,25 @@ const NORM_TEMPLATE_1 = normalizeTemplate(GESTURE_TEMPLATE_1);
 // Compute cross-correlation between signal and template
 function matchedFilterCorrelation(signal: number[], template: number[]): number {
   if (signal.length < template.length) return 0;
-  
+
   // Use the last template.length samples
   const segment = signal.slice(-template.length);
-  
+
   // Normalize the segment
   const mean = segment.reduce((sum, v) => sum + v, 0) / segment.length;
   const centered = segment.map(v => v - mean);
   const segmentNorm = Math.sqrt(centered.reduce((sum, v) => sum + v * v, 0));
-  
+
   if (segmentNorm < 1e-6) return 0;
-  
+
   const normalized = centered.map(v => v / segmentNorm);
-  
+
   // Compute correlation
   let correlation = 0;
   for (let i = 0; i < template.length; i++) {
     correlation += normalized[i] * template[i];
   }
-  
+
   return correlation;
 }
 
@@ -338,7 +338,7 @@ export class GestureDetector {
     if (corr0 > this.correlationThreshold && corr0 > corr1) {
       this.lastDetectionTime = timestamp;
       this.centroidHistory = []; // Reset after detection
-      
+
       return {
         timestamp,
         gestureType: "0",
@@ -350,7 +350,7 @@ export class GestureDetector {
     if (corr1 > this.correlationThreshold && corr1 > corr0) {
       this.lastDetectionTime = timestamp;
       this.centroidHistory = []; // Reset after detection
-      
+
       return {
         timestamp,
         gestureType: "1",
@@ -431,6 +431,223 @@ export class HeatmapAccumulator {
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// Background Subtractor — running-average clutter removal
+// H_dynamic(t) = H_current(t) - mean(H_window)
+// ═══════════════════════════════════════════════════════════════════
+export class BackgroundSubtractor {
+  private h1Window: Complex[] = [];
+  private h2Window: Complex[] = [];
+  private windowSize: number;
+
+  constructor(windowSize = 50) {
+    this.windowSize = windowSize;
+  }
+
+  setWindowSize(n: number) {
+    this.windowSize = n;
+    // Trim if current buffer exceeds new size
+    while (this.h1Window.length > n) {
+      this.h1Window.shift();
+      this.h2Window.shift();
+    }
+  }
+
+  /** Push a raw sample and return the dynamic (clutter-removed) components */
+  process(h1: Complex, h2: Complex): { h1Dynamic: Complex; h2Dynamic: Complex } {
+    this.h1Window.push({ ...h1 });
+    this.h2Window.push({ ...h2 });
+
+    if (this.h1Window.length > this.windowSize) {
+      this.h1Window.shift();
+      this.h2Window.shift();
+    }
+
+    // Compute running average (static component)
+    const len = this.h1Window.length;
+    const h1Avg: Complex = {
+      re: this.h1Window.reduce((s, c) => s + c.re, 0) / len,
+      im: this.h1Window.reduce((s, c) => s + c.im, 0) / len,
+    };
+    const h2Avg: Complex = {
+      re: this.h2Window.reduce((s, c) => s + c.re, 0) / len,
+      im: this.h2Window.reduce((s, c) => s + c.im, 0) / len,
+    };
+
+    // Dynamic = current - static_avg
+    return {
+      h1Dynamic: sub(h1, h1Avg),
+      h2Dynamic: sub(h2, h2Avg),
+    };
+  }
+
+  reset() {
+    this.h1Window = [];
+    this.h2Window = [];
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Motion Gate — variance-based motion detection
+// Compares variance of amplitude over last k samples against η
+// ═══════════════════════════════════════════════════════════════════
+export class MotionGate {
+  private amplitudeBuffer: number[] = [];
+  private readonly bufferSize = 30;
+
+  // Auto-calibrate from still frames
+  private calibrationSamples: number[] = [];
+  private readonly calibrationCount = 100;
+  private calibratedThreshold = 0.05; // default η
+  private isCalibrated = false;
+
+  /**
+   * Push a magnitude value and return motion status.
+   * During first 100 samples, auto-calibrates the noise floor.
+   */
+  update(
+    amplitudeMag: number,
+    manualThreshold?: number
+  ): { motionDetected: boolean; variance: number; threshold: number } {
+    this.amplitudeBuffer.push(amplitudeMag);
+    if (this.amplitudeBuffer.length > this.bufferSize) {
+      this.amplitudeBuffer.shift();
+    }
+
+    // Auto-calibration phase
+    if (!this.isCalibrated) {
+      this.calibrationSamples.push(amplitudeMag);
+      if (this.calibrationSamples.length >= this.calibrationCount) {
+        const mean =
+          this.calibrationSamples.reduce((a, b) => a + b, 0) /
+          this.calibrationSamples.length;
+        const variance =
+          this.calibrationSamples.reduce(
+            (s, x) => s + (x - mean) ** 2,
+            0
+          ) / this.calibrationSamples.length;
+        // Threshold = 3× the noise-floor std-dev
+        this.calibratedThreshold = Math.sqrt(variance) * 3;
+        this.isCalibrated = true;
+      }
+    }
+
+    // Compute variance over buffer
+    const n = this.amplitudeBuffer.length;
+    if (n < 2) {
+      return { motionDetected: false, variance: 0, threshold: this.calibratedThreshold };
+    }
+    const mean = this.amplitudeBuffer.reduce((a, b) => a + b, 0) / n;
+    const variance =
+      this.amplitudeBuffer.reduce((s, x) => s + (x - mean) ** 2, 0) / n;
+
+    const threshold = manualThreshold ?? this.calibratedThreshold;
+
+    return {
+      motionDetected: variance > threshold,
+      variance,
+      threshold,
+    };
+  }
+
+  reset() {
+    this.amplitudeBuffer = [];
+    this.calibrationSamples = [];
+    this.isCalibrated = false;
+    this.calibratedThreshold = 0.05;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Doppler Computer — sliding-window DFT to build time × frequency map
+// ═══════════════════════════════════════════════════════════════════
+export class DopplerComputer {
+  private amplitudeHistory: number[] = [];
+  private readonly fftSize = 64;
+  private readonly maxTimeSlots = 100;
+  private times: number[] = [];
+  private spectrogramRows: number[][] = [];
+  private startTime = 0;
+
+  /** Push a dynamic amplitude sample (after background subtraction) */
+  addSample(timestamp: number, dynamicAmplitude: number) {
+    if (this.startTime === 0) this.startTime = timestamp;
+
+    this.amplitudeHistory.push(dynamicAmplitude);
+
+    // Only compute a row when we have enough samples for one DFT window
+    if (this.amplitudeHistory.length >= this.fftSize) {
+      const window = this.amplitudeHistory.slice(-this.fftSize);
+      const row = this.computeDFTMagnitudes(window);
+
+      this.times.push((timestamp - this.startTime) / 1000);
+      this.spectrogramRows.push(row);
+
+      if (this.times.length > this.maxTimeSlots) {
+        this.times.shift();
+        this.spectrogramRows.shift();
+      }
+    }
+
+    // Keep history bounded
+    if (this.amplitudeHistory.length > this.fftSize * 2) {
+      this.amplitudeHistory = this.amplitudeHistory.slice(-this.fftSize);
+    }
+  }
+
+  /** Real-valued DFT → magnitude spectrum (only positive frequencies) */
+  private computeDFTMagnitudes(x: number[]): number[] {
+    const N = x.length;
+    const halfN = Math.floor(N / 2);
+    const mags: number[] = [];
+
+    // Apply Hanning window
+    const windowed = x.map(
+      (v, n) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * n) / (N - 1)))
+    );
+
+    for (let k = 0; k < halfN; k++) {
+      let re = 0;
+      let im = 0;
+      for (let n = 0; n < N; n++) {
+        const angle = (2 * Math.PI * k * n) / N;
+        re += windowed[n] * Math.cos(angle);
+        im -= windowed[n] * Math.sin(angle);
+      }
+      const mag = Math.sqrt(re * re + im * im) / N;
+      // Convert to dB, clamp floor
+      mags.push(Math.max(-60, 20 * Math.log10(mag + 1e-10)));
+    }
+
+    return mags;
+  }
+
+  getData(): { times: number[]; frequencies: number[]; intensities: number[][] } {
+    const halfN = Math.floor(this.fftSize / 2);
+    // Doppler frequency bins (normalized, 0 to 0.5 × sample rate)
+    const frequencies = Array.from(
+      { length: halfN },
+      (_, k) => (k / this.fftSize) * 20 // assume ~20Hz sample rate
+    );
+
+    return {
+      times: [...this.times],
+      frequencies,
+      intensities: this.spectrogramRows.map((row) => [...row]),
+    };
+  }
+
+  reset() {
+    this.amplitudeHistory = [];
+    this.times = [];
+    this.spectrogramRows = [];
+    this.startTime = 0;
+  }
+}
+
 // Data parser for CSI traces from hardware
 export class CSIDataParser {
   // Parse CSV format: timestamp,h1_re,h1_im,h2_re,h2_im[,rssi]
@@ -464,12 +681,12 @@ export class CSIDataParser {
   static parseJSON(data: unknown): CSISample | null {
     try {
       const obj = data as Record<string, unknown>;
-      
+
       // Handle different JSON formats
       if (obj.timestamp !== undefined && obj.h1 !== undefined && obj.h2 !== undefined) {
         const h1 = obj.h1 as Record<string, number>;
         const h2 = obj.h2 as Record<string, number>;
-        
+
         return {
           timestamp: obj.timestamp as number,
           h1: { re: h1.re || h1.real || 0, im: h1.im || h1.imag || 0 },
@@ -503,7 +720,7 @@ export class CSIDataParser {
     for (const line of lines) {
       // Skip header
       if (line.startsWith('timestamp') || line.startsWith('#')) continue;
-      
+
       const sample = this.parseCSVLine(line);
       if (sample) samples.push(sample);
     }

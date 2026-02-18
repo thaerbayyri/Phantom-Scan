@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { signalServer } from "./lib/websocket";
 import type { ProcessingConfig, CSISample } from "@shared/schema";
+import * as fs from "fs";
+import * as path from "path";
 import { csiSampleSchema, hardwareIngestSchema } from "@shared/schema";
 
 export async function registerRoutes(
@@ -36,17 +38,17 @@ export async function registerRoutes(
     try {
       const result = csiSampleSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Invalid CSI sample format",
-          details: result.error.issues 
+          details: result.error.issues
         });
       }
-      
+
       signalServer.ingestSample(result.data);
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         queueLength: signalServer.getQueueLength(),
-        timestamp: Date.now() 
+        timestamp: Date.now()
       });
     } catch (error) {
       console.error("CSI ingestion error:", error);
@@ -59,18 +61,18 @@ export async function registerRoutes(
     try {
       const result = hardwareIngestSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Invalid batch format",
-          details: result.error.issues 
+          details: result.error.issues
         });
       }
-      
+
       signalServer.ingestSamples(result.data.samples);
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         samplesIngested: result.data.samples.length,
         queueLength: signalServer.getQueueLength(),
-        timestamp: Date.now() 
+        timestamp: Date.now()
       });
     } catch (error) {
       console.error("Batch CSI ingestion error:", error);
@@ -85,6 +87,44 @@ export async function registerRoutes(
       status: signalServer.getStatus(),
       timestamp: Date.now()
     });
+  });
+
+  // Download last recorded session CSV
+  app.get("/api/recording/download", (req, res) => {
+    const filePath = signalServer.getLastRecordingFile();
+    if (!filePath) {
+      return res.status(404).json({ error: "No recording available" });
+    }
+
+    console.log(`[DOWNLOAD] Attempting to serve: ${filePath}`);
+
+    try {
+      if (!fs.existsSync(filePath)) {
+        console.error(`[DOWNLOAD] File not found at path: ${filePath}`);
+        return res.status(404).json({ error: "Recording file not found" });
+      }
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${path.basename(filePath)}"`
+      );
+
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', (err) => {
+        console.error("[DOWNLOAD] Stream error:", err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Stream failed" });
+        }
+      });
+      stream.pipe(res);
+
+    } catch (error) {
+      console.error("[DOWNLOAD] Critical error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Download failed", details: String(error) });
+      }
+    }
   });
 
   return httpServer;

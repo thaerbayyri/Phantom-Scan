@@ -70,6 +70,30 @@ export const heatmapDataSchema = z.object({
 });
 export type HeatmapData = z.infer<typeof heatmapDataSchema>;
 
+// Motion status
+export const motionStatusSchema = z.object({
+  motionDetected: z.boolean(),
+  variance: z.number(),
+  threshold: z.number(),
+});
+export type MotionStatus = z.infer<typeof motionStatusSchema>;
+
+// Doppler spectrogram frame
+export const dopplerFrameSchema = z.object({
+  times: z.array(z.number()),
+  frequencies: z.array(z.number()),
+  intensities: z.array(z.array(z.number())), // 2D [time][freq]
+});
+export type DopplerFrame = z.infer<typeof dopplerFrameSchema>;
+
+// Recording status
+export const recordingStatusSchema = z.object({
+  isRecording: z.boolean(),
+  sampleCount: z.number(),
+  durationMs: z.number(),
+});
+export type RecordingStatus = z.infer<typeof recordingStatusSchema>;
+
 // Processing configuration
 export const processingConfigSchema = z.object({
   nullingEnabled: z.boolean().default(true),
@@ -80,6 +104,10 @@ export const processingConfigSchema = z.object({
   aoaRangeMax: z.number().min(-90).max(90).default(60),
   gestureEnabled: z.boolean().default(true),
   centroidThreshold: z.number().min(0).max(50).default(5),
+  clutterRemovalEnabled: z.boolean().default(true),
+  clutterWindowSize: z.number().min(10).max(200).default(50),
+  motionGateEnabled: z.boolean().default(false),
+  motionThreshold: z.number().min(0).max(1).default(0.05),
 });
 export type ProcessingConfig = z.infer<typeof processingConfigSchema>;
 
@@ -108,6 +136,20 @@ export const systemStatusSchema = z.object({
 });
 export type SystemStatus = z.infer<typeof systemStatusSchema>;
 
+// Tracked target
+export const trackedTargetSchema = z.object({
+  id: z.number(),
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
+  vx: z.number(),
+  vy: z.number(),
+  vz: z.number(),
+  intensity: z.number(), // mapped to opacity
+  confidence: z.number(), // based on cluster density/size
+});
+export type TrackedTarget = z.infer<typeof trackedTargetSchema>;
+
 // WebSocket message types
 export const wsMessageTypeSchema = z.enum([
   "status",
@@ -118,6 +160,10 @@ export const wsMessageTypeSchema = z.enum([
   "heatmap",
   "config",
   "error",
+  "motionStatus",
+  "dopplerFrame",
+  "recordingStatus",
+  "trackedTarget",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
@@ -144,6 +190,7 @@ export const signalTraceSchema = z.object({
   h1Magnitude: z.array(z.number()),
   h2Magnitude: z.array(z.number()),
   nulledMagnitude: z.array(z.number()),
+  dynamicMagnitude: z.array(z.number()),
 });
 export type SignalTrace = z.infer<typeof signalTraceSchema>;
 

@@ -8,6 +8,10 @@ import type {
   HeatmapData,
   ProcessingConfig,
   SignalTrace,
+  MotionStatus,
+  DopplerFrame,
+  RecordingStatus,
+  TrackedTarget,
 } from "@shared/schema";
 
 interface WSState {
@@ -19,6 +23,10 @@ interface WSState {
   heatmap: HeatmapData | null;
   config: ProcessingConfig;
   signalTrace: SignalTrace;
+  motionStatus: MotionStatus;
+  dopplerFrame: DopplerFrame | null;
+  recordingStatus: RecordingStatus;
+  trackedTarget: TrackedTarget | null;
   isConnected: boolean;
   error: string | null;
 }
@@ -32,6 +40,10 @@ const defaultConfig: ProcessingConfig = {
   aoaRangeMax: 60,
   gestureEnabled: true,
   centroidThreshold: 5,
+  clutterRemovalEnabled: true,
+  clutterWindowSize: 50,
+  motionGateEnabled: false,
+  motionThreshold: 0.05,
 };
 
 const defaultStatus: SystemStatus = {
@@ -48,6 +60,19 @@ const defaultSignalTrace: SignalTrace = {
   h1Magnitude: [],
   h2Magnitude: [],
   nulledMagnitude: [],
+  dynamicMagnitude: [],
+};
+
+const defaultMotionStatus: MotionStatus = {
+  motionDetected: false,
+  variance: 0,
+  threshold: 0.05,
+};
+
+const defaultRecordingStatus: RecordingStatus = {
+  isRecording: false,
+  sampleCount: 0,
+  durationMs: 0,
 };
 
 export function useWebSocket() {
@@ -60,6 +85,10 @@ export function useWebSocket() {
     heatmap: null,
     config: defaultConfig,
     signalTrace: defaultSignalTrace,
+    motionStatus: defaultMotionStatus,
+    dopplerFrame: null,
+    recordingStatus: defaultRecordingStatus,
+    trackedTarget: null,
     isConnected: false,
     error: null,
   });
@@ -90,7 +119,6 @@ export function useWebSocket() {
 
       ws.onclose = () => {
         setState((prev) => ({ ...prev, isConnected: false }));
-        // Attempt to reconnect after 2 seconds
         reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
 
@@ -120,68 +148,114 @@ export function useWebSocket() {
           status: message.data as SystemStatus,
         }));
         break;
-      case "csiFrame":
+
+      case "csiFrame": {
         const estimate = message.data as ChannelEstimate;
         setState((prev) => {
-          const newTrace = { ...prev.signalTrace };
           const maxPoints = 100;
-          newTrace.timestamps = [
-            ...newTrace.timestamps.slice(-maxPoints + 1),
-            estimate.timestamp,
-          ];
-          newTrace.h1Magnitude = [
-            ...newTrace.h1Magnitude.slice(-maxPoints + 1),
-            Math.sqrt(
-              estimate.h1.re * estimate.h1.re + estimate.h1.im * estimate.h1.im
-            ),
-          ];
-          newTrace.h2Magnitude = [
-            ...newTrace.h2Magnitude.slice(-maxPoints + 1),
-            Math.sqrt(
-              estimate.h2.re * estimate.h2.re + estimate.h2.im * estimate.h2.im
-            ),
-          ];
-          newTrace.nulledMagnitude = [
-            ...newTrace.nulledMagnitude.slice(-maxPoints + 1),
-            Math.sqrt(
-              estimate.nulledSignal.re * estimate.nulledSignal.re +
-                estimate.nulledSignal.im * estimate.nulledSignal.im
-            ),
-          ];
+          const h1Mag = Math.sqrt(
+            estimate.h1.re ** 2 + estimate.h1.im ** 2
+          );
+          const h2Mag = Math.sqrt(
+            estimate.h2.re ** 2 + estimate.h2.im ** 2
+          );
+          const nulledMag = Math.sqrt(
+            estimate.nulledSignal.re ** 2 + estimate.nulledSignal.im ** 2
+          );
+
+          const newTrace: SignalTrace = {
+            timestamps: [
+              ...prev.signalTrace.timestamps.slice(-maxPoints + 1),
+              estimate.timestamp,
+            ],
+            h1Magnitude: [
+              ...prev.signalTrace.h1Magnitude.slice(-maxPoints + 1),
+              h1Mag,
+            ],
+            h2Magnitude: [
+              ...prev.signalTrace.h2Magnitude.slice(-maxPoints + 1),
+              h2Mag,
+            ],
+            nulledMagnitude: [
+              ...prev.signalTrace.nulledMagnitude.slice(-maxPoints + 1),
+              nulledMag,
+            ],
+            dynamicMagnitude: [
+              ...prev.signalTrace.dynamicMagnitude.slice(-maxPoints + 1),
+              h1Mag, // h1 is already dynamic (clutter-removed) when enabled
+            ],
+          };
+
           return { ...prev, channelEstimate: estimate, signalTrace: newTrace };
         });
         break;
+      }
+
       case "isarFrame":
         setState((prev) => ({
           ...prev,
           isarFrame: message.data as ISARFrame,
         }));
         break;
+
       case "pointCloud":
         setState((prev) => ({
           ...prev,
           pointCloud: message.data as PointCloudPoint[],
         }));
         break;
-      case "gesture":
+
+      case "gesture": {
         const gesture = message.data as GestureEvent;
         setState((prev) => ({
           ...prev,
           gestures: [...prev.gestures.slice(-49), gesture],
         }));
         break;
+      }
+
       case "heatmap":
         setState((prev) => ({
           ...prev,
           heatmap: message.data as HeatmapData,
         }));
         break;
+
       case "config":
         setState((prev) => ({
           ...prev,
           config: message.data as ProcessingConfig,
         }));
         break;
+
+      case "motionStatus":
+        setState((prev) => ({
+          ...prev,
+          motionStatus: message.data as MotionStatus,
+        }));
+        break;
+
+      case "dopplerFrame":
+        setState((prev) => ({
+          ...prev,
+          dopplerFrame: message.data as DopplerFrame,
+        }));
+        break;
+
+      case "recordingStatus":
+        setState((prev) => ({
+          ...prev,
+          recordingStatus: message.data as RecordingStatus,
+        }));
+        break;
+
+      case "trackedTarget":
+        setState((prev) => ({
+          ...prev,
+          trackedTarget: message.data as TrackedTarget | null,
+        }));
+        break;
+
       case "error":
         setState((prev) => ({
           ...prev,
@@ -223,6 +297,14 @@ export function useWebSocket() {
     [sendMessage]
   );
 
+  const startRecording = useCallback(() => {
+    sendMessage("startRecording", null);
+  }, [sendMessage]);
+
+  const stopRecording = useCallback(() => {
+    sendMessage("stopRecording", null);
+  }, [sendMessage]);
+
   useEffect(() => {
     connect();
     return () => {
@@ -239,6 +321,8 @@ export function useWebSocket() {
     startProcessing,
     stopProcessing,
     setDataSource,
+    startRecording,
+    stopRecording,
     reconnect: connect,
   };
 }

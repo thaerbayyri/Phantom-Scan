@@ -5,7 +5,7 @@ import { ControlPanel } from "@/components/dashboard/control-panel";
 import { PointCloud3D } from "@/components/dashboard/point-cloud-3d";
 import { AoAHeatmap } from "@/components/dashboard/aoa-heatmap";
 import { AoASpectrum } from "@/components/dashboard/aoa-spectrum";
-import { SignalTraces } from "@/components/dashboard/signal-traces";
+import { DopplerSpectrogram } from "../components/dashboard/doppler-spectrogram";
 import { GestureLog } from "@/components/dashboard/gesture-log";
 import { MetricsPanel } from "@/components/dashboard/metrics-panel";
 import type { DataSource } from "@shared/schema";
@@ -19,18 +19,22 @@ export default function Dashboard() {
     gestures,
     heatmap,
     config,
-    signalTrace,
+    dopplerFrame,
+    motionStatus,
+    recordingStatus,
     isConnected,
     updateConfig,
     startProcessing,
     stopProcessing,
     setDataSource,
+    startRecording,
+    stopRecording,
+    trackedTarget,
   } = useWebSocket();
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
@@ -74,9 +78,13 @@ export default function Dashboard() {
       <TopBar
         status={status}
         isConnected={isConnected}
+        motionStatus={motionStatus}
+        recordingStatus={recordingStatus}
         onStart={startProcessing}
         onStop={stopProcessing}
         onDataSourceChange={handleDataSourceChange}
+        onStartRecording={startRecording}
+        onStopRecording={stopRecording}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -85,7 +93,7 @@ export default function Dashboard() {
         <main className="flex-1 p-4 overflow-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
             <div className="flex flex-col gap-4 min-h-[600px]">
-              <PointCloud3D points={pointCloud} className="flex-1 min-h-[300px]" />
+              <PointCloud3D points={pointCloud} trackedTarget={trackedTarget} className="flex-1 min-h-[300px]" />
               <AoASpectrum frame={isarFrame} className="h-48" />
             </div>
 
@@ -95,7 +103,7 @@ export default function Dashboard() {
                 isarFrame={isarFrame}
               />
               <AoAHeatmap data={heatmap} className="flex-1 min-h-[200px]" />
-              <SignalTraces trace={signalTrace} className="h-48" />
+              <DopplerSpectrogram frame={dopplerFrame} className="h-48" />
               <GestureLog gestures={gestures} className="h-48" />
             </div>
           </div>

@@ -1,53 +1,43 @@
 #!/usr/bin/env python3
 """
-Phantom Scan CSI Capture Script
+Phantom Scan — ESP32-S3 CSI Capture Script
 
-This script captures CSI (Channel State Information) data from your Wi-Fi hardware
-and streams it to the Phantom Scan Dashboard for visualization and processing.
-
-SUPPORTED MODES:
-- --demo: Simulated data for testing
-- --esp32: Real-time capture from ESP32-S3 via Serial (ESP-CSI firmware)
-- --file: Replay from saved CSV/JSON files
-- --intel: (Template) Intel AX201 via PicoScenes
+Reads real-time CSI data from an ESP32-S3 over serial (USB)
+and streams it to the Phantom Scan dashboard.
 
 INSTALLATION:
-1. Install Python dependencies:
-   pip install requests numpy
-
-2. Configure your CSI extraction tool for your hardware
-
-3. Run this script:
-   python csi_capture.py --server http://localhost:5000
+    pip install requests pyserial
 
 USAGE:
-  python csi_capture.py [OPTIONS]
-
-OPTIONS:
-  --server URL      Dashboard server URL (default: http://localhost:5000)
-  --rate RATE       Sample rate in Hz (default: 20)
-  --demo            Run in demo mode with simulated data
-  --file FILE       Read samples from CSV/JSON file instead of hardware
+    python csi_capture.py --server http://localhost:5000
 """
 
 import argparse
+import csv
 import json
-import math
-import random
+import os
 import sys
 import time
 from typing import Dict, Any, List, Optional
 
+
 try:
     import requests
 except ImportError:
-    print("Error: requests library not found. Install with: pip install requests")
+    print("ERROR: requests library not found. Install with: pip install requests")
+    sys.exit(1)
+
+try:
+    import serial
+    import serial.tools.list_ports
+except ImportError:
+    print("ERROR: pyserial library not found. Install with: pip install pyserial")
     sys.exit(1)
 
 
 class CSISample:
-    """Represents a single CSI sample."""
-    
+    """Represents a single CSI sample with two channel estimates."""
+
     def __init__(
         self,
         h1_re: float,
@@ -56,393 +46,282 @@ class CSISample:
         h2_im: float,
         timestamp: Optional[float] = None,
         rssi: Optional[float] = None,
-        subcarrier_index: Optional[int] = None
     ):
-        self.timestamp = timestamp or time.time() * 1000  # milliseconds
+        self.timestamp = timestamp or time.time() * 1000
         self.h1 = {"re": h1_re, "im": h1_im}
         self.h2 = {"re": h2_re, "im": h2_im}
         self.rssi = rssi
-        self.subcarrier_index = subcarrier_index
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        result = {
+        result: Dict[str, Any] = {
             "timestamp": self.timestamp,
             "h1": self.h1,
             "h2": self.h2,
         }
         if self.rssi is not None:
             result["rssi"] = self.rssi
-        if self.subcarrier_index is not None:
-            result["subcarrierIndex"] = self.subcarrier_index
         return result
 
 
-class DemoCSIGenerator:
-    """Generates simulated CSI data for testing."""
-    
-    def __init__(self):
-        self.phase = 0
-        self.motion_phase = 0
-    
-    def generate_sample(self) -> CSISample:
-        """Generate a simulated CSI sample with realistic motion patterns."""
-        # Simulate moving target
-        self.motion_phase += 0.02 + random.uniform(-0.005, 0.005)
-        target_angle = 20 * math.sin(self.motion_phase)  # degrees
-        
-        # Convert to channel response
-        self.phase += 0.1
-        base_amplitude = 0.8 + 0.2 * math.sin(self.phase * 0.3)
-        
-        # h1: static + dynamic component
-        h1_re = base_amplitude * math.cos(self.phase)
-        h1_im = base_amplitude * math.sin(self.phase)
-        
-        # h2: phase shifted based on AoA
-        phase_shift = math.radians(target_angle) * 2
-        h2_re = base_amplitude * 0.9 * math.cos(self.phase + phase_shift)
-        h2_im = base_amplitude * 0.9 * math.sin(self.phase + phase_shift)
-        
-        # Add noise
-        noise = 0.05
-        h1_re += random.gauss(0, noise)
-        h1_im += random.gauss(0, noise)
-        h2_re += random.gauss(0, noise)
-        h2_im += random.gauss(0, noise)
-        
-        return CSISample(
-            h1_re=h1_re,
-            h1_im=h1_im,
-            h2_re=h2_re,
-            h2_im=h2_im,
-            rssi=-50 + random.gauss(0, 3)
-        )
+# ── Serial port helpers ──────────────────────────────────────────────
 
 
-class FileCSIReader:
-    """Reads CSI samples from CSV or JSON files."""
-    
-    def __init__(self, filepath: str):
-        self.filepath = filepath
-        self.samples: List[CSISample] = []
-        self.index = 0
-        self._load()
-    
-    def _load(self):
-        """Load samples from file."""
-        if self.filepath.endswith(".json"):
-            self._load_json()
-        elif self.filepath.endswith(".csv"):
-            self._load_csv()
+def list_serial_ports() -> List[Any]:
+    """Return list of serial port info objects."""
+    return list(serial.tools.list_ports.comports())
+
+
+def choose_serial_port() -> Optional[str]:
+    """Show available COM ports and let the user pick one."""
+    ports = list_serial_ports()
+    if not ports:
+        print("No serial ports detected. Make sure your ESP32-S3 is plugged in.")
+        return None
+
+    print("\nAvailable serial ports:")
+    for i, p in enumerate(ports, 1):
+        desc = f" - {p.description}" if p.description else ""
+        hwid = f"  [{p.hwid}]" if p.hwid else ""
+        print(f"  [{i}] {p.device}{desc}{hwid}")
+
+    while True:
+        try:
+            choice = input(f"\nSelect port (1-{len(ports)}): ").strip()
+            idx = int(choice) - 1
+            if 0 <= idx < len(ports):
+                return ports[idx].device
+            print(f"Please enter a number between 1 and {len(ports)}")
+        except (ValueError, EOFError):
+            print("Invalid input. Please enter a number.")
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            return None
+
+
+# ── ESP32-S3 CSI parser ──────────────────────────────────────────────
+
+
+def parse_csi_line(line: str) -> Optional[CSISample]:
+    """
+    Parse one line of ESP32-S3 CSI output.
+
+    Supports two formats:
+      1. Raw CSV:   timestamp,rssi,I1,Q1,I2,Q2,...
+      2. ESP-CSI:   CSI_DATA,type,role,mac,rssi,...,[space-separated I/Q]
+
+    We take the first two complex pairs as h1 and h2.
+    """
+    if not line or line.startswith("#"):
+        return None
+
+    try:
+        parts = line.split(",")
+
+        # ── Format 2: ESP-CSI firmware with CSI_DATA prefix ──
+        if "CSI_DATA" in line:
+            raw_data = parts[-1].replace("[", "").replace("]", "").split()
+            data_ints = [int(x) for x in raw_data if x]
+            rssi = -50
+            if len(parts) > 4 and parts[4].lstrip("-").isdigit():
+                rssi = int(parts[4])
+
+        # ── Format 1: Raw CSV — timestamp,rssi,I1,Q1,I2,Q2,... ──
         else:
-            raise ValueError(f"Unsupported file format: {self.filepath}")
-        
-        print(f"Loaded {len(self.samples)} samples from {self.filepath}")
-    
-    def _load_json(self):
-        """Load from JSON file."""
-        with open(self.filepath, 'r') as f:
-            data = json.load(f)
-        
-        if isinstance(data, list):
-            for item in data:
-                self.samples.append(CSISample(
-                    h1_re=item["h1"]["re"],
-                    h1_im=item["h1"]["im"],
-                    h2_re=item["h2"]["re"],
-                    h2_im=item["h2"]["im"],
-                    timestamp=item.get("timestamp"),
-                    rssi=item.get("rssi"),
-                    subcarrier_index=item.get("subcarrierIndex")
-                ))
-    
-    def _load_csv(self):
-        """Load from CSV file (format: timestamp,h1_re,h1_im,h2_re,h2_im[,rssi])."""
-        with open(self.filepath, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                
-                parts = line.split(",")
-                if len(parts) >= 5:
-                    self.samples.append(CSISample(
-                        timestamp=float(parts[0]),
-                        h1_re=float(parts[1]),
-                        h1_im=float(parts[2]),
-                        h2_re=float(parts[3]),
-                        h2_im=float(parts[4]),
-                        rssi=float(parts[5]) if len(parts) > 5 else None
-                    ))
-    
-    def get_sample(self) -> Optional[CSISample]:
-        """Get next sample, looping if needed."""
-        if not self.samples:
-            return None
-        
-        sample = self.samples[self.index]
-        self.index = (self.index + 1) % len(self.samples)
-        
-        # Update timestamp to current time
-        sample.timestamp = time.time() * 1000
-        return sample
+            # Need at least: timestamp, rssi, I1, Q1, I2, Q2 = 6 fields
+            if len(parts) < 6:
+                return None
+            # First field should look like a timestamp (float)
+            try:
+                float(parts[0])
+            except ValueError:
+                return None
+            rssi = int(parts[1])
+            data_ints = [int(x) for x in parts[2:] if x.strip().lstrip("-").isdigit()]
 
+        # Build complex pairs (I, Q)
+        complex_pairs = []
+        for i in range(0, len(data_ints) - 1, 2):
+            complex_pairs.append({"re": data_ints[i], "im": data_ints[i + 1]})
 
-class IntelAX201Capture:
-    """
-    Capture CSI from Intel AX201 using PicoScenes or similar tools.
-    
-    NOTE: Direct CSI extraction from AX201 requires:
-    - PicoScenes software (https://ps.zpj.io/)
-    - Modified firmware or monitor mode support
-    - Root/admin privileges
-    
-    This is a template - implement the actual capture logic based on your setup.
-    """
-    
-    def __init__(self):
-        self.initialized = False
-        print("Intel AX201 capture template initialized")
-        print("NOTE: Implement actual capture logic in get_sample() method")
-    
-    def initialize(self) -> bool:
-        """Initialize hardware capture."""
-        # TODO: Add your hardware initialization code here
-        # Example for PicoScenes:
-        # - Start PicoScenes capture process
-        # - Configure interface and channel
-        # - Set up CSI extraction parameters
-        
-        print("Hardware initialization placeholder")
-        self.initialized = True
-        return True
-    
-    def get_sample(self) -> Optional[CSISample]:
-        """
-        Capture a CSI sample from hardware.
-        
-        Implement this method based on your CSI extraction tool:
-        
-        For PicoScenes:
-            - Read from PicoScenes output pipe/socket
-            - Parse the CSI matrix from the packet
-            - Extract h1, h2 from the CSI matrix
-        
-        For Linux CSI Tool:
-            - Read from /dev/csi_debug
-            - Parse Intel 5300 CSI format
-        
-        For ESP32:
-            - Read from serial/UART
-            - Parse ESP-IDF CSI format
-        """
-        if not self.initialized:
+        if len(complex_pairs) < 2:
             return None
-        
-        # Placeholder: Return None to indicate not implemented
-        # Replace this with actual capture code
+
+        return CSISample(
+            h1_re=complex_pairs[0]["re"],
+            h1_im=complex_pairs[0]["im"],
+            h2_re=complex_pairs[1]["re"],
+            h2_im=complex_pairs[1]["im"],
+            timestamp=int(time.time() * 1000),
+            rssi=rssi,
+        )
+    except Exception as e:
+        print(f"Parse error: {e}")
         return None
 
 
-def send_sample(server_url: str, sample: CSISample, session: requests.Session) -> bool:
-    """Send a CSI sample to the dashboard server."""
+# ── Network helpers ──────────────────────────────────────────────────
+
+
+def check_server(url: str, session: requests.Session) -> bool:
     try:
-        response = session.post(
-            f"{server_url}/api/csi/ingest",
-            json=sample.to_dict(),
-            timeout=1.0
-        )
-        return response.status_code == 200
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending sample: {e}")
-        return False
-
-
-def send_batch(server_url: str, samples: List[CSISample], session: requests.Session) -> bool:
-    """Send a batch of CSI samples to the dashboard server."""
-    try:
-        response = session.post(
-            f"{server_url}/api/csi/ingest/batch",
-            json={"samples": [s.to_dict() for s in samples]},
-            timeout=2.0
-        )
-        return response.status_code == 200
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending batch: {e}")
-        return False
-
-
-def check_server(server_url: str, session: requests.Session) -> bool:
-    """Check if dashboard server is running."""
-    try:
-        response = session.get(f"{server_url}/api/health", timeout=5.0)
-        return response.status_code == 200
+        r = session.get(f"{url}/api/health", timeout=5)
+        return r.status_code == 200
     except requests.exceptions.RequestException:
         return False
 
 
+def send_sample(url: str, sample: CSISample, session: requests.Session) -> bool:
+    try:
+        r = session.post(f"{url}/api/csi/ingest", json=sample.to_dict(), timeout=1)
+        return r.status_code == 200
+    except requests.exceptions.RequestException as e:
+        print(f"Send error: {e}")
+        return False
+
+
+def send_batch(url: str, samples: List[CSISample], session: requests.Session) -> bool:
+    try:
+        r = session.post(
+            f"{url}/api/csi/ingest/batch",
+            json={"samples": [s.to_dict() for s in samples]},
+            timeout=2,
+        )
+        return r.status_code == 200
+    except requests.exceptions.RequestException as e:
+        print(f"Batch send error: {e}")
+        return False
+
+
+# ── Main ─────────────────────────────────────────────────────────────
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Wi-Vi CSI Capture Script",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
-    )
+    parser = argparse.ArgumentParser(description="Phantom Scan — ESP32-S3 CSI Capture")
     parser.add_argument(
         "--server",
         default="http://localhost:5000",
-        help="Dashboard server URL (default: http://localhost:5000)"
+        help="Dashboard server URL (default: http://localhost:5000)",
     )
     parser.add_argument(
-        "--rate",
-        type=float,
-        default=20,
-        help="Sample rate in Hz (default: 20)"
+        "--port",
+        default=None,
+        help="Serial port (auto-detected if not specified)",
     )
     parser.add_argument(
-        "--demo",
-        action="store_true",
-        help="Run in demo mode with simulated data"
-    )
-    parser.add_argument(
-        "--file",
-        type=str,
-        help="Read samples from CSV/JSON file"
+        "--baud", type=int, default=115200, help="Baud rate (default: 115200)"
     )
     parser.add_argument(
         "--esp32",
         action="store_true",
-        help="Capture CSI from ESP32-S3 via Serial"
+        default=True,
+        help="(default, kept for backward compatibility)",
     )
     parser.add_argument(
-        "--port",
-        type=str,
-        default="/dev/ttyUSB0",
-        help="Serial port for ESP32 (default: /dev/ttyUSB0)"
-    )
-    parser.add_argument(
-        "--baud",
+        "--batch-size",
         type=int,
-        default=115200,
-        help="Baud rate for ESP32 (default: 115200)"
+        default=1,
+        dest="batch_size",
+        help="Samples per HTTP request (default: 1)",
     )
-    
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="Save captured CSI data locally to CSV",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Output CSV file path (default: csi_recording_<timestamp>.csv)",
+    )
+
     args = parser.parse_args()
-    
-    # Create HTTP session for connection reuse
+
+    # ── Connect to dashboard ──
     session = requests.Session()
-    
-    # Check server connection
-    print(f"Connecting to dashboard server: {args.server}")
+    print(f"Connecting to dashboard: {args.server}")
     if not check_server(args.server, session):
-        print("ERROR: Cannot connect to dashboard server")
-        print("Make sure the Wi-Vi Dashboard is running")
+        print("ERROR: Cannot reach dashboard server. Is it running?")
         sys.exit(1)
-    print("Connected successfully!")
-    
-    # Select data source
-    if args.file:
-        print(f"Reading samples from file: {args.file}")
-        source = FileCSIReader(args.file)
-        get_sample = source.get_sample
-    elif args.demo:
-        print("Running in demo mode with simulated data")
-        source = DemoCSIGenerator()
-        get_sample = source.generate_sample
-    elif args.esp32:
-        print(f"Capturing from ESP32 on {args.port}...")
-        try:
-            import serial
-        except ImportError:
-            print("ERROR: pyserial is required for ESP32 capture")
-            print("Run: pip install pyserial")
+    print("Dashboard connected ✓")
+
+    # ── Pick serial port ──
+    port = args.port
+    if port is None:
+        port = choose_serial_port()
+        if port is None:
             sys.exit(1)
-            
-        ser = serial.Serial(args.port, args.baud, timeout=1)
-        
-        def get_esp32_sample():
-            while True:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
-                if "CSI_DATA" not in line:
-                    continue
-                try:
-                    parts = line.split(',')
-                    # Format: CSI_DATA,type,role,mac,rssi,...,data
-                    raw_data = parts[-1].replace('[', '').replace(']', '').split(' ')
-                    data_ints = [int(x) for x in raw_data if x]
-                    complex_data = []
-                    for i in range(0, len(data_ints) - 1, 2):
-                        complex_data.append({"re": data_ints[i], "im": data_ints[i+1]})
-                    
-                    return CSISample(
-                        data=complex_data,
-                        timestamp=int(time.time() * 1000),
-                        rssi=int(parts[4]) if parts[4].lstrip('-').isdigit() else -50
-                    )
-                except Exception as e:
-                    print(f"Parse error: {e}")
-                    continue
-        
-        get_sample = get_esp32_sample
-    else:
-        print("Initializing hardware capture...")
-        source = IntelAX201Capture()
-        if not source.initialize():
-            print("ERROR: Failed to initialize hardware")
-            print("Try running with --demo flag to test with simulated data")
-            sys.exit(1)
-        get_sample = source.get_sample
-    
-    # Calculate interval
-    interval = 1.0 / args.rate
-    
-    print(f"Starting capture at {args.rate} Hz (interval: {interval*1000:.1f}ms)")
+
+    print(f"Opening {port} at {args.baud} baud …")
+    ser = serial.Serial(port, args.baud, timeout=1)
+    print(f"Serial connected ✓\n")
+    print("Waiting for CSI_DATA lines from ESP32-S3 …")
     print("Press Ctrl+C to stop\n")
-    
+
+    # ── Optional local recording ──
+    csv_file = None
+    csv_writer = None
+    if args.record:
+        output_path = args.output or f"csi_recording_{int(time.time())}.csv"
+        csv_file = open(output_path, "w", newline="")
+        csv_writer = csv.writer(csv_file)
+        csv_writer.writerow(
+            ["timestamp", "subcarrier_index", "h1_re", "h1_im", "h2_re", "h2_im", "rssi"]
+        )
+        print(f"Recording to: {os.path.abspath(output_path)}")
+
     samples_sent = 0
     errors = 0
-    batch_buffer: List[CSISample] = []
-    
+    batch_buf: List[CSISample] = []
+
     try:
         while True:
-            start_time = time.time()
-            
-            # Get sample
-            sample = get_sample()
-            if sample is None:
-                if not args.demo and not args.file:
-                    print("No sample from hardware - implement capture logic")
-                    time.sleep(1)
-                    continue
+            line = ser.readline().decode("utf-8", errors="ignore").strip()
+            if not line:
                 continue
-            
-            # Batch or send immediately
+
+            sample = parse_csi_line(line)
+            if sample is None:
+                continue
+
+            # Record locally if enabled
+            if csv_writer is not None:
+                csv_writer.writerow([
+                    sample.timestamp,
+                    0,  # subcarrier index
+                    sample.h1["re"],
+                    sample.h1["im"],
+                    sample.h2["re"],
+                    sample.h2["im"],
+                    sample.rssi if sample.rssi is not None else "",
+                ])
+                # Flush every 100 samples
+                if samples_sent > 0 and samples_sent % 100 == 0 and csv_file:
+                    csv_file.flush()
+
             if args.batch_size > 1:
-                batch_buffer.append(sample)
-                if len(batch_buffer) >= args.batch_size:
-                    if send_batch(args.server, batch_buffer, session):
-                        samples_sent += len(batch_buffer)
+                batch_buf.append(sample)
+                if len(batch_buf) >= args.batch_size:
+                    if send_batch(args.server, batch_buf, session):
+                        samples_sent += len(batch_buf)
                     else:
                         errors += 1
-                    batch_buffer = []
+                    batch_buf = []
             else:
                 if send_sample(args.server, sample, session):
                     samples_sent += 1
                 else:
                     errors += 1
-            
-            # Status update
-            if samples_sent % 100 == 0 and samples_sent > 0:
-                print(f"Samples sent: {samples_sent}, Errors: {errors}")
-            
-            # Maintain sample rate
-            elapsed = time.time() - start_time
-            sleep_time = interval - elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-    
+
+            if samples_sent > 0 and samples_sent % 100 == 0:
+                print(f"  Sent: {samples_sent}  |  Errors: {errors}")
+
     except KeyboardInterrupt:
-        print(f"\n\nCapture stopped. Total samples sent: {samples_sent}, Errors: {errors}")
+        print(f"\n\nStopped. Sent {samples_sent} samples, {errors} errors.")
+    finally:
+        ser.close()
+        if csv_file:
+            csv_file.close()
+            print(f"Recording saved: {os.path.abspath(csv_file.name)}")
 
 
 if __name__ == "__main__":
