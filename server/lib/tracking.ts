@@ -328,7 +328,14 @@ export class TrackingProcessor {
         // 4. Return result if valid
         if (this.consecutiveMisses < 10) { // Keep track for ~0.5s if lost
             const state = this.kalman.getState();
-            const speed = Math.sqrt(state.vx ** 2 + state.vy ** 2 + state.vz ** 2);
+            const speed = Math.sqrt(state.vx ** 2 + state.vz ** 2);
+            const isMoving = speed > 0.1;
+
+            // Calculate angle (facing direction)
+            let angle = this.lastTarget?.angle || 0;
+            if (isMoving) {
+                angle = Math.atan2(state.vz, state.vx);
+            }
 
             this.lastTarget = {
                 id: 1, // Single target for now
@@ -340,6 +347,8 @@ export class TrackingProcessor {
                 vz: state.vz,
                 intensity: maxEnergy > 0 ? maxEnergy : (this.lastTarget?.intensity || 0) * 0.9,
                 confidence: Math.max(0, 1.0 - this.consecutiveMisses * 0.1),
+                isMoving,
+                angle,
             };
             return this.lastTarget;
         }

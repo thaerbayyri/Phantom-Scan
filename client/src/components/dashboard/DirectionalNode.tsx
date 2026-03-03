@@ -1,0 +1,206 @@
+import { useRef, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import * as THREE from "three";
+import type { RadialTarget } from "@shared/schema";
+
+// ═══════════════════════════════════════════════════════════════════
+//  DirectionalNode — glowing sphere + heading arrow + fading trail
+// ═══════════════════════════════════════════════════════════════════
+
+interface DirectionalNodeProps {
+    target: RadialTarget;
+}
+
+// Max trail length
+const TRAIL_LENGTH = 60;
+
+export function DirectionalNode({ target }: DirectionalNodeProps) {
+    const groupRef = useRef<THREE.Group>(null);
+    const arrowRef = useRef<THREE.Group>(null);
+    const glowRef = useRef<THREE.Mesh>(null);
+    const trailRef = useRef<THREE.LineSegments>(null);
+
+    // Smooth tracking
+    const targetPos = useRef(new THREE.Vector3(target.x, 0.3, target.z));
+    const currentAngle = useRef(target.angle);
+
+    // Trail history
+    const trailPositions = useRef<THREE.Vector3[]>([]);
+    const trailGeometry = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry());
+
+    // Pre-allocate trail buffer
+    const trailBuffer = useMemo(() => {
+        const positions = new Float32Array(TRAIL_LENGTH * 2 * 3); // line segments
+        const colors = new Float32Array(TRAIL_LENGTH * 2 * 4); // RGBA
+        return { positions, colors };
+    }, []);
+
+    useFrame((state) => {
+        if (!groupRef.current) return;
+
+        const t = state.clock.elapsedTime;
+
+        // ── Smooth position lerp ──
+        targetPos.current.set(target.x, 0.3, target.z);
+        groupRef.current.position.lerp(targetPos.current, 0.12);
+
+        // ── Smooth heading rotation ──
+        const angleDiff = target.angle - currentAngle.current;
+        const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+        currentAngle.current += wrapped * 0.12;
+
+        // Rotate arrow to point in direction of travel
+        if (arrowRef.current) {
+            arrowRef.current.rotation.y = -currentAngle.current + Math.PI / 2;
+
+            // Scale arrow by speed (min 0.3, max 1.5)
+            const arrowScale = target.isMoving
+                ? Math.min(1.5, 0.3 + target.speed * 2)
+                : 0.3;
+            arrowRef.current.scale.setScalar(arrowScale);
+        }
+
+        // ── Glow pulse ──
+        if (glowRef.current) {
+            const pulse = target.isMoving
+                ? 1.0 + Math.sin(t * 4) * 0.2  // Fast pulse when moving
+                : 1.0 + Math.sin(t * 1.5) * 0.08; // Gentle breathe idle
+            glowRef.current.scale.setScalar(pulse);
+        }
+
+        // ── Update trail ──
+        const currentPos = groupRef.current.position.clone();
+        trailPositions.current.push(currentPos);
+        if (trailPositions.current.length > TRAIL_LENGTH) {
+            trailPositions.current.shift();
+        }
+
+        // Build trail line segments
+        const trail = trailPositions.current;
+        if (trail.length >= 2 && trailRef.current) {
+            const segCount = trail.length - 1;
+            const posArr = trailBuffer.positions;
+            const colArr = trailBuffer.colors;
+
+            for (let i = 0; i < segCount; i++) {
+                const idx = i * 6;
+                const cidx = i * 8;
+                const opacity = (i / segCount); // Fade from old→new
+
+                posArr[idx + 0] = trail[i].x;
+                posArr[idx + 1] = trail[i].y;
+                posArr[idx + 2] = trail[i].z;
+                posArr[idx + 3] = trail[i + 1].x;
+                posArr[idx + 4] = trail[i + 1].y;
+                posArr[idx + 5] = trail[i + 1].z;
+
+                // Cyan fading trail
+                colArr[cidx + 0] = 0.0; colArr[cidx + 1] = 0.9; colArr[cidx + 2] = 1.0; colArr[cidx + 3] = opacity * 0.6;
+                colArr[cidx + 4] = 0.0; colArr[cidx + 5] = 0.9; colArr[cidx + 6] = 1.0; colArr[cidx + 7] = opacity * 0.8;
+            }
+
+            // Update geometry
+            const geo = trailGeometry.current;
+            geo.setAttribute("position", new THREE.BufferAttribute(posArr.slice(0, segCount * 6), 3));
+            geo.setAttribute("color", new THREE.BufferAttribute(colArr.slice(0, segCount * 8), 4));
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate = true;
+
+            trailRef.current.geometry = geo;
+        }
+    });
+
+    // Dynamic color based on state
+    const nodeColor = target.isMoving ? "#00e5ff" : "#0097a7";
+    const emissiveColor = target.isMoving ? "#00e5ff" : "#006064";
+    const emissiveIntensity = target.isMoving ? 2.5 : 1.0;
+
+    return (
+        <>
+            {/* Trail */}
+            <lineSegments ref={trailRef}>
+                <bufferGeometry />
+                <lineBasicMaterial
+                    vertexColors
+                    transparent
+                    opacity={0.7}
+                    blending={THREE.AdditiveBlending}
+                />
+            </lineSegments>
+
+            <group ref={groupRef}>
+                {/* Ground shadow */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.28, 0]}>
+                    <circleGeometry args={[0.35, 32]} />
+                    <meshBasicMaterial color="#004d40" transparent opacity={0.3} />
+                </mesh>
+
+                {/* Confidence ring */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.27, 0]}>
+                    <ringGeometry args={[0.3 + target.confidence * 0.15, 0.35 + target.confidence * 0.15, 32]} />
+                    <meshBasicMaterial
+                        color={nodeColor}
+                        transparent
+                        opacity={0.3 + target.confidence * 0.3}
+                        side={THREE.DoubleSide}
+                    />
+                </mesh>
+
+                {/* Core sphere (target node) */}
+                <mesh>
+                    <sphereGeometry args={[0.15, 32, 32]} />
+                    <meshStandardMaterial
+                        color={nodeColor}
+                        emissive={emissiveColor}
+                        emissiveIntensity={emissiveIntensity}
+                        roughness={0.1}
+                        metalness={0.9}
+                    />
+                </mesh>
+
+                {/* Outer glow */}
+                <mesh ref={glowRef}>
+                    <sphereGeometry args={[0.22, 32, 32]} />
+                    <meshBasicMaterial
+                        color={nodeColor}
+                        transparent
+                        opacity={0.12}
+                    />
+                </mesh>
+
+                {/* Heading Arrow (direction cone) */}
+                <group ref={arrowRef}>
+                    {/* Arrow shaft */}
+                    <mesh position={[0, 0, 0.35]} rotation={[Math.PI / 2, 0, 0]}>
+                        <cylinderGeometry args={[0.02, 0.02, 0.3, 8]} />
+                        <meshStandardMaterial
+                            color="#ffffff"
+                            emissive={nodeColor}
+                            emissiveIntensity={1.5}
+                            transparent
+                            opacity={0.9}
+                        />
+                    </mesh>
+
+                    {/* Arrow head (cone) */}
+                    <mesh position={[0, 0, 0.55]} rotation={[Math.PI / 2, 0, 0]}>
+                        <coneGeometry args={[0.06, 0.15, 8]} />
+                        <meshStandardMaterial
+                            color="#ffffff"
+                            emissive={nodeColor}
+                            emissiveIntensity={2}
+                        />
+                    </mesh>
+                </group>
+
+                {/* Point light — brightness proportional to confidence */}
+                <pointLight
+                    color={nodeColor}
+                    intensity={target.confidence * 2}
+                    distance={4}
+                    decay={2}
+                />
+            </group>
+        </>
+    );
+}

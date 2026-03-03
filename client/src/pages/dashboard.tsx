@@ -30,6 +30,7 @@ export default function Dashboard() {
     startRecording,
     stopRecording,
     trackedTarget,
+    radialTarget,
   } = useWebSocket();
 
   // Keyboard shortcuts
@@ -93,7 +94,7 @@ export default function Dashboard() {
         <main className="flex-1 p-4 overflow-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
             <div className="flex flex-col gap-4 min-h-[600px]">
-              <PointCloud3D points={pointCloud} trackedTarget={trackedTarget} className="flex-1 min-h-[300px]" />
+              <PointCloud3D points={pointCloud} radialTarget={radialTarget} className="flex-1 min-h-[300px]" />
               <AoASpectrum frame={isarFrame} className="h-48" />
             </div>
 

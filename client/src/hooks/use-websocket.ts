@@ -12,6 +12,7 @@ import type {
   DopplerFrame,
   RecordingStatus,
   TrackedTarget,
+  RadialTarget,
 } from "@shared/schema";
 
 interface WSState {
@@ -27,6 +28,7 @@ interface WSState {
   dopplerFrame: DopplerFrame | null;
   recordingStatus: RecordingStatus;
   trackedTarget: TrackedTarget | null;
+  radialTarget: RadialTarget | null;
   isConnected: boolean;
   error: string | null;
 }
@@ -89,6 +91,7 @@ export function useWebSocket() {
     dopplerFrame: null,
     recordingStatus: defaultRecordingStatus,
     trackedTarget: null,
+    radialTarget: null,
     isConnected: false,
     error: null,
   });
@@ -253,6 +256,13 @@ export function useWebSocket() {
         setState((prev) => ({
           ...prev,
           trackedTarget: message.data as TrackedTarget | null,
+        }));
+        break;
+
+      case "radialTarget":
+        setState((prev) => ({
+          ...prev,
+          radialTarget: message.data as RadialTarget | null,
         }));
         break;
 

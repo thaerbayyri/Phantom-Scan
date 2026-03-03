@@ -5,6 +5,7 @@ import type {
   SystemStatus,
   DataSource,
   CSISample,
+  RadialTarget,
 } from "@shared/schema";
 import {
   applyNulling,
@@ -83,6 +84,11 @@ export class SignalProcessingServer {
   private recordingBuffer: CSISample[] = [];
   private recordingStartTime = 0;
   private lastRecordingFile = "";
+
+  // Radial tracking state
+  private prevRadialX = 2;
+  private prevRadialZ = 0;
+  private radialAngle = 0;
 
   initialize(server: Server) {
     this.wss = new WebSocketServer({ server, path: "/ws" });
@@ -358,7 +364,23 @@ export class SignalProcessingServer {
     this.broadcast("motionStatus", motionResult);
 
     // If motion gate is ON and no motion detected, broadcast but skip rendering
+    // Still send a minimal radialTarget so the avatar stays visible (idle)
     if (this.config.motionGateEnabled && !motionResult.motionDetected) {
+      // Emit a basic radialTarget with isMoving=false so avatar goes idle
+      const fallbackTarget: RadialTarget = {
+        x: this.prevRadialX,
+        z: this.prevRadialZ,
+        r: Math.sqrt(this.prevRadialX ** 2 + this.prevRadialZ ** 2) || 2,
+        theta: Math.atan2(this.prevRadialZ, this.prevRadialX),
+        vx: 0,
+        vz: 0,
+        isMoving: false,
+        angle: this.radialAngle,
+        speed: 0,
+        confidence: 0.5,
+      };
+      this.broadcast("radialTarget", fallbackTarget);
+
       this.status.framesProcessed++;
       this.status.lastUpdate = Date.now();
       if (this.status.framesProcessed % 20 === 0) {
@@ -474,6 +496,51 @@ export class SignalProcessingServer {
           this.broadcast("gesture", gesture);
         }
       }
+
+      // ── 9. Radial Target (ESP-Centric Coordinates) ──
+      // Use MUSIC peak angle as bearing θ, tracked target distance as r
+      const thetaRad = (peak.angle * Math.PI) / 180;
+      // Distance estimate: use relative Doppler power as proxy
+      // When peak is strong (close to maxPower), target is closer; weaker = farther
+      const relPower = Math.max(0, Math.min(1, (peak.power - pThreshold) / 10));
+      const r = 0.8 + (1 - relPower) * 5; // 0.8m to 5.8m range
+
+      // Polar → Cartesian (ESP32 at origin)
+      const radX = r * Math.cos(thetaRad);
+      const radZ = r * Math.sin(thetaRad);
+
+      // Velocity vector
+      const dx = radX - this.prevRadialX;
+      const dz = radZ - this.prevRadialZ;
+      const speed = Math.sqrt(dx * dx + dz * dz) * 20; // ×sampleRate for m/s
+      const isMoving = motionResult.motionDetected && speed > 0.05;
+
+      // Direction of travel (smooth)
+      if (isMoving && speed > 0.02) {
+        const rawAngle = Math.atan2(dz, dx);
+        // Smooth angle to avoid snapping
+        const angleDiff = rawAngle - this.radialAngle;
+        const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+        this.radialAngle += wrapped * 0.3; // low-pass
+      }
+
+      this.prevRadialX = radX;
+      this.prevRadialZ = radZ;
+
+      const radialTarget: RadialTarget = {
+        x: radX,
+        z: radZ,
+        r,
+        theta: thetaRad,
+        vx: dx * 20,  // Velocity x (m/s) = delta × sampleRate
+        vz: dz * 20,  // Velocity z (m/s) = delta × sampleRate
+        isMoving,
+        angle: this.radialAngle,
+        speed,
+        confidence: trackedTarget ? trackedTarget.confidence : relPower,
+      };
+
+      this.broadcast("radialTarget", radialTarget);
     }
 
     this.status.framesProcessed++;

@@ -433,6 +433,50 @@ export class HeatmapAccumulator {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// Hampel Filter — sliding-window median + MAD outlier removal
+// Removes hardware noise spikes (integer bursts from ESP32)
+// ═══════════════════════════════════════════════════════════════════
+export class HampelFilter {
+  private buffer: number[] = [];
+  private readonly windowSize: number;
+  private readonly nSigma: number;
+  private readonly k = 1.4826; // Consistency constant for Gaussian
+
+  constructor(windowSize = 7, nSigma = 3.0) {
+    this.windowSize = windowSize;
+    this.nSigma = nSigma;
+  }
+
+  /** Push a value and return filtered output (outlier → median). */
+  push(value: number): number {
+    this.buffer.push(value);
+    if (this.buffer.length > this.windowSize * 3) {
+      this.buffer = this.buffer.slice(-this.windowSize * 2);
+    }
+
+    if (this.buffer.length < this.windowSize) return value;
+
+    const window = this.buffer.slice(-this.windowSize);
+    const sorted = [...window].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const deviations = window.map(v => Math.abs(v - median));
+    const sortedDev = [...deviations].sort((a, b) => a - b);
+    const mad = sortedDev[Math.floor(sortedDev.length / 2)];
+    const threshold = this.nSigma * this.k * mad;
+
+    if (mad > 1e-10 && Math.abs(value - median) > threshold) {
+      return median; // Replace outlier
+    }
+    return value;
+  }
+
+  reset() {
+    this.buffer = [];
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 // Background Subtractor — running-average clutter removal
 // H_dynamic(t) = H_current(t) - mean(H_window)
 // ═══════════════════════════════════════════════════════════════════
@@ -649,34 +693,9 @@ export class DopplerComputer {
 }
 
 // Data parser for CSI traces from hardware
+// NOTE: CSV/ASCII parsers removed — binary serial at high baud rates only.
+// Use the Python CSIFilterPipeline for offline CSV analysis.
 export class CSIDataParser {
-  // Parse CSV format: timestamp,h1_re,h1_im,h2_re,h2_im[,rssi]
-  static parseCSVLine(line: string): CSISample | null {
-    const parts = line.trim().split(',');
-    if (parts.length < 5) return null;
-
-    try {
-      const timestamp = parseFloat(parts[0]);
-      const h1: Complex = {
-        re: parseFloat(parts[1]),
-        im: parseFloat(parts[2]),
-      };
-      const h2: Complex = {
-        re: parseFloat(parts[3]),
-        im: parseFloat(parts[4]),
-      };
-      const rssi = parts.length > 5 ? parseFloat(parts[5]) : undefined;
-
-      if (isNaN(timestamp) || isNaN(h1.re) || isNaN(h1.im) || isNaN(h2.re) || isNaN(h2.im)) {
-        return null;
-      }
-
-      return { timestamp, h1, h2, rssi };
-    } catch {
-      return null;
-    }
-  }
-
   // Parse JSON format from ESP32/USRP
   static parseJSON(data: unknown): CSISample | null {
     try {
@@ -710,22 +729,6 @@ export class CSIDataParser {
     } catch {
       return null;
     }
-  }
-
-  // Parse bulk CSV data
-  static parseCSVBulk(csv: string): CSISample[] {
-    const lines = csv.trim().split('\n');
-    const samples: CSISample[] = [];
-
-    for (const line of lines) {
-      // Skip header
-      if (line.startsWith('timestamp') || line.startsWith('#')) continue;
-
-      const sample = this.parseCSVLine(line);
-      if (sample) samples.push(sample);
-    }
-
-    return samples;
   }
 }
 

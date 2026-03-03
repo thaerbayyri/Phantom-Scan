@@ -35,6 +35,25 @@ except ImportError:
     sys.exit(1)
 
 
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
+
+# ── ESP-Centric Coordinate Mapping ───────────────────────────────
+# DEPRECATED: The legacy global-state calculate_relative_position() has been
+# replaced by the CSIFilterPipeline class in csi_filter_pipeline.py.
+# It provides Hampel filtering, DWT denoising, DBSCAN clustering, and Kalman
+# tracking with proper encapsulated state. Import and use:
+#
+#   from csi_filter_pipeline import CSIFilterPipeline
+#   pipeline = CSIFilterPipeline()
+#   result = pipeline.process_sample(h1_re, h1_im, h2_re, h2_im, rssi)
+
+
+
 class CSISample:
     """Represents a single CSI sample with two channel estimates."""
 

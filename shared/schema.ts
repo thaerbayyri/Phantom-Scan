@@ -150,6 +150,21 @@ export const trackedTargetSchema = z.object({
 });
 export type TrackedTarget = z.infer<typeof trackedTargetSchema>;
 
+// Radial target (ESP-centric coordinate system)
+export const radialTargetSchema = z.object({
+  x: z.number(),        // Cartesian x = r·cos(θ)
+  z: z.number(),        // Cartesian z = r·sin(θ)
+  r: z.number(),        // Radial distance from ESP32 (meters)
+  theta: z.number(),    // Bearing angle in radians
+  vx: z.number(),       // Velocity x-component (m/s)
+  vz: z.number(),       // Velocity z-component (m/s)
+  isMoving: z.boolean(),
+  angle: z.number(),    // Direction of travel (radians)
+  speed: z.number(),    // Velocity magnitude
+  confidence: z.number(),
+});
+export type RadialTarget = z.infer<typeof radialTargetSchema>;
+
 // WebSocket message types
 export const wsMessageTypeSchema = z.enum([
   "status",
@@ -164,6 +179,7 @@ export const wsMessageTypeSchema = z.enum([
   "dopplerFrame",
   "recordingStatus",
   "trackedTarget",
+  "radialTarget",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
