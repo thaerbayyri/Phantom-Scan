@@ -150,6 +150,16 @@ export const trackedTargetSchema = z.object({
 });
 export type TrackedTarget = z.infer<typeof trackedTargetSchema>;
 
+// Target identity classification (human vs mechanical)
+export const targetIdentitySchema = z.object({
+  label: z.enum(["human", "mechanical", "unknown"]),
+  humanProb: z.number(),
+  mechanicalProb: z.number(),
+  periodicity: z.number().optional(),
+  highFreqRatio: z.number().optional(),
+});
+export type TargetIdentity = z.infer<typeof targetIdentitySchema>;
+
 // Radial target (ESP-centric coordinate system)
 export const radialTargetSchema = z.object({
   x: z.number(),        // Cartesian x = r·cos(θ)
@@ -162,6 +172,11 @@ export const radialTargetSchema = z.object({
   angle: z.number(),    // Direction of travel (radians)
   speed: z.number(),    // Velocity magnitude
   confidence: z.number(),
+  // Classification & ranging
+  label: z.enum(["human", "mechanical", "unknown"]).default("unknown"),
+  humanProb: z.number().default(0.5),
+  distanceCm: z.number().default(200),   // Distance in centimeters
+  wallDistance: z.number().default(5.0), // First wall reflection distance (m)
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 
@@ -180,6 +195,7 @@ export const wsMessageTypeSchema = z.enum([
   "recordingStatus",
   "trackedTarget",
   "radialTarget",
+  "targetIdentity",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 

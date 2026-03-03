@@ -18,6 +18,8 @@ import {
   BackgroundSubtractor,
   MotionGate,
   DopplerComputer,
+  MicroDopplerClassifier,
+  PDPRanger,
 } from "./signal-processing";
 import { TrackingProcessor } from "./tracking";
 import { magnitude } from "./complex";
@@ -67,6 +69,8 @@ export class SignalProcessingServer {
   private motionGate = new MotionGate();
   private dopplerComputer = new DopplerComputer();
   private trackingProcessor = new TrackingProcessor();
+  private microDopplerClassifier = new MicroDopplerClassifier();
+  private pdpRanger = new PDPRanger();
 
   // Buffers
   private sampleBuffer: { re: number; im: number }[] = [];
@@ -137,6 +141,7 @@ export class SignalProcessingServer {
     clientId: string,
     message: { type: string; data: unknown }
   ) {
+    console.log(`[WS] handleMessage from ${clientId}: ${message.type}`);
     switch (message.type) {
       case "start":
         this.startProcessing();
@@ -160,7 +165,14 @@ export class SignalProcessingServer {
   }
 
   private startProcessing() {
+    console.log(`[WS] startProcessing called, isProcessing=${this.status.isProcessing}, interval=${!!this.processingInterval}`);
     if (this.status.isProcessing) return;
+
+    // Defensively clear any stale interval
+    if (this.processingInterval) {
+      clearInterval(this.processingInterval);
+      this.processingInterval = null;
+    }
 
     this.isStopping = false;
     this.status.isProcessing = true;
@@ -181,19 +193,20 @@ export class SignalProcessingServer {
       this.processFrame();
     }, 50);
 
-    console.log("Processing started");
+    console.log("[WS] Processing started, interval created");
   }
 
   private stopProcessing() {
-    if (!this.status.isProcessing) return;
+    console.log(`[WS] stopProcessing called, isProcessing=${this.status.isProcessing}, interval=${!!this.processingInterval}`);
 
-    this.isStopping = true;
-
+    // Always try to clear the interval, even if isProcessing is false
     if (this.processingInterval) {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
+      console.log("[WS] Interval cleared");
     }
 
+    this.isStopping = true;
     this.status.isProcessing = false;
     this.status.lastUpdate = Date.now();
 
@@ -201,7 +214,7 @@ export class SignalProcessingServer {
 
     this.isStopping = false;
 
-    console.log("Processing stopped");
+    console.log("[WS] Processing stopped, isProcessing=false broadcast sent");
   }
 
   private updateConfig(updates: Partial<ProcessingConfig>) {
@@ -378,6 +391,10 @@ export class SignalProcessingServer {
         angle: this.radialAngle,
         speed: 0,
         confidence: 0.5,
+        label: "unknown",
+        humanProb: 0.5,
+        distanceCm: 200,
+        wallDistance: 5.0,
       };
       this.broadcast("radialTarget", fallbackTarget);
 
@@ -518,26 +535,42 @@ export class SignalProcessingServer {
       // Direction of travel (smooth)
       if (isMoving && speed > 0.02) {
         const rawAngle = Math.atan2(dz, dx);
-        // Smooth angle to avoid snapping
         const angleDiff = rawAngle - this.radialAngle;
         const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        this.radialAngle += wrapped * 0.3; // low-pass
+        this.radialAngle += wrapped * 0.3;
       }
 
       this.prevRadialX = radX;
       this.prevRadialZ = radZ;
+
+      // ── 10. Micro-Doppler Classification ──
+      const dynamicAmp = magnitude({
+        re: h1Proc.re - sample.h1.re,
+        im: h1Proc.im - sample.h1.im,
+      });
+      const classification = this.microDopplerClassifier.push(dynamicAmp);
+
+      // ── 11. PDP Ranging ──
+      const pdpResult = this.pdpRanger.push(h1Proc, h2Proc, sample.rssi ?? -50);
+
+      // Broadcast target identity
+      this.broadcast("targetIdentity", classification);
 
       const radialTarget: RadialTarget = {
         x: radX,
         z: radZ,
         r,
         theta: thetaRad,
-        vx: dx * 20,  // Velocity x (m/s) = delta × sampleRate
-        vz: dz * 20,  // Velocity z (m/s) = delta × sampleRate
+        vx: dx * 20,
+        vz: dz * 20,
         isMoving,
         angle: this.radialAngle,
         speed,
         confidence: trackedTarget ? trackedTarget.confidence : relPower,
+        label: classification.label,
+        humanProb: classification.humanProb,
+        distanceCm: pdpResult.distanceCm,
+        wallDistance: pdpResult.wallDistance,
       };
 
       this.broadcast("radialTarget", radialTarget);

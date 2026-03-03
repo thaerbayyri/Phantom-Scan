@@ -3,6 +3,8 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { RadialTarget, PointCloudPoint } from "@shared/schema";
 import { DirectionalNode } from "./DirectionalNode";
+import { HumanMesh } from "./HumanMesh";
+import { MachineStatic } from "./MachineStatic";
 
 // ═══════════════════════════════════════════════════════════════════
 //  Polar Grid — concentric rings + radial spokes
@@ -15,33 +17,22 @@ function PolarGrid() {
 
     return (
         <group rotation={[-Math.PI / 2, 0, 0]}>
-            {/* Concentric rings */}
             {Array.from({ length: ringCount }, (_, i) => {
                 const r = ((i + 1) / ringCount) * maxRadius;
                 const opacity = 0.15 + (i / ringCount) * 0.1;
                 return (
                     <mesh key={`ring-${i}`}>
                         <ringGeometry args={[r - 0.01, r + 0.01, 64]} />
-                        <meshBasicMaterial
-                            color="#00ffff"
-                            transparent
-                            opacity={opacity}
-                            side={THREE.DoubleSide}
-                        />
+                        <meshBasicMaterial color="#00ffff" transparent opacity={opacity} side={THREE.DoubleSide} />
                     </mesh>
                 );
             })}
 
-            {/* Radial spokes */}
             {Array.from({ length: spokeCount }, (_, i) => {
                 const angle = (i / spokeCount) * Math.PI * 2;
                 const points = [
                     new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(
-                        Math.cos(angle) * maxRadius,
-                        Math.sin(angle) * maxRadius,
-                        0
-                    ),
+                    new THREE.Vector3(Math.cos(angle) * maxRadius, Math.sin(angle) * maxRadius, 0),
                 ];
                 const geometry = new THREE.BufferGeometry().setFromPoints(points);
                 return (
@@ -51,18 +42,12 @@ function PolarGrid() {
                 );
             })}
 
-            {/* Distance labels as small rings at 1m intervals */}
             {Array.from({ length: 6 }, (_, i) => {
                 const r = i + 1;
                 return (
                     <mesh key={`label-ring-${i}`}>
                         <ringGeometry args={[r - 0.02, r + 0.02, 64]} />
-                        <meshBasicMaterial
-                            color="#00cccc"
-                            transparent
-                            opacity={0.25}
-                            side={THREE.DoubleSide}
-                        />
+                        <meshBasicMaterial color="#00cccc" transparent opacity={0.25} side={THREE.DoubleSide} />
                     </mesh>
                 );
             })}
@@ -82,49 +67,24 @@ function ESPBeacon() {
             const t = state.clock.elapsedTime;
             const pulse = 1 + Math.sin(t * 2) * 0.15;
             pulseRef.current.scale.setScalar(pulse);
-            pulseRef.current.rotation.z = t * 0.5;
         }
     });
 
     return (
         <group position={[0, 0.15, 0]}>
-            {/* Core sphere */}
             <mesh>
                 <sphereGeometry args={[0.12, 32, 32]} />
-                <meshStandardMaterial
-                    color="#00ffcc"
-                    emissive="#00ffcc"
-                    emissiveIntensity={2}
-                    roughness={0.1}
-                    metalness={0.8}
-                />
+                <meshStandardMaterial color="#00ffcc" emissive="#00ffcc" emissiveIntensity={2} roughness={0.1} metalness={0.8} />
             </mesh>
-
-            {/* Outer glow sphere */}
             <mesh>
                 <sphereGeometry args={[0.2, 32, 32]} />
-                <meshBasicMaterial
-                    color="#00ffcc"
-                    transparent
-                    opacity={0.15}
-                />
+                <meshBasicMaterial color="#00ffcc" transparent opacity={0.15} />
             </mesh>
-
-            {/* Base ring */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.15, 0]}>
                 <ringGeometry args={[0.15, 0.25, 32]} />
-                <meshBasicMaterial
-                    color="#00ffcc"
-                    transparent
-                    opacity={0.4}
-                    side={THREE.DoubleSide}
-                />
+                <meshBasicMaterial color="#00ffcc" transparent opacity={0.4} side={THREE.DoubleSide} />
             </mesh>
-
-            {/* Animated signal ripple */}
             <SignalRipple />
-
-            {/* Point light */}
             <pointLight color="#00ffcc" intensity={1.5} distance={8} decay={2} />
         </group>
     );
@@ -137,8 +97,7 @@ function SignalRipple() {
 
     useFrame((state) => {
         const t = state.clock.elapsedTime;
-        const rings = [ring1Ref, ring2Ref, ring3Ref];
-        rings.forEach((ref, i) => {
+        [ring1Ref, ring2Ref, ring3Ref].forEach((ref, i) => {
             if (ref.current) {
                 const phase = (t * 0.8 + i * 1.2) % 3.6;
                 const scale = 0.3 + phase * 1.2;
@@ -151,24 +110,63 @@ function SignalRipple() {
 
     return (
         <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.14, 0]}>
-            <mesh ref={ring1Ref}>
-                <ringGeometry args={[0.9, 1.0, 64]} />
-                <meshBasicMaterial color="#00ffcc" transparent opacity={0.3} side={THREE.DoubleSide} />
-            </mesh>
-            <mesh ref={ring2Ref}>
-                <ringGeometry args={[0.9, 1.0, 64]} />
-                <meshBasicMaterial color="#00ffcc" transparent opacity={0.2} side={THREE.DoubleSide} />
-            </mesh>
-            <mesh ref={ring3Ref}>
-                <ringGeometry args={[0.9, 1.0, 64]} />
-                <meshBasicMaterial color="#00ffcc" transparent opacity={0.1} side={THREE.DoubleSide} />
-            </mesh>
+            <mesh ref={ring1Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color="#00ffcc" transparent opacity={0.3} side={THREE.DoubleSide} /></mesh>
+            <mesh ref={ring2Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color="#00ffcc" transparent opacity={0.2} side={THREE.DoubleSide} /></mesh>
+            <mesh ref={ring3Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color="#00ffcc" transparent opacity={0.1} side={THREE.DoubleSide} /></mesh>
         </group>
     );
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Ambient Point Cloud particles (faint background context)
+//  Wall Plane — static reflection boundary
+// ═══════════════════════════════════════════════════════════════════
+
+function WallPlane({ distance }: { distance: number }) {
+    return (
+        <group position={[distance, 1.5, 0]}>
+            <mesh>
+                <planeGeometry args={[0.05, 3]} />
+                <meshStandardMaterial
+                    color="#334155"
+                    emissive="#1e293b"
+                    emissiveIntensity={0.5}
+                    transparent
+                    opacity={0.6}
+                    side={THREE.DoubleSide}
+                />
+            </mesh>
+            {/* Wall indicator strips */}
+            {Array.from({ length: 5 }, (_, i) => (
+                <mesh key={i} position={[0, -1.2 + i * 0.6, 0]}>
+                    <planeGeometry args={[0.08, 0.02]} />
+                    <meshBasicMaterial color="#64748b" transparent opacity={0.5} side={THREE.DoubleSide} />
+                </mesh>
+            ))}
+        </group>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Floor Plane — ground reference
+// ═══════════════════════════════════════════════════════════════════
+
+function FloorPlane() {
+    return (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+            <planeGeometry args={[14, 14]} />
+            <meshStandardMaterial
+                color="#0a1628"
+                transparent
+                opacity={0.4}
+                roughness={0.9}
+                metalness={0.1}
+            />
+        </mesh>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Ambient points
 // ═══════════════════════════════════════════════════════════════════
 
 function AmbientPoints({ points }: { points: PointCloudPoint[] }) {
@@ -180,12 +178,11 @@ function AmbientPoints({ points }: { points: PointCloudPoint[] }) {
         for (let i = 0; i < points.length; i++) {
             const p = points[i];
             pos[i * 3] = p.x;
-            pos[i * 3 + 1] = p.z; // Y-up
+            pos[i * 3 + 1] = p.z;
             pos[i * 3 + 2] = p.y;
 
             const normalized = Math.min(1, Math.max(0, p.amplitude / 50));
             colorObj.setHSL(0.55 + normalized * 0.1, 0.8, 0.4 + normalized * 0.3);
-
             col[i * 3] = colorObj.r;
             col[i * 3 + 1] = colorObj.g;
             col[i * 3 + 2] = colorObj.b;
@@ -198,34 +195,16 @@ function AmbientPoints({ points }: { points: PointCloudPoint[] }) {
     return (
         <points>
             <bufferGeometry>
-                <bufferAttribute
-                    attach="attributes-position"
-                    args={[positions, 3]}
-                    count={positions.length / 3}
-                    array={positions}
-                    itemSize={3}
-                />
-                <bufferAttribute
-                    attach="attributes-color"
-                    args={[colors, 3]}
-                    count={colors.length / 3}
-                    array={colors}
-                    itemSize={3}
-                />
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} count={positions.length / 3} array={positions} itemSize={3} />
+                <bufferAttribute attach="attributes-color" args={[colors, 3]} count={colors.length / 3} array={colors} itemSize={3} />
             </bufferGeometry>
-            <pointsMaterial
-                vertexColors
-                size={0.03}
-                sizeAttenuation
-                transparent
-                opacity={0.4}
-            />
+            <pointsMaterial vertexColors size={0.03} sizeAttenuation transparent opacity={0.4} />
         </points>
     );
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  RadialScene — Exported main scene
+//  RadialScene — Main scene with conditional entity rendering
 // ═══════════════════════════════════════════════════════════════════
 
 interface RadialSceneProps {
@@ -234,24 +213,33 @@ interface RadialSceneProps {
 }
 
 export function RadialScene({ radialTarget, points }: RadialSceneProps) {
+    const label = radialTarget?.label ?? "unknown";
+    const wallDistance = radialTarget?.wallDistance ?? 5.0;
+
     return (
         <>
-            {/* Environment */}
             <ambientLight intensity={0.3} />
             <directionalLight position={[5, 10, 5]} intensity={0.6} />
             <fog attach="fog" args={["#000810", 8, 18]} />
 
-            {/* Polar Grid */}
             <PolarGrid />
-
-            {/* ESP32 Center Beacon */}
             <ESPBeacon />
-
-            {/* Ambient Point Cloud */}
+            <FloorPlane />
             <AmbientPoints points={points} />
 
-            {/* Directional Target Node */}
-            {radialTarget && <DirectionalNode target={radialTarget} />}
+            {/* Wall plane at detected reflection distance */}
+            <WallPlane distance={wallDistance} />
+
+            {/* Conditional entity based on classification */}
+            {radialTarget && (
+                label === "human" ? (
+                    <HumanMesh target={radialTarget} />
+                ) : label === "mechanical" ? (
+                    <MachineStatic target={radialTarget} />
+                ) : (
+                    <DirectionalNode target={radialTarget} />
+                )
+            )}
         </>
     );
 }

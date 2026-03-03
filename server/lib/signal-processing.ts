@@ -477,6 +477,281 @@ export class HampelFilter {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// Micro-Doppler Classifier — sliding FFT human/machine discrimination
+// ═══════════════════════════════════════════════════════════════════
+export class MicroDopplerClassifier {
+  private amplitudeBuffer: number[] = [];
+  private readonly bufferSize: number;
+  private readonly sampleRate: number;
+  private lastLabel: "human" | "mechanical" | "unknown" = "unknown";
+  private lastHumanProb = 0.5;
+
+  constructor(bufferSize = 40, sampleRate = 20) {
+    this.bufferSize = bufferSize;
+    this.sampleRate = sampleRate;
+  }
+
+  /** Push dynamic amplitude; returns classification. */
+  push(amplitude: number): {
+    label: "human" | "mechanical" | "unknown";
+    humanProb: number;
+    mechanicalProb: number;
+  } {
+    this.amplitudeBuffer.push(amplitude);
+    if (this.amplitudeBuffer.length > this.bufferSize * 2) {
+      this.amplitudeBuffer = this.amplitudeBuffer.slice(-this.bufferSize);
+    }
+
+    if (this.amplitudeBuffer.length < this.bufferSize) {
+      return {
+        label: this.lastLabel,
+        humanProb: this.lastHumanProb,
+        mechanicalProb: 1 - this.lastHumanProb,
+      };
+    }
+
+    const window = this.amplitudeBuffer.slice(-this.bufferSize);
+    const mean = window.reduce((s, v) => s + v, 0) / window.length;
+    const centered = window.map(v => v - mean);
+
+    // Simple FFT via DFT (buffer is small, O(N²) is fine for N=40)
+    const N = centered.length;
+    const halfN = Math.floor(N / 2) + 1;
+    const powerSpectrum = new Float64Array(halfN);
+
+    for (let k = 0; k < halfN; k++) {
+      let re = 0, im = 0;
+      for (let n = 0; n < N; n++) {
+        const angle = (-2 * Math.PI * k * n) / N;
+        re += centered[n] * Math.cos(angle);
+        im += centered[n] * Math.sin(angle);
+      }
+      powerSpectrum[k] = re * re + im * im;
+    }
+
+    let totalPower = 0;
+    for (let k = 1; k < halfN; k++) totalPower += powerSpectrum[k];
+    totalPower += 1e-10;
+
+    // Feature 1: High-frequency ratio (>5Hz)
+    const freqPerBin = this.sampleRate / N;
+    const highFreqStartBin = Math.ceil(5.0 / freqPerBin);
+    let highFreqPower = 0;
+    for (let k = highFreqStartBin; k < halfN; k++) highFreqPower += powerSpectrum[k];
+    const highFreqRatio = highFreqPower / totalPower;
+
+    // Feature 2: Periodicity via autocorrelation peak
+    let autocorrMax = 0;
+    const autocorr0 = centered.reduce((s, v) => s + v * v, 0);
+    if (autocorr0 > 1e-10) {
+      for (let lag = 3; lag < Math.floor(N / 2); lag++) {
+        let sum = 0;
+        for (let i = 0; i < N - lag; i++) sum += centered[i] * centered[i + lag];
+        const normalized = sum / autocorr0;
+        if (normalized > autocorrMax) autocorrMax = normalized;
+      }
+    }
+
+    // Classification
+    let mechanicalScore = 0;
+    mechanicalScore += Math.min(1, highFreqRatio * 3) * 0.5;
+    mechanicalScore += Math.min(1, autocorrMax * 1.5) * 0.5;
+
+    const humanProb = Math.max(0, Math.min(1, 1 - mechanicalScore));
+    const label: "human" | "mechanical" | "unknown" =
+      humanProb > 0.65 ? "human" : humanProb < 0.35 ? "mechanical" : "unknown";
+
+    this.lastLabel = label;
+    this.lastHumanProb = humanProb;
+
+    return { label, humanProb, mechanicalProb: 1 - humanProb };
+  }
+
+  reset() {
+    this.amplitudeBuffer = [];
+    this.lastLabel = "unknown";
+    this.lastHumanProb = 0.5;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PDP Ranger — IFFT Power Delay Profile distance estimation
+// ═══════════════════════════════════════════════════════════════════
+export class PDPRanger {
+  private static readonly C = 3e8;         // Speed of light
+  private static readonly BW = 20e6;       // 20MHz Wi-Fi bandwidth
+  private readonly nFFT: number;
+  private readonly peakThreshold: number;
+  private csiBuffer: { re: number; im: number }[][] = [];
+  private readonly bufferSize = 10;
+  private lastDistanceCm = 200;
+  private lastWallDistance = 5.0;
+  // EMA smoothing state
+  private emaDistanceCm = 200;
+  private emaWallDistance = 5.0;
+  private readonly emaAlpha = 0.25; // Smoothing factor (lower = smoother)
+
+  constructor(nFFT = 64, peakThreshold = 0.3) {
+    this.nFFT = nFFT;
+    this.peakThreshold = peakThreshold;
+  }
+
+  /** Parabolic interpolation: given pdp[left], pdp[center], pdp[right], return fractional bin offset. */
+  private parabolicPeak(left: number, center: number, right: number): number {
+    const denom = 2 * (2 * center - left - right);
+    if (Math.abs(denom) < 1e-12) return 0;
+    return (left - right) / denom; // Returns offset ∈ [-0.5, 0.5]
+  }
+
+  /** RSSI-based log-distance estimate (calibrated for ESP32 at 2.4 GHz). */
+  private rssiToMeters(rssi: number): number {
+    // Free-space path loss: d = 10^((P_ref - RSSI) / (10n))
+    // P_ref = -30 dBm at 1m, n = 2.5 (typical indoor)
+    const d = Math.pow(10, (-30 - rssi) / 25);
+    return Math.max(0.3, Math.min(8, d));
+  }
+
+  /** Push dual-path CSI, return distance in cm + wall distance in m. */
+  push(
+    h1: Complex,
+    h2: Complex,
+    rssi: number = -50,
+  ): { distanceCm: number; wallDistance: number } {
+    // Build mini CSI vector
+    const crossRe = h1.re * h2.re + h1.im * h2.im;
+    const crossIm = h1.im * h2.re - h1.re * h2.im;
+    const sumRe = h1.re + h2.re;
+    const sumIm = h1.im + h2.im;
+
+    const csiVec = [
+      { re: h1.re, im: h1.im },
+      { re: h2.re, im: h2.im },
+      { re: crossRe, im: crossIm },
+      { re: sumRe, im: sumIm },
+    ];
+
+    this.csiBuffer.push(csiVec);
+    if (this.csiBuffer.length > this.bufferSize) {
+      this.csiBuffer = this.csiBuffer.slice(-this.bufferSize);
+    }
+
+    const rssiDist = this.rssiToMeters(rssi);
+
+    if (this.csiBuffer.length < 3) {
+      // RSSI fallback
+      return { distanceCm: Math.round(rssiDist * 100), wallDistance: this.lastWallDistance };
+    }
+
+    // Average CSI across recent frames
+    const vecLen = csiVec.length;
+    const avgRe = new Float64Array(vecLen);
+    const avgIm = new Float64Array(vecLen);
+    for (const vec of this.csiBuffer) {
+      for (let i = 0; i < vecLen; i++) {
+        avgRe[i] += vec[i].re;
+        avgIm[i] += vec[i].im;
+      }
+    }
+    const count = this.csiBuffer.length;
+    for (let i = 0; i < vecLen; i++) {
+      avgRe[i] /= count;
+      avgIm[i] /= count;
+    }
+
+    // Zero-pad + IFFT
+    const N = this.nFFT;
+    const pdp = new Float64Array(N);
+
+    for (let n = 0; n < N; n++) {
+      let re = 0, im = 0;
+      for (let k = 0; k < vecLen; k++) {
+        const angle = (2 * Math.PI * k * n) / N;
+        re += avgRe[k] * Math.cos(angle) - avgIm[k] * Math.sin(angle);
+        im += avgRe[k] * Math.sin(angle) + avgIm[k] * Math.cos(angle);
+      }
+      pdp[n] = re * re + im * im;
+    }
+
+    // Normalize
+    let pdpMax = 0;
+    for (let i = 0; i < N; i++) if (pdp[i] > pdpMax) pdpMax = pdp[i];
+    if (pdpMax < 1e-10) {
+      return { distanceCm: this.lastDistanceCm, wallDistance: this.lastWallDistance };
+    }
+    for (let i = 0; i < N; i++) pdp[i] /= pdpMax;
+
+    // Compute noise floor (median of lower half of PDP values)
+    const sortedPdp = Array.from(pdp).sort((a, b) => a - b);
+    const noiseFloor = sortedPdp[Math.floor(sortedPdp.length * 0.6)] * 2 + 0.05;
+    const dynamicThreshold = Math.max(this.peakThreshold, noiseFloor);
+
+    // Distance per bin (using Wi-Fi channel bandwidth)
+    const distPerBin = PDPRanger.C / (2 * PDPRanger.BW * N / vecLen);
+
+    // Find peaks with parabolic interpolation for sub-bin accuracy
+    const peaks: { exactBin: number; power: number }[] = [];
+    const halfN = Math.floor(N / 2);
+    for (let i = 1; i < halfN - 1; i++) {
+      if (pdp[i] > dynamicThreshold && pdp[i] > pdp[i - 1] && pdp[i] >= pdp[i + 1]) {
+        // Parabolic interpolation for sub-bin precision
+        const offset = this.parabolicPeak(pdp[i - 1], pdp[i], pdp[i + 1]);
+        const exactBin = i + offset;
+        peaks.push({ exactBin, power: pdp[i] });
+      }
+    }
+
+    let rawDistanceCm: number;
+
+    if (peaks.length > 0) {
+      // Use strongest (highest power) peak for primary target
+      peaks.sort((a, b) => b.power - a.power);
+      const primaryPeak = peaks[0];
+
+      const pdpDist = Math.max(0.3, Math.min(8, primaryPeak.exactBin * distPerBin));
+
+      // Blend PDP with RSSI: when PDP has strong peak (power > 0.7), trust PDP more.
+      // When weak, blend more with RSSI for stability.
+      const pdpWeight = Math.min(0.85, primaryPeak.power * 0.9);
+      const blendedDist = pdpDist * pdpWeight + rssiDist * (1 - pdpWeight);
+
+      rawDistanceCm = Math.round(blendedDist * 100 * 10) / 10;
+
+      // Wall distance: use the last peak (farthest)
+      if (peaks.length > 1) {
+        const farthest = peaks.reduce((acc, p) => p.exactBin > acc.exactBin ? p : acc);
+        const wallD = farthest.exactBin * distPerBin;
+        const newWallDist = Math.max(blendedDist + 0.5, Math.min(10, wallD));
+        // EMA smooth wall distance
+        this.emaWallDistance += this.emaAlpha * (newWallDist - this.emaWallDistance);
+        this.lastWallDistance = Math.round(this.emaWallDistance * 100) / 100;
+      }
+    } else {
+      // RSSI fallback
+      rawDistanceCm = Math.round(rssiDist * 100 * 10) / 10;
+    }
+
+    // EMA smoothing on distance — prevents noisy jumps
+    this.emaDistanceCm += this.emaAlpha * (rawDistanceCm - this.emaDistanceCm);
+    this.lastDistanceCm = Math.round(this.emaDistanceCm * 10) / 10;
+
+    return {
+      distanceCm: this.lastDistanceCm,
+      wallDistance: this.lastWallDistance,
+    };
+  }
+
+  reset() {
+    this.csiBuffer = [];
+    this.lastDistanceCm = 200;
+    this.lastWallDistance = 5.0;
+    this.emaDistanceCm = 200;
+    this.emaWallDistance = 5.0;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 // Background Subtractor — running-average clutter removal
 // H_dynamic(t) = H_current(t) - mean(H_window)
 // ═══════════════════════════════════════════════════════════════════

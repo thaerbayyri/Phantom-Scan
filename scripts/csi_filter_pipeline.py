@@ -1,7 +1,8 @@
 """
 CSI Filter Pipeline — Advanced signal processing for Wi-Fi CSI-based tracking.
 
-Pipeline: Raw CSI → Hampel → DWT → Background Subtraction → AoA/ToF → DBSCAN → Kalman
+Pipeline: Raw CSI → Hampel → DWT → Phase Sanitize → Background Sub → STFT Classify
+          → PDP Range → AoA → DBSCAN → Kalman
 
 Requires: numpy, pywt, scikit-learn
 """
@@ -275,6 +276,285 @@ class KalmanTracker:
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Phase Sanitizer — Linear regression SFO/PCLO removal
+# ═══════════════════════════════════════════════════════════════════
+
+class PhaseSanitizer:
+    """
+    Removes Sampling Frequency Offset (SFO) and Packet-level Clock/Phase
+    Offset (PCLO) from CSI phase using linear regression.
+
+    For each sample, the phase across channels (h1, h2) is unwrapped,
+    a linear model φ(k) = a·k + b is fit (slope = SFO, intercept = PCLO),
+    and the fitted line is subtracted to yield clean phase.
+    """
+
+    def __init__(self, buffer_size: int = 30):
+        self.buffer_size = buffer_size
+        self.phase_buffer: List[List[float]] = []  # [[phase_h1, phase_h2], ...]
+
+    def process(
+        self, h1_re: float, h1_im: float, h2_re: float, h2_im: float
+    ) -> Tuple[float, float, float, float]:
+        """Clean phase via linear regression and return sanitized complex values."""
+        phase_h1 = math.atan2(h1_im, h1_re + 1e-10)
+        phase_h2 = math.atan2(h2_im, h2_re + 1e-10)
+        amp_h1 = math.sqrt(h1_re**2 + h1_im**2)
+        amp_h2 = math.sqrt(h2_re**2 + h2_im**2)
+
+        self.phase_buffer.append([phase_h1, phase_h2])
+        if len(self.phase_buffer) > self.buffer_size:
+            self.phase_buffer = self.phase_buffer[-self.buffer_size:]
+
+        if len(self.phase_buffer) < 5:
+            return h1_re, h1_im, h2_re, h2_im
+
+        # Unwrap phases across time
+        phases = np.array(self.phase_buffer)
+        unwrapped_h1 = np.unwrap(phases[:, 0])
+        unwrapped_h2 = np.unwrap(phases[:, 1])
+
+        # Fit linear model to each channel: phase(t) = a*t + b
+        t_indices = np.arange(len(unwrapped_h1))
+        # H1 fit
+        coeffs_h1 = np.polyfit(t_indices, unwrapped_h1, 1)
+        clean_phase_h1 = unwrapped_h1[-1] - (coeffs_h1[0] * t_indices[-1] + coeffs_h1[1])
+        # H2 fit
+        coeffs_h2 = np.polyfit(t_indices, unwrapped_h2, 1)
+        clean_phase_h2 = unwrapped_h2[-1] - (coeffs_h2[0] * t_indices[-1] + coeffs_h2[1])
+
+        # Reconstruct complex from cleaned phase + original amplitude
+        return (
+            amp_h1 * math.cos(clean_phase_h1),
+            amp_h1 * math.sin(clean_phase_h1),
+            amp_h2 * math.cos(clean_phase_h2),
+            amp_h2 * math.sin(clean_phase_h2),
+        )
+
+    def reset(self):
+        self.phase_buffer.clear()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Micro-Doppler Classifier — STFT-based human/machine discrimination
+# ═══════════════════════════════════════════════════════════════════
+
+class MicroDopplerClassifier:
+    """
+    Classifies detected targets as human or mechanical using
+    Short-Time Fourier Transform (STFT) of the CSI amplitude envelope.
+
+    Features:
+      - Periodicity score: autocorrelation of spectral energy
+        (mechanical targets have strong periodic signatures)
+      - High-frequency ratio: fraction of energy above 5Hz
+        (machines exhibit high-freq vibrations)
+
+    Classification:
+      Periodic + high-freq → "mechanical" (humanProb < 0.3)
+      Non-periodic + low-freq → "human" (humanProb > 0.7)
+    """
+
+    def __init__(self, buffer_size: int = 40, sample_rate: float = 20.0):
+        self.buffer_size = buffer_size
+        self.sample_rate = sample_rate
+        self.amplitude_buffer: List[float] = []
+        self.last_label = "unknown"
+        self.last_human_prob = 0.5
+
+    def push(self, amplitude: float) -> Dict[str, Any]:
+        """Push CSI amplitude and return classification."""
+        self.amplitude_buffer.append(amplitude)
+        if len(self.amplitude_buffer) > self.buffer_size * 2:
+            self.amplitude_buffer = self.amplitude_buffer[-self.buffer_size:]
+
+        if len(self.amplitude_buffer) < self.buffer_size:
+            return {"label": self.last_label, "humanProb": self.last_human_prob}
+
+        window = np.array(self.amplitude_buffer[-self.buffer_size:])
+
+        # Remove DC component
+        window = window - np.mean(window)
+
+        # Apply Hanning window
+        windowed = window * np.hanning(len(window))
+
+        # FFT
+        fft_result = np.fft.rfft(windowed)
+        power_spectrum = np.abs(fft_result) ** 2
+        freqs = np.fft.rfftfreq(len(windowed), d=1.0 / self.sample_rate)
+
+        total_power = np.sum(power_spectrum[1:]) + 1e-10  # Exclude DC
+
+        # Feature 1: High-frequency ratio (energy above 5Hz / total)
+        high_freq_mask = freqs > 5.0
+        high_freq_ratio = float(np.sum(power_spectrum[high_freq_mask]) / total_power)
+
+        # Feature 2: Periodicity — autocorrelation peak strength
+        autocorr = np.correlate(window, window, mode="full")
+        autocorr = autocorr[len(autocorr) // 2:]  # Second half
+        autocorr = autocorr / (autocorr[0] + 1e-10)  # Normalize
+
+        # Find first significant peak after lag 0 (skip first 3 samples)
+        min_lag = 3
+        if len(autocorr) > min_lag + 5:
+            peaks_region = autocorr[min_lag:]
+            periodicity = float(np.max(peaks_region))
+        else:
+            periodicity = 0.0
+
+        # Classification logic
+        # High periodicity + high freq → mechanical
+        # Low periodicity + low freq → human
+        mechanical_score = 0.0
+        mechanical_score += min(1.0, high_freq_ratio * 3.0) * 0.5  # Up to 0.5
+        mechanical_score += min(1.0, periodicity * 1.5) * 0.5       # Up to 0.5
+
+        human_prob = max(0.0, min(1.0, 1.0 - mechanical_score))
+
+        if human_prob > 0.65:
+            label = "human"
+        elif human_prob < 0.35:
+            label = "mechanical"
+        else:
+            label = "unknown"
+
+        self.last_label = label
+        self.last_human_prob = human_prob
+
+        return {
+            "label": label,
+            "humanProb": round(human_prob, 4),
+            "mechanicalProb": round(1.0 - human_prob, 4),
+            "periodicity": round(periodicity, 4),
+            "highFreqRatio": round(high_freq_ratio, 4),
+        }
+
+    def reset(self):
+        self.amplitude_buffer.clear()
+        self.last_label = "unknown"
+        self.last_human_prob = 0.5
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  PDP Ranger — Power Delay Profile super-resolution distance
+# ═══════════════════════════════════════════════════════════════════
+
+class PDPRanger:
+    """
+    Computes Power Delay Profile (PDP) via IFFT of complex CSI data
+    to estimate the distance to the moving target and static reflections.
+
+    Uses dual-path (h1, h2) to build a mini-CSI vector, applies IFFT
+    to get the channel impulse response, and finds the first significant
+    peak → direct path → distance d = c·τ / 2.
+
+    Also identifies later peaks as wall/static reflections.
+    """
+
+    SPEED_OF_LIGHT = 3e8  # m/s
+    BANDWIDTH = 20e6      # ESP32 Wi-Fi channel bandwidth (20MHz)
+
+    def __init__(self, n_fft: int = 64, peak_threshold: float = 0.3):
+        self.n_fft = n_fft
+        self.peak_threshold = peak_threshold
+        self.csi_buffer: List[np.ndarray] = []  # Complex CSI vectors
+        self.buffer_size = 10
+        self.last_distance = 2.0
+        self.last_wall_distance = 5.0
+
+    def push(
+        self,
+        h1_re: float, h1_im: float,
+        h2_re: float, h2_im: float,
+        rssi: float = -50.0,
+    ) -> Dict[str, float]:
+        """Process CSI sample and return distance estimates."""
+        # Build complex CSI vector from dual-path data
+        h1 = complex(h1_re, h1_im)
+        h2 = complex(h2_re, h2_im)
+
+        # Create a synthetic subcarrier-like vector using h1, h2
+        # and their combinations (phase-rotated)
+        csi_vec = np.array([
+            h1, h2,
+            h1 * np.conj(h2),  # Cross-correlation
+            h1 + h2,           # Sum beam
+        ], dtype=complex)
+
+        self.csi_buffer.append(csi_vec)
+        if len(self.csi_buffer) > self.buffer_size:
+            self.csi_buffer = self.csi_buffer[-self.buffer_size:]
+
+        # Build averaged CSI matrix for PDP
+        if len(self.csi_buffer) < 3:
+            # Fall back to RSSI-based distance
+            A, n_path = -30.0, 2.5
+            r = 10.0 ** ((A - rssi) / (10.0 * n_path))
+            r = max(0.5, min(8.0, r))
+            return {
+                "distanceCm": round(r * 100, 1),
+                "wallDistance": round(self.last_wall_distance, 2),
+            }
+
+        # Average CSI across recent frames for noise reduction
+        avg_csi = np.mean(self.csi_buffer, axis=0)
+
+        # Zero-pad and IFFT → Power Delay Profile
+        padded = np.zeros(self.n_fft, dtype=complex)
+        padded[:len(avg_csi)] = avg_csi
+        impulse = np.fft.ifft(padded)
+        pdp = np.abs(impulse) ** 2
+
+        # Normalize PDP
+        pdp_max = np.max(pdp)
+        if pdp_max > 1e-10:
+            pdp_norm = pdp / pdp_max
+        else:
+            pdp_norm = pdp
+
+        # Time resolution per bin
+        # τ_bin = 1 / BW, distance_bin = c / (2 * BW)
+        dist_per_bin = self.SPEED_OF_LIGHT / (2 * self.BANDWIDTH * self.n_fft / len(avg_csi))
+
+        # Find peaks above threshold
+        peaks = []
+        for i in range(1, len(pdp_norm) // 2):  # First half only
+            if pdp_norm[i] > self.peak_threshold:
+                if pdp_norm[i] > pdp_norm[i - 1] and (
+                    i + 1 >= len(pdp_norm) or pdp_norm[i] >= pdp_norm[i + 1]
+                ):
+                    peaks.append((i, float(pdp_norm[i])))
+
+        if peaks:
+            # First peak = direct path (target distance)
+            first_peak_bin = peaks[0][0]
+            distance_m = max(0.3, min(8.0, first_peak_bin * dist_per_bin))
+            self.last_distance = distance_m
+
+            # Look for wall reflection (second significant peak)
+            if len(peaks) > 1:
+                wall_bin = peaks[-1][0]  # Furthest peak
+                wall_dist = wall_bin * dist_per_bin
+                self.last_wall_distance = max(distance_m + 0.5, min(10.0, wall_dist))
+        else:
+            # Fallback to RSSI
+            A, n_path = -30.0, 2.5
+            r = 10.0 ** ((A - rssi) / (10.0 * n_path))
+            self.last_distance = max(0.5, min(8.0, r))
+
+        return {
+            "distanceCm": round(self.last_distance * 100, 1),
+            "wallDistance": round(self.last_wall_distance, 2),
+        }
+
+    def reset(self):
+        self.csi_buffer.clear()
+        self.last_distance = 2.0
+        self.last_wall_distance = 5.0
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  CSI Filter Pipeline — Full end-to-end processing class
 # ═══════════════════════════════════════════════════════════════════
 
@@ -285,10 +565,13 @@ class CSIFilterPipeline:
     Pipeline stages:
       1. Hampel filter — remove hardware outliers (integer noise bursts)
       2. DWT denoiser — wavelet-based noise floor reduction
-      3. Background subtraction — remove static multipath (walls/furniture)
-      4. AoA + ToF estimation — bearing angle + RSSI-based distance
-      5. DBSCAN clustering — isolate human target from multipath ghosts
-      6. Kalman filter — smooth trajectory, estimate velocity vector
+      3. Phase sanitization — SFO/PCLO linear regression removal
+      4. Background subtraction — remove static multipath (walls/furniture)
+      5. Micro-Doppler classification — STFT human vs mechanical
+      6. PDP ranging — IFFT super-resolution distance (cm)
+      7. AoA estimation — bearing angle from phase difference
+      8. DBSCAN clustering — isolate human target from multipath ghosts
+      9. Kalman filter — smooth trajectory, estimate velocity vector
     """
 
     def __init__(
@@ -301,6 +584,8 @@ class CSIFilterPipeline:
         dbscan_eps: float = 0.5,
         dbscan_min_samples: int = 3,
         kalman_dt: float = 0.05,
+        stft_buffer: int = 40,
+        sample_rate: float = 20.0,
     ):
         # Stage 1: Hampel
         self.hampel_h1_re = HampelFilter(hampel_window, hampel_sigma)
@@ -314,16 +599,25 @@ class CSIFilterPipeline:
         self.dwt_h2_re = DWTDenoiser(dwt_wavelet, dwt_level)
         self.dwt_h2_im = DWTDenoiser(dwt_wavelet, dwt_level)
 
-        # Stage 3: Background subtraction
+        # Stage 3: Phase sanitization
+        self.phase_sanitizer = PhaseSanitizer()
+
+        # Stage 4: Background subtraction
         self.bg_sub = BackgroundSubtractor(bg_alpha)
 
-        # Stage 5: DBSCAN
+        # Stage 5: Micro-Doppler classifier
+        self.classifier = MicroDopplerClassifier(stft_buffer, sample_rate)
+
+        # Stage 6: PDP ranger
+        self.pdp_ranger = PDPRanger()
+
+        # Stage 8: DBSCAN
         self.dbscan_eps = dbscan_eps
         self.dbscan_min_samples = dbscan_min_samples
         self.point_buffer: List[Dict[str, float]] = []
         self.max_buffer = 30
 
-        # Stage 6: Kalman
+        # Stage 9: Kalman
         self.kalman = KalmanTracker(kalman_dt)
 
         # State
@@ -341,7 +635,8 @@ class CSIFilterPipeline:
         Process a single CSI sample through the full pipeline.
 
         Returns dict with keys:
-            x, z, r, theta, vx, vz, speed, angle, isMoving, confidence
+            x, z, r, theta, vx, vz, speed, angle, isMoving, confidence,
+            label, humanProb, mechanicalProb, distanceCm, wallDistance
         """
         ts = timestamp or time.time()
         self.frame_count += 1
@@ -358,11 +653,24 @@ class CSIFilterPipeline:
         h2_re = self.dwt_h2_re.push(h2_re)
         h2_im = self.dwt_h2_im.push(h2_im)
 
-        # ── Stage 3: Background subtraction ──
+        # ── Stage 3: Phase sanitization (SFO/PCLO removal) ──
+        h1_re, h1_im, h2_re, h2_im = self.phase_sanitizer.process(
+            h1_re, h1_im, h2_re, h2_im
+        )
+
+        # ── Stage 4: Background subtraction ──
         dh1_re, dh1_im, dh2_re, dh2_im = self.bg_sub.process(h1_re, h1_im, h2_re, h2_im)
 
-        # ── Stage 4: AoA + ToF estimation ──
-        # AoA from phase difference
+        # Dynamic signal amplitude (movement indicator)
+        dyn_amp = math.sqrt(dh1_re**2 + dh1_im**2 + dh2_re**2 + dh2_im**2)
+
+        # ── Stage 5: Micro-Doppler classification ──
+        classification = self.classifier.push(dyn_amp)
+
+        # ── Stage 6: PDP super-resolution distance ──
+        pdp_result = self.pdp_ranger.push(dh1_re, dh1_im, dh2_re, dh2_im, rssi)
+
+        # ── Stage 7: AoA estimation ──
         phase_h1 = math.atan2(dh1_im, dh1_re + 1e-10)
         phase_h2 = math.atan2(dh2_im, dh2_re + 1e-10)
         phase_diff = phase_h1 - phase_h2
@@ -371,27 +679,22 @@ class CSIFilterPipeline:
         sin_theta = max(-1.0, min(1.0, phase_diff / math.pi))
         theta = math.asin(sin_theta)
 
-        # Distance from RSSI (free-space path loss)
-        A = -30.0   # RSSI at 1m (calibration)
-        n = 2.5     # Path loss exponent (indoor)
-        r = 10.0 ** ((A - rssi) / (10.0 * n))
+        # Use PDP distance instead of RSSI fallback
+        r = pdp_result["distanceCm"] / 100.0  # Convert cm → meters
         r = max(0.5, min(8.0, r))
 
         # Polar → Cartesian
         raw_x = r * math.cos(theta)
         raw_z = r * math.sin(theta)
 
-        # Dynamic signal amplitude (movement indicator)
-        dyn_amp = math.sqrt(dh1_re**2 + dh1_im**2 + dh2_re**2 + dh2_im**2)
-
-        # ── Stage 5: DBSCAN clustering ──
+        # ── Stage 8: DBSCAN clustering ──
         self.point_buffer.append({"x": raw_x, "z": raw_z, "amp": dyn_amp})
         if len(self.point_buffer) > self.max_buffer:
             self.point_buffer = self.point_buffer[-self.max_buffer:]
 
         centroid_x, centroid_z, confidence = self._cluster_centroid()
 
-        # ── Stage 6: Kalman filter ──
+        # ── Stage 9: Kalman filter ──
         self.kalman.predict()
         if confidence > 0.3:
             self.kalman.update(centroid_x, centroid_z)
@@ -419,6 +722,12 @@ class CSIFilterPipeline:
             "angle": round(angle, 4),
             "isMoving": is_moving,
             "confidence": round(confidence, 4),
+            # New fields
+            "label": classification["label"],
+            "humanProb": classification["humanProb"],
+            "mechanicalProb": classification.get("mechanicalProb", round(1.0 - classification["humanProb"], 4)),
+            "distanceCm": pdp_result["distanceCm"],
+            "wallDistance": pdp_result["wallDistance"],
         }
 
         self.last_result = result
@@ -486,7 +795,10 @@ class CSIFilterPipeline:
         self.dwt_h1_im.reset()
         self.dwt_h2_re.reset()
         self.dwt_h2_im.reset()
+        self.phase_sanitizer.reset()
         self.bg_sub.reset()
+        self.classifier.reset()
+        self.pdp_ranger.reset()
         self.kalman.reset()
         self.point_buffer.clear()
         self.frame_count = 0

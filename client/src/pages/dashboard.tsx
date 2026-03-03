@@ -8,6 +8,9 @@ import { AoASpectrum } from "@/components/dashboard/aoa-spectrum";
 import { DopplerSpectrogram } from "../components/dashboard/doppler-spectrogram";
 import { GestureLog } from "@/components/dashboard/gesture-log";
 import { MetricsPanel } from "@/components/dashboard/metrics-panel";
+import { TargetIdentityCard } from "@/components/dashboard/target-identity-card";
+import { DistanceMeter } from "@/components/dashboard/distance-meter";
+import { ResizableWrapper } from "@/components/ui/resizable-wrapper";
 import type { DataSource } from "@shared/schema";
 
 export default function Dashboard() {
@@ -31,6 +34,7 @@ export default function Dashboard() {
     stopRecording,
     trackedTarget,
     radialTarget,
+    targetIdentity,
   } = useWebSocket();
 
   // Keyboard shortcuts
@@ -92,20 +96,34 @@ export default function Dashboard() {
         <ControlPanel config={config} onConfigChange={updateConfig} />
 
         <main className="flex-1 p-4 overflow-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
-            <div className="flex flex-col gap-4 min-h-[600px]">
-              <PointCloud3D points={pointCloud} radialTarget={radialTarget} className="flex-1 min-h-[300px]" />
-              <AoASpectrum frame={isarFrame} className="h-48" />
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
+            {/* Left column — 3D Scene + Spectrum */}
+            <div className="flex flex-col gap-4">
+              <PointCloud3D points={pointCloud} radialTarget={radialTarget} className="flex-1 min-h-[320px] resizable-card" />
+              <AoASpectrum frame={isarFrame} className="h-36 resizable-v" />
             </div>
 
-            <div className="flex flex-col gap-4 min-h-[600px]">
+            {/* Right column — Identity, Distance, Heatmap, Doppler, Gesture */}
+            <div className="flex flex-col gap-3">
+              {/* Target Identity + Distance Meter — top priority */}
+              <div className="grid grid-cols-2 gap-3">
+                <TargetIdentityCard identity={targetIdentity ?? null} />
+                <DistanceMeter
+                  distanceCm={radialTarget?.distanceCm ?? 200}
+                  wallDistance={radialTarget?.wallDistance ?? 5.0}
+                />
+              </div>
               <MetricsPanel
                 channelEstimate={channelEstimate}
                 isarFrame={isarFrame}
               />
-              <AoAHeatmap data={heatmap} className="flex-1 min-h-[200px]" />
-              <DopplerSpectrogram frame={dopplerFrame} className="h-48" />
-              <GestureLog gestures={gestures} className="h-48" />
+              <ResizableWrapper defaultHeight={200} minHeight={100} maxHeight={500}>
+                <AoAHeatmap data={heatmap} className="h-full" />
+              </ResizableWrapper>
+              <ResizableWrapper defaultHeight={180} minHeight={100} maxHeight={500}>
+                <DopplerSpectrogram frame={dopplerFrame} className="h-full" />
+              </ResizableWrapper>
+              <GestureLog gestures={gestures} className="h-28 resizable-v" />
             </div>
           </div>
         </main>

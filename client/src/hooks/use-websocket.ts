@@ -13,6 +13,7 @@ import type {
   RecordingStatus,
   TrackedTarget,
   RadialTarget,
+  TargetIdentity,
 } from "@shared/schema";
 
 interface WSState {
@@ -29,6 +30,7 @@ interface WSState {
   recordingStatus: RecordingStatus;
   trackedTarget: TrackedTarget | null;
   radialTarget: RadialTarget | null;
+  targetIdentity: TargetIdentity | null;
   isConnected: boolean;
   error: string | null;
 }
@@ -92,6 +94,7 @@ export function useWebSocket() {
     recordingStatus: defaultRecordingStatus,
     trackedTarget: null,
     radialTarget: null,
+    targetIdentity: null,
     isConnected: false,
     error: null,
   });
@@ -142,15 +145,32 @@ export function useWebSocket() {
       }));
     }
   }, []);
+  // Cooldown to prevent server status race condition on start/stop
+  const pendingToggleRef = useRef(0);
 
   const handleMessage = (message: { type: string; data: unknown }) => {
     switch (message.type) {
-      case "status":
-        setState((prev) => ({
-          ...prev,
-          status: message.data as SystemStatus,
-        }));
+      case "status": {
+        // If we recently pressed start/stop, ignore server status for 1s
+        // to prevent the server's in-flight broadcasts from reverting our UI
+        const now = Date.now();
+        if (now - pendingToggleRef.current < 1000) {
+          // Still update non-isProcessing fields
+          setState((prev) => ({
+            ...prev,
+            status: {
+              ...(message.data as SystemStatus),
+              isProcessing: prev.status.isProcessing, // keep our local value
+            },
+          }));
+        } else {
+          setState((prev) => ({
+            ...prev,
+            status: message.data as SystemStatus,
+          }));
+        }
         break;
+      }
 
       case "csiFrame": {
         const estimate = message.data as ChannelEstimate;
@@ -266,6 +286,13 @@ export function useWebSocket() {
         }));
         break;
 
+      case "targetIdentity":
+        setState((prev) => ({
+          ...prev,
+          targetIdentity: message.data as TargetIdentity,
+        }));
+        break;
+
       case "error":
         setState((prev) => ({
           ...prev,
@@ -293,11 +320,23 @@ export function useWebSocket() {
   );
 
   const startProcessing = useCallback(() => {
+    console.log("[WS] startProcessing called");
+    pendingToggleRef.current = Date.now();
     sendMessage("start", null);
+    setState((prev) => ({
+      ...prev,
+      status: { ...prev.status, isProcessing: true },
+    }));
   }, [sendMessage]);
 
   const stopProcessing = useCallback(() => {
+    console.log("[WS] stopProcessing called");
+    pendingToggleRef.current = Date.now();
     sendMessage("stop", null);
+    setState((prev) => ({
+      ...prev,
+      status: { ...prev.status, isProcessing: false },
+    }));
   }, [sendMessage]);
 
   const setDataSource = useCallback(
