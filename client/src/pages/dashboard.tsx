@@ -6,7 +6,6 @@ import { PointCloud3D } from "@/components/dashboard/point-cloud-3d";
 import { AoAHeatmap } from "@/components/dashboard/aoa-heatmap";
 import { AoASpectrum } from "@/components/dashboard/aoa-spectrum";
 import { DopplerSpectrogram } from "../components/dashboard/doppler-spectrogram";
-import { GestureLog } from "@/components/dashboard/gesture-log";
 import { MetricsPanel } from "@/components/dashboard/metrics-panel";
 import { TargetIdentityCard } from "@/components/dashboard/target-identity-card";
 import { DistanceMeter } from "@/components/dashboard/distance-meter";
@@ -19,7 +18,6 @@ export default function Dashboard() {
     channelEstimate,
     isarFrame,
     pointCloud,
-    gestures,
     heatmap,
     config,
     dopplerFrame,
@@ -123,7 +121,6 @@ export default function Dashboard() {
               <ResizableWrapper defaultHeight={180} minHeight={100} maxHeight={500}>
                 <DopplerSpectrogram frame={dopplerFrame} className="h-full" />
               </ResizableWrapper>
-              <GestureLog gestures={gestures} className="h-28 resizable-v" />
             </div>
           </div>
         </main>

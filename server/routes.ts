@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { signalServer } from "./lib/websocket";
+import { sessionStore } from "./lib/session-store";
 import type { ProcessingConfig, CSISample } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
@@ -125,6 +126,62 @@ export async function registerRoutes(
       if (!res.headersSent) {
         res.status(500).json({ error: "Download failed", details: String(error) });
       }
+    }
+  });
+
+  // Session report endpoint
+  app.get("/api/report", (req, res) => {
+    try {
+      const report = signalServer.getSessionReport();
+      res.json(report);
+    } catch (error) {
+      console.error("Report generation error:", error);
+      res.status(500).json({ error: "Failed to generate report" });
+    }
+  });
+
+  // ── Session history endpoints ──────────────────────────────────
+
+  // List sessions (with optional search/filter)
+  app.get("/api/sessions", (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const classification = req.query.classification as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+      const result = sessionStore.list({ search, classification, limit, offset });
+      res.json(result);
+    } catch (error) {
+      console.error("Session list error:", error);
+      res.status(500).json({ error: "Failed to list sessions" });
+    }
+  });
+
+  // Get single session by ID
+  app.get("/api/sessions/:id", (req, res) => {
+    try {
+      const session = sessionStore.getById(req.params.id);
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      res.json(session);
+    } catch (error) {
+      console.error("Session get error:", error);
+      res.status(500).json({ error: "Failed to get session" });
+    }
+  });
+
+  // Delete a session
+  app.delete("/api/sessions/:id", (req, res) => {
+    try {
+      const deleted = sessionStore.delete(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Session delete error:", error);
+      res.status(500).json({ error: "Failed to delete session" });
     }
   });
 

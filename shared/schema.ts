@@ -53,14 +53,7 @@ export const pointCloudPointSchema = z.object({
 });
 export type PointCloudPoint = z.infer<typeof pointCloudPointSchema>;
 
-// Gesture event
-export const gestureEventSchema = z.object({
-  timestamp: z.number(),
-  gestureType: z.enum(["0", "1", "unknown"]),
-  centroidShift: z.number(),
-  confidence: z.number(),
-});
-export type GestureEvent = z.infer<typeof gestureEventSchema>;
+
 
 // Heatmap data (Time vs Angle)
 export const heatmapDataSchema = z.object({
@@ -96,14 +89,10 @@ export type RecordingStatus = z.infer<typeof recordingStatusSchema>;
 
 // Processing configuration
 export const processingConfigSchema = z.object({
-  nullingEnabled: z.boolean().default(true),
-  nullingThreshold: z.number().min(0).max(100).default(10),
   isarEnabled: z.boolean().default(true),
   arrayLength: z.number().min(2).max(128).default(16),
   aoaRangeMin: z.number().min(-90).max(90).default(-60),
   aoaRangeMax: z.number().min(-90).max(90).default(60),
-  gestureEnabled: z.boolean().default(true),
-  centroidThreshold: z.number().min(0).max(50).default(5),
   clutterRemovalEnabled: z.boolean().default(true),
   clutterWindowSize: z.number().min(10).max(200).default(50),
   motionGateEnabled: z.boolean().default(false),
@@ -186,7 +175,6 @@ export const wsMessageTypeSchema = z.enum([
   "csiFrame",
   "isarFrame",
   "pointCloud",
-  "gesture",
   "heatmap",
   "config",
   "error",
@@ -208,7 +196,6 @@ export const streamFrameSchema = z.object({
     channelEstimateSchema,
     isarFrameSchema,
     z.array(pointCloudPointSchema),
-    gestureEventSchema,
     heatmapDataSchema,
     processingConfigSchema,
     z.string(),

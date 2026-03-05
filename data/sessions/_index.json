@@ -1,0 +1,41 @@
+[
+  {
+    "id": "000000003 - 2026-03-05",
+    "name": "thaer",
+    "startTime": 1772745445920,
+    "endTime": 1772745492374,
+    "durationS": 46.5,
+    "totalFrames": 1515,
+    "targetClassification": "human",
+    "classificationConfidence": 1,
+    "avgDistanceCm": 418.8,
+    "avgSpeedMs": 9.97,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000002 - 2026-03-05",
+    "name": "First Test Session",
+    "startTime": 1772745226953,
+    "endTime": 1772745239043,
+    "durationS": 12.1,
+    "totalFrames": 379,
+    "targetClassification": "human",
+    "classificationConfidence": 1,
+    "avgDistanceCm": 397.2,
+    "avgSpeedMs": 10.294,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000001 - 2026-03-05",
+    "name": "Project Alpha Test",
+    "startTime": 1772744570052,
+    "endTime": 1772744596926,
+    "durationS": 26.9,
+    "totalFrames": 863,
+    "targetClassification": "human",
+    "classificationConfidence": 1,
+    "avgDistanceCm": 411.3,
+    "avgSpeedMs": 10.356,
+    "dataSource": "esp32"
+  }
+]

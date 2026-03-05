@@ -4,7 +4,6 @@ import type {
   ChannelEstimate,
   ISARFrame,
   PointCloudPoint,
-  GestureEvent,
   HeatmapData,
   ProcessingConfig,
   SignalTrace,
@@ -21,7 +20,6 @@ interface WSState {
   channelEstimate: ChannelEstimate | null;
   isarFrame: ISARFrame | null;
   pointCloud: PointCloudPoint[];
-  gestures: GestureEvent[];
   heatmap: HeatmapData | null;
   config: ProcessingConfig;
   signalTrace: SignalTrace;
@@ -36,14 +34,10 @@ interface WSState {
 }
 
 const defaultConfig: ProcessingConfig = {
-  nullingEnabled: true,
-  nullingThreshold: 10,
   isarEnabled: true,
   arrayLength: 16,
   aoaRangeMin: -60,
   aoaRangeMax: 60,
-  gestureEnabled: true,
-  centroidThreshold: 5,
   clutterRemovalEnabled: true,
   clutterWindowSize: 50,
   motionGateEnabled: false,
@@ -85,7 +79,6 @@ export function useWebSocket() {
     channelEstimate: null,
     isarFrame: null,
     pointCloud: [],
-    gestures: [],
     heatmap: null,
     config: defaultConfig,
     signalTrace: defaultSignalTrace,
@@ -228,14 +221,7 @@ export function useWebSocket() {
         }));
         break;
 
-      case "gesture": {
-        const gesture = message.data as GestureEvent;
-        setState((prev) => ({
-          ...prev,
-          gestures: [...prev.gestures.slice(-49), gesture],
-        }));
-        break;
-      }
+
 
       case "heatmap":
         setState((prev) => ({
@@ -319,10 +305,10 @@ export function useWebSocket() {
     [sendMessage]
   );
 
-  const startProcessing = useCallback(() => {
+  const startProcessing = useCallback((customName?: string) => {
     console.log("[WS] startProcessing called");
     pendingToggleRef.current = Date.now();
-    sendMessage("start", null);
+    sendMessage("startProcessing", { customName });
     setState((prev) => ({
       ...prev,
       status: { ...prev.status, isProcessing: true },
@@ -332,7 +318,7 @@ export function useWebSocket() {
   const stopProcessing = useCallback(() => {
     console.log("[WS] stopProcessing called");
     pendingToggleRef.current = Date.now();
-    sendMessage("stop", null);
+    sendMessage("stopProcessing", null);
     setState((prev) => ({
       ...prev,
       status: { ...prev.status, isProcessing: false },

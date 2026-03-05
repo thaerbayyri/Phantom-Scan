@@ -1,0 +1,99 @@
+{
+  "sessionId": "session-1772742962048",
+  "startTime": 1772742962048,
+  "endTime": 1772742976022,
+  "durationS": 14,
+  "totalFrames": 217,
+  "isActive": true,
+  "targetClassification": "human",
+  "classificationConfidence": 1,
+  "classificationBreakdown": {
+    "human": 7
+  },
+  "spatialMetrics": {
+    "minDistanceCm": 314.5,
+    "maxDistanceCm": 541.3,
+    "avgDistanceCm": 409.2,
+    "boundingBox": {
+      "xMin": 0.4,
+      "xMax": 0.8,
+      "zMin": -0.69,
+      "zMax": 0.69
+    }
+  },
+  "kinematicData": {
+    "avgSpeedMs": 10.363,
+    "maxSpeedMs": 27.713
+  },
+  "eventTimeline": [
+    {
+      "time": 1772742962048,
+      "elapsed": 0,
+      "description": "Session started — data source: esp32",
+      "elapsedFormatted": "00:00"
+    },
+    {
+      "time": 1772742963209,
+      "elapsed": 1.161,
+      "description": "Entered Far range (>4m) — distance: 4.06m",
+      "distance": 406,
+      "elapsedFormatted": "00:01"
+    },
+    {
+      "time": 1772742963269,
+      "elapsed": 1.221,
+      "description": "First classification: 'human' detected at 4.6m",
+      "distance": 455.8,
+      "elapsedFormatted": "00:01"
+    },
+    {
+      "time": 1772742965972,
+      "elapsed": 3.924,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.82m",
+      "distance": 382.4,
+      "elapsedFormatted": "00:03"
+    },
+    {
+      "time": 1772742968134,
+      "elapsed": 6.086,
+      "description": "Entered Far range (>4m) — distance: 4.17m",
+      "distance": 416.6,
+      "elapsedFormatted": "00:06"
+    },
+    {
+      "time": 1772742970144,
+      "elapsed": 8.096,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.81m",
+      "distance": 380.9,
+      "elapsedFormatted": "00:08"
+    },
+    {
+      "time": 1772742972680,
+      "elapsed": 10.632,
+      "description": "Entered Far range (>4m) — distance: 4.05m",
+      "distance": 405.3,
+      "elapsedFormatted": "00:10"
+    },
+    {
+      "time": 1772742974992,
+      "elapsed": 12.944,
+      "description": "Position update — avg distance: 4.09m, avg speed: 10.6 m/s, zone: far",
+      "distance": 473.5,
+      "elapsedFormatted": "00:12"
+    },
+    {
+      "time": 1772742975247,
+      "elapsed": 13.199,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.81m",
+      "distance": 380.7,
+      "elapsedFormatted": "00:13"
+    },
+    {
+      "time": 1772742976022,
+      "elapsed": 13.974,
+      "description": "Session ended — 217 frames processed in 14.0s",
+      "elapsedFormatted": "00:13"
+    }
+  ],
+  "dataSource": "esp32"
+}

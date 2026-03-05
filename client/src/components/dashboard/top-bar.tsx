@@ -1,5 +1,7 @@
-import { Circle, Wifi, WifiOff, Play, Square, Download } from "lucide-react";
+import { useState } from "react";
+import { Circle, Wifi, WifiOff, Play, Square, Download, FileText, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -15,7 +17,7 @@ interface TopBarProps {
   isConnected: boolean;
   motionStatus: MotionStatus;
   recordingStatus: RecordingStatus;
-  onStart: () => void;
+  onStart: (name?: string) => void;
   onStop: () => void;
   onDataSourceChange: (source: DataSource) => void;
   onStartRecording: () => void;
@@ -33,6 +35,8 @@ export function TopBar({
   onStartRecording,
   onStopRecording,
 }: TopBarProps) {
+  const [sessionName, setSessionName] = useState("");
+
   return (
     <div className="h-14 border-b bg-card flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
@@ -140,6 +144,32 @@ export function TopBar({
           <Download className="h-4 w-4" />
         </Button>
 
+        {/* Session Report link */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.location.href = "/report"}
+          className="gap-1.5"
+          title="View session report"
+          data-testid="btn-report"
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Report
+        </Button>
+
+        {/* Session History link */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.location.href = "/history"}
+          className="gap-1.5"
+          title="View session history"
+          data-testid="btn-history"
+        >
+          <Database className="h-3.5 w-3.5" />
+          History
+        </Button>
+
         {/* Start/Stop processing */}
         {status.isProcessing ? (
           <Button
@@ -153,16 +183,26 @@ export function TopBar({
             Stop
           </Button>
         ) : (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={onStart}
-            className="gap-1.5"
-            data-testid="btn-start-processing"
-          >
-            <Play className="h-3 w-3" />
-            Start
-          </Button>
+          <div className="flex items-center gap-2">
+            <Input
+              type="text"
+              placeholder="Session Object/Name"
+              value={sessionName}
+              onChange={(e) => setSessionName(e.target.value)}
+              className="h-8 w-40 text-xs"
+              data-testid="input-session-name"
+            />
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => onStart(sessionName)}
+              className="gap-1.5"
+              data-testid="btn-start-processing"
+            >
+              <Play className="h-3 w-3" />
+              Start
+            </Button>
+          </div>
         )}
       </div>
     </div>

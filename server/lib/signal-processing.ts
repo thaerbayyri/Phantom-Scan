@@ -17,43 +17,11 @@ import type {
   ISARFrame,
   AoASpectrumPoint,
   PointCloudPoint,
-  GestureEvent,
   HeatmapData,
   ProcessingConfig,
 } from "@shared/schema";
 
-// Calculate precoding ratio: p = -h1/h2
-export function calculatePrecodingRatio(h1: Complex, h2: Complex): Complex {
-  return negate(div(h1, h2));
-}
 
-// Apply signal nulling to remove static reflections
-export function applyNulling(
-  sample: CSISample,
-  config: ProcessingConfig
-): ChannelEstimate {
-  const precodingRatio = calculatePrecodingRatio(sample.h1, sample.h2);
-
-  // Nulled signal: h1 + p * h2 should be near zero for static objects
-  // For moving objects, the residual reveals their contribution
-  const pTimesH2 = mul(precodingRatio, sample.h2);
-  const nulledSignal = add(sample.h1, pTimesH2);
-
-  // Apply threshold - if magnitude too low, treat as noise
-  const nulledMag = magnitude(nulledSignal);
-  const thresholdLinear = Math.pow(10, -config.nullingThreshold / 20);
-
-  const finalNulled: Complex =
-    nulledMag < thresholdLinear ? { re: 0, im: 0 } : nulledSignal;
-
-  return {
-    timestamp: sample.timestamp,
-    h1: sample.h1,
-    h2: sample.h2,
-    precodingRatio,
-    nulledSignal: finalNulled,
-  };
-}
 
 // Simple eigenvalue decomposition using power iteration
 // Returns eigenvalues and eigenvectors sorted by magnitude
@@ -246,127 +214,7 @@ export function aoaToPoint(
   return { x, y, z, amplitude, timestamp };
 }
 
-// Matched filter templates for gesture detection
-// Bit 0: Forward then backward (positive then negative centroid shift)
-// Bit 1: Backward then forward (negative then positive centroid shift)
-const GESTURE_TEMPLATE_0 = [1, 1, 1, 0.5, 0, -0.5, -1, -1, -1]; // Forward-backward
-const GESTURE_TEMPLATE_1 = [-1, -1, -1, -0.5, 0, 0.5, 1, 1, 1]; // Backward-forward
 
-function normalizeTemplate(template: number[]): number[] {
-  const norm = Math.sqrt(template.reduce((sum, v) => sum + v * v, 0));
-  return template.map(v => v / norm);
-}
-
-const NORM_TEMPLATE_0 = normalizeTemplate(GESTURE_TEMPLATE_0);
-const NORM_TEMPLATE_1 = normalizeTemplate(GESTURE_TEMPLATE_1);
-
-// Compute cross-correlation between signal and template
-function matchedFilterCorrelation(signal: number[], template: number[]): number {
-  if (signal.length < template.length) return 0;
-
-  // Use the last template.length samples
-  const segment = signal.slice(-template.length);
-
-  // Normalize the segment
-  const mean = segment.reduce((sum, v) => sum + v, 0) / segment.length;
-  const centered = segment.map(v => v - mean);
-  const segmentNorm = Math.sqrt(centered.reduce((sum, v) => sum + v * v, 0));
-
-  if (segmentNorm < 1e-6) return 0;
-
-  const normalized = centered.map(v => v / segmentNorm);
-
-  // Compute correlation
-  let correlation = 0;
-  for (let i = 0; i < template.length; i++) {
-    correlation += normalized[i] * template[i];
-  }
-
-  return correlation;
-}
-
-// Gesture detection using matched filter on centroid shifts
-export class GestureDetector {
-  private centroidHistory: { time: number; centroid: number }[] = [];
-  private readonly windowSize = 20;
-  private readonly templateLength = 9;
-  private correlationThreshold: number;
-  private lastDetectionTime = 0;
-  private readonly minDetectionInterval = 500; // ms between detections
-
-  constructor(threshold: number = 5) {
-    this.correlationThreshold = 0.6 + (threshold / 50) * 0.3; // Map 0-50 to 0.6-0.9
-  }
-
-  updateThreshold(threshold: number) {
-    this.correlationThreshold = 0.6 + (threshold / 50) * 0.3;
-  }
-
-  addSample(timestamp: number, centroid: number): GestureEvent | null {
-    this.centroidHistory.push({ time: timestamp, centroid });
-
-    // Keep only recent samples
-    if (this.centroidHistory.length > this.windowSize) {
-      this.centroidHistory.shift();
-    }
-
-    // Need enough samples for matched filter
-    if (this.centroidHistory.length < this.templateLength) {
-      return null;
-    }
-
-    // Check minimum interval since last detection
-    if (timestamp - this.lastDetectionTime < this.minDetectionInterval) {
-      return null;
-    }
-
-    // Compute centroid velocity/shift signal
-    const shifts: number[] = [];
-    for (let i = 1; i < this.centroidHistory.length; i++) {
-      shifts.push(this.centroidHistory[i].centroid - this.centroidHistory[i - 1].centroid);
-    }
-
-    if (shifts.length < this.templateLength) {
-      return null;
-    }
-
-    // Apply matched filter for each gesture template
-    const corr0 = matchedFilterCorrelation(shifts, NORM_TEMPLATE_0);
-    const corr1 = matchedFilterCorrelation(shifts, NORM_TEMPLATE_1);
-
-    // Detect gesture based on correlation strength
-    if (corr0 > this.correlationThreshold && corr0 > corr1) {
-      this.lastDetectionTime = timestamp;
-      this.centroidHistory = []; // Reset after detection
-
-      return {
-        timestamp,
-        gestureType: "0",
-        centroidShift: corr0 * 10, // Scale for display
-        confidence: Math.min(1, corr0),
-      };
-    }
-
-    if (corr1 > this.correlationThreshold && corr1 > corr0) {
-      this.lastDetectionTime = timestamp;
-      this.centroidHistory = []; // Reset after detection
-
-      return {
-        timestamp,
-        gestureType: "1",
-        centroidShift: corr1 * -10, // Negative for backward-forward
-        confidence: Math.min(1, corr1),
-      };
-    }
-
-    return null;
-  }
-
-  reset() {
-    this.centroidHistory = [];
-    this.lastDetectionTime = 0;
-  }
-}
 
 // Heatmap accumulator for Time vs Angle visualization
 export class HeatmapAccumulator {

@@ -5,14 +5,13 @@ import type {
   SystemStatus,
   DataSource,
   CSISample,
+  ChannelEstimate,
   RadialTarget,
 } from "@shared/schema";
 import {
-  applyNulling,
   computeMUSICSpectrum,
   findSpectrumPeak,
   aoaToPoint,
-  GestureDetector,
   HeatmapAccumulator,
   DemoDataGenerator,
   BackgroundSubtractor,
@@ -25,6 +24,7 @@ import { TrackingProcessor } from "./tracking";
 import { magnitude } from "./complex";
 import * as fs from "fs";
 import * as path from "path";
+import { sessionStore } from "./session-store";
 
 interface WSClient {
   ws: WebSocket;
@@ -38,14 +38,10 @@ export class SignalProcessingServer {
   private isStopping: boolean = false;
 
   private config: ProcessingConfig = {
-    nullingEnabled: true,
-    nullingThreshold: 10,
     isarEnabled: true,
     arrayLength: 16,
     aoaRangeMin: -60,
     aoaRangeMax: 60,
-    gestureEnabled: true,
-    centroidThreshold: 5,
     clutterRemovalEnabled: true,
     clutterWindowSize: 50,
     motionGateEnabled: false,
@@ -63,7 +59,6 @@ export class SignalProcessingServer {
 
   // Processing engines
   private demoGenerator = new DemoDataGenerator();
-  private gestureDetector = new GestureDetector(5);
   private heatmapAccumulator = new HeatmapAccumulator();
   private backgroundSubtractor = new BackgroundSubtractor(50);
   private motionGate = new MotionGate();
@@ -87,12 +82,30 @@ export class SignalProcessingServer {
   private isRecording = false;
   private recordingBuffer: CSISample[] = [];
   private recordingStartTime = 0;
-  private lastRecordingFile = "";
+  private lastRecordingFile?: string;
+
+  private currentSessionName: string = "";
 
   // Radial tracking state
   private prevRadialX = 2;
   private prevRadialZ = 0;
   private radialAngle = 0;
+
+  // ── Session report accumulation ──
+  private reportStartTime = 0;
+  private reportDistances: number[] = [];
+  private reportSpeeds: number[] = [];
+  private reportLabels: string[] = [];
+  private reportPositionsX: number[] = [];
+  private reportPositionsZ: number[] = [];
+  private reportEvents: { time: number; elapsed: number; description: string; distance?: number }[] = [];
+  private reportLastLabel = "";
+  private reportLastMoving = false;
+  private reportFrameCount = 0;
+  private reportDistanceZone: "close" | "mid" | "far" = "mid";
+  private reportLastEventTime = 0;
+  private reportLastSummaryFrame = 0;
+  private reportPeakSpeed = 0;
 
   initialize(server: Server) {
     this.wss = new WebSocketServer({ server, path: "/ws" });
@@ -143,10 +156,11 @@ export class SignalProcessingServer {
   ) {
     console.log(`[WS] handleMessage from ${clientId}: ${message.type}`);
     switch (message.type) {
-      case "start":
+      case "startProcessing":
+        this.currentSessionName = (message.data as any)?.customName || "";
         this.startProcessing();
         break;
-      case "stop":
+      case "stopProcessing":
         this.stopProcessing();
         break;
       case "updateConfig":
@@ -177,7 +191,6 @@ export class SignalProcessingServer {
     this.isStopping = false;
     this.status.isProcessing = true;
     this.demoGenerator.reset();
-    this.gestureDetector.reset();
     this.heatmapAccumulator.reset();
     this.backgroundSubtractor.reset();
     this.motionGate.reset();
@@ -186,12 +199,38 @@ export class SignalProcessingServer {
     this.sampleBuffer = [];
     this.pointCloudHistory = [];
 
+    // Reset report accumulation
+    this.reportStartTime = Date.now();
+    this.reportDistances = [];
+    this.reportSpeeds = [];
+    this.reportLabels = [];
+    this.reportPositionsX = [];
+    this.reportPositionsZ = [];
+    this.reportEvents = [];
+    this.reportLastLabel = "";
+    this.reportLastMoving = false;
+    this.reportFrameCount = 0;
+    this.reportDistanceZone = "mid";
+    this.reportLastEventTime = 0;
+    this.reportLastSummaryFrame = 0;
+    this.reportPeakSpeed = 0;
+
+    // Session start event
+    this.reportEvents.push({
+      time: Date.now(),
+      elapsed: 0,
+      description: `Session started — data source: ${this.status.dataSource}`,
+    });
+
     this.broadcast("status", this.status);
 
     // Process at ~20 FPS
     this.processingInterval = setInterval(() => {
       this.processFrame();
     }, 50);
+
+    // Auto-start recording
+    this.startRecording();
 
     console.log("[WS] Processing started, interval created");
   }
@@ -204,6 +243,28 @@ export class SignalProcessingServer {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
       console.log("[WS] Interval cleared");
+    }
+
+    // Auto-stop recording
+    this.stopRecording();
+
+    // Auto-save session to persistent storage
+    if (this.reportFrameCount > 0 && this.reportStartTime > 0) {
+      try {
+        // Add session stopped event
+        const elapsed = (Date.now() - this.reportStartTime) / 1000;
+        this.reportEvents.push({
+          time: Date.now(),
+          elapsed,
+          description: `Session ended — ${this.reportFrameCount} frames processed in ${elapsed.toFixed(1)}s`,
+        });
+
+        const report = this.getSessionReport() as any;
+        report.dataSource = this.status.dataSource;
+        sessionStore.save(report, this.currentSessionName);
+      } catch (err) {
+        console.error("[SESSION] Failed to save session:", err);
+      }
     }
 
     this.isStopping = true;
@@ -219,10 +280,6 @@ export class SignalProcessingServer {
 
   private updateConfig(updates: Partial<ProcessingConfig>) {
     this.config = { ...this.config, ...updates };
-
-    if (updates.centroidThreshold !== undefined) {
-      this.gestureDetector.updateThreshold(updates.centroidThreshold);
-    }
     if (updates.clutterWindowSize !== undefined) {
       this.backgroundSubtractor.setWindowSize(updates.clutterWindowSize);
     }
@@ -399,6 +456,7 @@ export class SignalProcessingServer {
       this.broadcast("radialTarget", fallbackTarget);
 
       this.status.framesProcessed++;
+      this.reportFrameCount++; // Ensure report gets frames even in early return
       this.status.lastUpdate = Date.now();
       if (this.status.framesProcessed % 20 === 0) {
         this.broadcast("status", this.status);
@@ -406,18 +464,14 @@ export class SignalProcessingServer {
       return;
     }
 
-    // ── 3. Apply nulling (on clutter-removed signal) ──
-    const processedSample: CSISample = {
-      ...sample,
-      h1: h1Proc,
-      h2: h2Proc,
+    // ── 3. Bypass Nulling (pass-through clutter-removed signal) ──
+    const estimate: ChannelEstimate = {
+      timestamp: sample.timestamp,
+      h1: sample.h1,
+      h2: sample.h2,
+      precodingRatio: { re: 0, im: 0 },
+      nulledSignal: h1Proc,
     };
-
-    let estimate = applyNulling(processedSample, this.config);
-
-    if (!this.config.nullingEnabled) {
-      estimate = { ...estimate, nulledSignal: h1Proc };
-    }
 
     this.broadcast("csiFrame", estimate);
 
@@ -503,16 +557,7 @@ export class SignalProcessingServer {
         this.broadcast("trackedTarget", null);
       }
 
-      // ── 8. Gesture recognition (on processed timestamps/features) ──
-      if (this.config.gestureEnabled) {
-        const gesture = this.gestureDetector.addSample(
-          estimate.timestamp,
-          peak.angle
-        );
-        if (gesture) {
-          this.broadcast("gesture", gesture);
-        }
-      }
+
 
       // ── 9. Radial Target (ESP-Centric Coordinates) ──
       // Use MUSIC peak angle as bearing θ, tracked target distance as r
@@ -574,8 +619,90 @@ export class SignalProcessingServer {
       };
 
       this.broadcast("radialTarget", radialTarget);
+
+      // ── Report data accumulation ──
+      this.reportFrameCount++;
+      this.reportDistances.push(pdpResult.distanceCm);
+      this.reportSpeeds.push(speed);
+      this.reportPositionsX.push(radX);
+      this.reportPositionsZ.push(radZ);
+      this.reportLabels.push(classification.label);
+
+      const now = Date.now();
+      const elapsed = (now - this.reportStartTime) / 1000;
+      const distM = pdpResult.distanceCm / 100;
+
+      // ── Event: First classification detected ──
+      if (classification.label !== "unknown" && this.reportLastLabel === "") {
+        this.reportEvents.push({
+          time: now, elapsed,
+          description: `First classification: '${classification.label}' detected at ${distM.toFixed(1)}m`,
+          distance: pdpResult.distanceCm,
+        });
+      }
+
+      // ── Event: Classification change ──
+      if (classification.label !== "unknown" && this.reportLastLabel !== "" && classification.label !== this.reportLastLabel) {
+        this.reportEvents.push({
+          time: now, elapsed,
+          description: `Classification changed: '${this.reportLastLabel}' → '${classification.label}'`,
+          distance: pdpResult.distanceCm,
+        });
+      }
+      if (classification.label !== "unknown") {
+        this.reportLastLabel = classification.label;
+      }
+
+      // ── Event: Motion start/stop ──
+      if (isMoving && !this.reportLastMoving) {
+        this.reportEvents.push({ time: now, elapsed, description: "Target started moving", distance: pdpResult.distanceCm });
+      } else if (!isMoving && this.reportLastMoving) {
+        this.reportEvents.push({ time: now, elapsed, description: "Target stopped — stationary", distance: pdpResult.distanceCm });
+      }
+      this.reportLastMoving = isMoving;
+
+      // ── Event: Distance zone transitions ──
+      const newZone: "close" | "mid" | "far" = distM < 1.5 ? "close" : distM > 4.0 ? "far" : "mid";
+      if (newZone !== this.reportDistanceZone && (now - this.reportLastEventTime > 2000)) {
+        const zoneNames = { close: "Close range (<1.5m)", mid: "Mid range (1.5–4m)", far: "Far range (>4m)" };
+        this.reportEvents.push({
+          time: now, elapsed,
+          description: `Entered ${zoneNames[newZone]} — distance: ${distM.toFixed(2)}m`,
+          distance: pdpResult.distanceCm,
+        });
+        this.reportDistanceZone = newZone;
+        this.reportLastEventTime = now;
+      }
+
+      // ── Event: Speed spike ──
+      if (speed > this.reportPeakSpeed * 1.5 && speed > 5 && (now - this.reportLastEventTime > 3000)) {
+        this.reportEvents.push({
+          time: now, elapsed,
+          description: `Speed spike detected: ${speed.toFixed(1)} m/s (new peak)`,
+          distance: pdpResult.distanceCm,
+        });
+        this.reportLastEventTime = now;
+      }
+      if (speed > this.reportPeakSpeed) {
+        this.reportPeakSpeed = speed;
+      }
+
+      // ── Event: Periodic summary every 200 frames (~10s) ──
+      if (this.reportFrameCount - this.reportLastSummaryFrame >= 200) {
+        const recentDist = this.reportDistances.slice(-200);
+        const recentSpeed = this.reportSpeeds.slice(-200);
+        const avgD = recentDist.reduce((s, v) => s + v, 0) / recentDist.length / 100;
+        const avgS = recentSpeed.reduce((s, v) => s + v, 0) / recentSpeed.length;
+        this.reportEvents.push({
+          time: now, elapsed,
+          description: `Position update — avg distance: ${avgD.toFixed(2)}m, avg speed: ${avgS.toFixed(1)} m/s, zone: ${newZone}`,
+          distance: pdpResult.distanceCm,
+        });
+        this.reportLastSummaryFrame = this.reportFrameCount;
+      }
     }
 
+    this.reportFrameCount++;
     this.status.framesProcessed++;
     this.status.lastUpdate = Date.now();
 
@@ -613,7 +740,7 @@ export class SignalProcessingServer {
     return this.config;
   }
 
-  getLastRecordingFile(): string {
+  getLastRecordingFile(): string | undefined {
     return this.lastRecordingFile;
   }
 
@@ -645,6 +772,77 @@ export class SignalProcessingServer {
 
   getQueueLength(): number {
     return this.hardwareSampleQueue.length;
+  }
+
+  getSessionReport(): object {
+    const now = Date.now();
+    const durationS = this.reportStartTime > 0 ? (now - this.reportStartTime) / 1000 : 0;
+
+    // Classification majority vote
+    const labelCounts: Record<string, number> = {};
+    for (const l of this.reportLabels) {
+      if (l !== "unknown") labelCounts[l] = (labelCounts[l] || 0) + 1;
+    }
+    const dominantLabel = Object.entries(labelCounts).sort((a, b) => b[1] - a[1])[0];
+    const totalValid = Object.values(labelCounts).reduce((s, v) => s + v, 0);
+
+    // Spatial metrics
+    const distances = this.reportDistances;
+    const minDist = distances.length > 0 ? Math.min(...distances) : 0;
+    const maxDist = distances.length > 0 ? Math.max(...distances) : 0;
+    const avgDist = distances.length > 0 ? distances.reduce((s, v) => s + v, 0) / distances.length : 0;
+
+    // Kinematic
+    const speeds = this.reportSpeeds;
+    const avgSpeed = speeds.length > 0 ? speeds.reduce((s, v) => s + v, 0) / speeds.length : 0;
+    const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : 0;
+
+    // Bounding box
+    const posX = this.reportPositionsX;
+    const posZ = this.reportPositionsZ;
+
+    // Deduplicate consecutive identical events
+    const deduped = this.reportEvents.filter((e, i) =>
+      i === 0 || e.description !== this.reportEvents[i - 1].description || (e.time - this.reportEvents[i - 1].time) > 2000
+    );
+
+    // Format events
+    const events = deduped.map(e => {
+      const min = Math.floor(e.elapsed / 60);
+      const sec = Math.floor(e.elapsed % 60);
+      return {
+        ...e,
+        elapsedFormatted: `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`,
+      };
+    });
+
+    return {
+      sessionId: `session-${this.reportStartTime}`,
+      startTime: this.reportStartTime,
+      endTime: now,
+      durationS: Math.round(durationS * 10) / 10,
+      totalFrames: this.reportFrameCount,
+      isActive: this.status.isProcessing,
+      targetClassification: dominantLabel ? dominantLabel[0] : "unknown",
+      classificationConfidence: dominantLabel && totalValid > 0 ? Math.round((dominantLabel[1] / totalValid) * 1000) / 1000 : 0,
+      classificationBreakdown: labelCounts,
+      spatialMetrics: {
+        minDistanceCm: Math.round(minDist * 10) / 10,
+        maxDistanceCm: Math.round(maxDist * 10) / 10,
+        avgDistanceCm: Math.round(avgDist * 10) / 10,
+        boundingBox: {
+          xMin: posX.length > 0 ? Math.round(Math.min(...posX) * 100) / 100 : 0,
+          xMax: posX.length > 0 ? Math.round(Math.max(...posX) * 100) / 100 : 0,
+          zMin: posZ.length > 0 ? Math.round(Math.min(...posZ) * 100) / 100 : 0,
+          zMax: posZ.length > 0 ? Math.round(Math.max(...posZ) * 100) / 100 : 0,
+        },
+      },
+      kinematicData: {
+        avgSpeedMs: Math.round(avgSpeed * 1000) / 1000,
+        maxSpeedMs: Math.round(maxSpeed * 1000) / 1000,
+      },
+      eventTimeline: events,
+    };
   }
 }
 

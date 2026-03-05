@@ -142,22 +142,26 @@ class DWTDenoiser:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Background Subtractor — EMA-based static path removal
+#  Background Subtractor — Running-average (N=50) static path removal
 # ═══════════════════════════════════════════════════════════════════
 
 class BackgroundSubtractor:
     """
-    Exponential moving average (EMA) subtraction to eliminate
-    static multipath (walls, furniture). Only dynamic components pass.
+    Running-average background subtraction to eliminate static multipath
+    (walls, furniture). Maintains a sliding window of the last N complex
+    CSI vectors and subtracts the mean H̄(f) from the current frame.
+
+    H_dynamic(t) = H_current(t) - mean(H_window)
+
+    Default N=50 frames at 20 FPS = 2.5s averaging window.
     """
 
-    def __init__(self, alpha: float = 0.02):
-        """alpha: smoothing factor. Lower = slower adaptation = better static removal."""
-        self.alpha = alpha
-        self.bg_h1_re: Optional[float] = None
-        self.bg_h1_im: Optional[float] = None
-        self.bg_h2_re: Optional[float] = None
-        self.bg_h2_im: Optional[float] = None
+    def __init__(self, window_size: int = 50):
+        self.window_size = window_size
+        self.buffer_h1_re: List[float] = []
+        self.buffer_h1_im: List[float] = []
+        self.buffer_h2_re: List[float] = []
+        self.buffer_h2_im: List[float] = []
 
     def process(
         self,
@@ -165,34 +169,308 @@ class BackgroundSubtractor:
         h2_re: float, h2_im: float,
     ) -> Tuple[float, float, float, float]:
         """Returns dynamic (h1_re, h1_im, h2_re, h2_im) after background removal."""
-        if self.bg_h1_re is None:
-            # Initialize background model
-            self.bg_h1_re = h1_re
-            self.bg_h1_im = h1_im
-            self.bg_h2_re = h2_re
-            self.bg_h2_im = h2_im
+        # Push into buffers
+        self.buffer_h1_re.append(h1_re)
+        self.buffer_h1_im.append(h1_im)
+        self.buffer_h2_re.append(h2_re)
+        self.buffer_h2_im.append(h2_im)
+
+        # Trim to window size
+        if len(self.buffer_h1_re) > self.window_size:
+            self.buffer_h1_re = self.buffer_h1_re[-self.window_size:]
+            self.buffer_h1_im = self.buffer_h1_im[-self.window_size:]
+            self.buffer_h2_re = self.buffer_h2_re[-self.window_size:]
+            self.buffer_h2_im = self.buffer_h2_im[-self.window_size:]
+
+        # Need at least 2 frames for valid subtraction
+        if len(self.buffer_h1_re) < 2:
             return 0.0, 0.0, 0.0, 0.0
 
-        # Update EMA background
-        a = self.alpha
-        self.bg_h1_re = a * h1_re + (1 - a) * self.bg_h1_re
-        self.bg_h1_im = a * h1_im + (1 - a) * self.bg_h1_im
-        self.bg_h2_re = a * h2_re + (1 - a) * self.bg_h2_re
-        self.bg_h2_im = a * h2_im + (1 - a) * self.bg_h2_im
+        # Compute running average H̄(f)
+        mean_h1_re = sum(self.buffer_h1_re) / len(self.buffer_h1_re)
+        mean_h1_im = sum(self.buffer_h1_im) / len(self.buffer_h1_im)
+        mean_h2_re = sum(self.buffer_h2_re) / len(self.buffer_h2_re)
+        mean_h2_im = sum(self.buffer_h2_im) / len(self.buffer_h2_im)
 
-        # Dynamic = current - background
+        # Dynamic = current - mean (isolates moving reflections)
         return (
-            h1_re - self.bg_h1_re,
-            h1_im - self.bg_h1_im,
-            h2_re - self.bg_h2_re,
-            h2_im - self.bg_h2_im,
+            h1_re - mean_h1_re,
+            h1_im - mean_h1_im,
+            h2_re - mean_h2_re,
+            h2_im - mean_h2_im,
         )
 
     def reset(self):
-        self.bg_h1_re = None
-        self.bg_h1_im = None
-        self.bg_h2_re = None
-        self.bg_h2_im = None
+        self.buffer_h1_re.clear()
+        self.buffer_h1_im.clear()
+        self.buffer_h2_re.clear()
+        self.buffer_h2_im.clear()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Motion Gate — Variance-based presence detection with auto-calibration
+# ═══════════════════════════════════════════════════════════════════
+
+class MotionGate:
+    """
+    Automatic motion detection / presence gating.
+
+    Parameters:
+        threshold η = 0.050
+        calibration_frames = 100 (first 100 "still" samples)
+
+    Logic:
+      1. During first 100 samples, auto-calibrate noise floor by recording
+         the baseline variance of the dynamic signal.
+      2. After calibration, compute rolling variance of the last 20 dynamic
+         amplitude samples.
+      3. If variance < η → no motion (isMoving = False), suppress rendering.
+
+    This prevents ghost trails when the room is empty and saves CPU cycles.
+    """
+
+    def __init__(self, threshold: float = 0.050, calibration_frames: int = 100):
+        self.threshold = threshold
+        self.calibration_frames = calibration_frames
+
+        # Calibration state
+        self.calibration_buffer: List[float] = []
+        self.calibrated = False
+        self.noise_floor = 0.0
+
+        # Rolling variance buffer
+        self.variance_window = 20
+        self.recent_amplitudes: List[float] = []
+        self.sample_count = 0
+
+    def update(self, dynamic_amplitude: float) -> Dict[str, Any]:
+        """
+        Push a dynamic amplitude value and return motion detection result.
+
+        Returns:
+            { 'motionDetected': bool, 'variance': float, 'threshold': float }
+        """
+        self.sample_count += 1
+
+        # Phase 1: Auto-calibration (first N still samples)
+        if not self.calibrated:
+            self.calibration_buffer.append(dynamic_amplitude)
+            if len(self.calibration_buffer) >= self.calibration_frames:
+                # Compute noise floor as mean + 2σ of calibration data
+                cal = np.array(self.calibration_buffer)
+                self.noise_floor = float(np.mean(cal) + 2 * np.std(cal))
+                self.calibrated = True
+            # During calibration, assume no motion
+            return {
+                "motionDetected": False,
+                "variance": 0.0,
+                "threshold": self.threshold,
+            }
+
+        # Phase 2: Rolling variance computation
+        self.recent_amplitudes.append(dynamic_amplitude)
+        if len(self.recent_amplitudes) > self.variance_window:
+            self.recent_amplitudes = self.recent_amplitudes[-self.variance_window:]
+
+        variance = float(np.var(self.recent_amplitudes)) if len(self.recent_amplitudes) >= 3 else 0.0
+
+        # Motion detected if variance exceeds threshold
+        motion_detected = variance > self.threshold
+
+        return {
+            "motionDetected": motion_detected,
+            "variance": round(variance, 6),
+            "threshold": self.threshold,
+        }
+
+    def reset(self):
+        self.calibration_buffer.clear()
+        self.calibrated = False
+        self.noise_floor = 0.0
+        self.recent_amplitudes.clear()
+        self.sample_count = 0
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  ISAR / MUSIC Processor — Virtual antenna array AoA estimation
+# ═══════════════════════════════════════════════════════════════════
+
+class ISARMUSICProcessor:
+    """
+    Inverse Synthetic Aperture Radar (ISAR) with Smoothed MUSIC algorithm
+    for Angle of Arrival (AoA) estimation using a single ESP32.
+
+    Since we have limited physical antennas, we construct a "virtual"
+    spatial antenna array by buffering consecutive time samples. The
+    movement of the target creates a synthetic aperture.
+
+    Parameters:
+        array_length = 16 (consecutive samples → virtual elements)
+        aoa_min = -60° , aoa_max = +60° (120° field of view)
+        num_angles = 121 (1° resolution)
+        num_signals = 1 (single target assumption)
+
+    Algorithm:
+      1. Buffer 16 consecutive complex CSI samples
+      2. Construct spatial covariance matrix R = X · X^H / N
+      3. Apply Forward-Backward Spatial Smoothing for decorrelation
+      4. Eigenvalue decomposition → separate signal vs noise subspaces
+      5. Compute MUSIC pseudo-spectrum P(θ) = 1 / |a(θ)^H · En · En^H · a(θ)|
+      6. Peak detection → precise AoA of human target
+    """
+
+    def __init__(
+        self,
+        array_length: int = 16,
+        aoa_min: float = -60.0,
+        aoa_max: float = 60.0,
+        num_angles: int = 121,
+        num_signals: int = 1,
+    ):
+        self.array_length = array_length
+        self.aoa_min = aoa_min
+        self.aoa_max = aoa_max
+        self.num_angles = num_angles
+        self.num_signals = num_signals
+
+        # Virtual antenna buffer
+        self.sample_buffer: List[complex] = []
+
+        # Pre-compute angle scan vector
+        self.scan_angles = np.linspace(aoa_min, aoa_max, num_angles)
+
+        # Spatial smoothing sub-array size (L = M - K + 1, K = num_signals + 1)
+        self.sub_array_size = max(4, array_length // 2)
+
+        # Result cache
+        self.last_spectrum: List[Dict[str, float]] = []
+        self.last_peak_angle = 0.0
+        self.last_peak_power = 0.0
+
+    def push(
+        self,
+        h1_re: float, h1_im: float,
+        h2_re: float, h2_im: float,
+    ) -> Dict[str, Any]:
+        """
+        Push a CSI sample and return MUSIC AoA result.
+
+        Returns:
+            {
+              'peakAngle': float (degrees),
+              'peakPower': float (dB),
+              'spectrum': list of { 'angle': float, 'power': float },
+              'ready': bool
+            }
+        """
+        # Combine h1 and h2 into a single complex observation
+        h_combined = complex(h1_re + h2_re, h1_im + h2_im) / 2.0
+        self.sample_buffer.append(h_combined)
+
+        if len(self.sample_buffer) > self.array_length * 2:
+            self.sample_buffer = self.sample_buffer[-self.array_length * 2:]
+
+        # Need full array to process
+        if len(self.sample_buffer) < self.array_length:
+            return {
+                "peakAngle": self.last_peak_angle,
+                "peakPower": self.last_peak_power,
+                "spectrum": self.last_spectrum,
+                "ready": False,
+            }
+
+        # Take the most recent array_length samples as our virtual array
+        x = np.array(self.sample_buffer[-self.array_length:])
+
+        # ── Forward-Backward Spatial Smoothing ──
+        L = self.sub_array_size
+        M = self.array_length
+        num_sub = M - L + 1
+        R = np.zeros((L, L), dtype=complex)
+
+        for i in range(num_sub):
+            sub = x[i:i + L].reshape(-1, 1)
+            R += sub @ sub.conj().T
+
+        # Backward averaging (improves decorrelation)
+        J = np.fliplr(np.eye(L))
+        R_fb = (R + J @ R.conj() @ J) / (2 * num_sub)
+
+        # ── Eigenvalue Decomposition ──
+        try:
+            eigenvalues, eigenvectors = np.linalg.eigh(R_fb)
+        except np.linalg.LinAlgError:
+            return {
+                "peakAngle": self.last_peak_angle,
+                "peakPower": self.last_peak_power,
+                "spectrum": self.last_spectrum,
+                "ready": False,
+            }
+
+        # Sort eigenvalues in descending order
+        idx = np.argsort(eigenvalues)[::-1]
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+
+        # Noise subspace: all eigenvectors beyond the signal subspace
+        noise_subspace = eigenvectors[:, self.num_signals:]
+
+        # ── MUSIC Pseudo-Spectrum ──
+        spectrum = []
+        powers = np.zeros(self.num_angles)
+
+        for k, angle_deg in enumerate(self.scan_angles):
+            # Steering vector a(θ) for virtual array
+            # d/λ = 0.5 assumed (half-wavelength spacing at 2.4 GHz)
+            theta_rad = np.radians(angle_deg)
+            indices = np.arange(L)
+            a = np.exp(-1j * np.pi * indices * np.sin(theta_rad)).reshape(-1, 1)
+
+            # MUSIC pseudo-spectrum: P(θ) = 1 / |a^H · En · En^H · a|
+            a_H_En = a.conj().T @ noise_subspace
+            denominator = float(np.real(a_H_En @ a_H_En.conj().T).item())
+
+            if denominator > 1e-15:
+                p = 1.0 / denominator
+            else:
+                p = 1e15
+
+            p_db = 10 * np.log10(max(p, 1e-15))
+            powers[k] = p_db
+            spectrum.append({"angle": float(angle_deg), "power": float(p_db)})
+
+        # ── Peak Detection ──
+        peak_idx = int(np.argmax(powers))
+        peak_angle = float(self.scan_angles[peak_idx])
+        peak_power = float(powers[peak_idx])
+
+        # Parabolic interpolation for sub-degree accuracy
+        if 0 < peak_idx < len(powers) - 1:
+            left = powers[peak_idx - 1]
+            center = powers[peak_idx]
+            right = powers[peak_idx + 1]
+            denom = 2 * (2 * center - left - right)
+            if abs(denom) > 1e-10:
+                offset = (left - right) / denom
+                step = (self.aoa_max - self.aoa_min) / (self.num_angles - 1)
+                peak_angle += offset * step
+
+        self.last_spectrum = spectrum
+        self.last_peak_angle = peak_angle
+        self.last_peak_power = peak_power
+
+        return {
+            "peakAngle": round(peak_angle, 2),
+            "peakPower": round(peak_power, 2),
+            "spectrum": spectrum,
+            "ready": True,
+        }
+
+    def reset(self):
+        self.sample_buffer.clear()
+        self.last_spectrum = []
+        self.last_peak_angle = 0.0
+        self.last_peak_power = 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -580,7 +858,6 @@ class CSIFilterPipeline:
         hampel_sigma: float = 3.0,
         dwt_wavelet: str = "db4",
         dwt_level: int = 3,
-        bg_alpha: float = 0.02,
         dbscan_eps: float = 0.5,
         dbscan_min_samples: int = 3,
         kalman_dt: float = 0.05,
@@ -602,14 +879,22 @@ class CSIFilterPipeline:
         # Stage 3: Phase sanitization
         self.phase_sanitizer = PhaseSanitizer()
 
-        # Stage 4: Background subtraction
-        self.bg_sub = BackgroundSubtractor(bg_alpha)
+        # Stage 4: Background subtraction — N=50 running average (hardcoded)
+        self.bg_sub = BackgroundSubtractor(window_size=50)
+
+        # Stage 4.5: Motion Gate — η=0.050 (hardcoded)
+        self.motion_gate = MotionGate(threshold=0.050, calibration_frames=100)
 
         # Stage 5: Micro-Doppler classifier
         self.classifier = MicroDopplerClassifier(stft_buffer, sample_rate)
 
         # Stage 6: PDP ranger
         self.pdp_ranger = PDPRanger()
+
+        # Stage 7: ISAR/MUSIC AoA — 16-element virtual array, ±60° (hardcoded)
+        self.isar_music = ISARMUSICProcessor(
+            array_length=16, aoa_min=-60.0, aoa_max=60.0
+        )
 
         # Stage 8: DBSCAN
         self.dbscan_eps = dbscan_eps
@@ -623,6 +908,19 @@ class CSIFilterPipeline:
         # State
         self.frame_count = 0
         self.last_result: Optional[Dict[str, Any]] = None
+
+        # History buffers for reporting module integration
+        self._amplitude_history: List[float] = []
+        self._speed_history: List[float] = []
+        self._max_history = 500  # Keep last 500 samples
+
+    def get_amplitude_history(self) -> List[float]:
+        """Return the recent dynamic amplitude history (for ActivityClassifier)."""
+        return list(self._amplitude_history)
+
+    def get_speed_history(self) -> List[float]:
+        """Return the recent speed history (for ActivityClassifier)."""
+        return list(self._speed_history)
 
     def process_sample(
         self,
@@ -664,20 +962,29 @@ class CSIFilterPipeline:
         # Dynamic signal amplitude (movement indicator)
         dyn_amp = math.sqrt(dh1_re**2 + dh1_im**2 + dh2_re**2 + dh2_im**2)
 
+        # ── Stage 4.5: Motion Gate (presence detection) ──
+        motion_result = self.motion_gate.update(dyn_amp)
+
         # ── Stage 5: Micro-Doppler classification ──
         classification = self.classifier.push(dyn_amp)
 
         # ── Stage 6: PDP super-resolution distance ──
         pdp_result = self.pdp_ranger.push(dh1_re, dh1_im, dh2_re, dh2_im, rssi)
 
-        # ── Stage 7: AoA estimation ──
-        phase_h1 = math.atan2(dh1_im, dh1_re + 1e-10)
-        phase_h2 = math.atan2(dh2_im, dh2_re + 1e-10)
-        phase_diff = phase_h1 - phase_h2
-        phase_diff = math.atan2(math.sin(phase_diff), math.cos(phase_diff))
+        # ── Stage 7: ISAR/MUSIC AoA estimation (16-element virtual array) ──
+        music_result = self.isar_music.push(dh1_re, dh1_im, dh2_re, dh2_im)
 
-        sin_theta = max(-1.0, min(1.0, phase_diff / math.pi))
-        theta = math.asin(sin_theta)
+        if music_result["ready"]:
+            # Use MUSIC peak angle for bearing
+            theta = math.radians(music_result["peakAngle"])
+        else:
+            # Fallback to simple phase-diff during MUSIC warm-up
+            phase_h1 = math.atan2(dh1_im, dh1_re + 1e-10)
+            phase_h2 = math.atan2(dh2_im, dh2_re + 1e-10)
+            phase_diff = phase_h1 - phase_h2
+            phase_diff = math.atan2(math.sin(phase_diff), math.cos(phase_diff))
+            sin_theta = max(-1.0, min(1.0, phase_diff / math.pi))
+            theta = math.asin(sin_theta)
 
         # Use PDP distance instead of RSSI fallback
         r = pdp_result["distanceCm"] / 100.0  # Convert cm → meters
@@ -701,7 +1008,9 @@ class CSIFilterPipeline:
 
         state = self.kalman.get_state()
         speed = math.sqrt(state["vx"] ** 2 + state["vz"] ** 2)
-        is_moving = speed > 0.05 and dyn_amp > 0.01
+
+        # Use Motion Gate result combined with speed/amplitude check
+        is_moving = motion_result["motionDetected"] and speed > 0.05 and dyn_amp > 0.01
 
         # Direction of travel
         if is_moving and speed > 0.02:
@@ -722,13 +1031,28 @@ class CSIFilterPipeline:
             "angle": round(angle, 4),
             "isMoving": is_moving,
             "confidence": round(confidence, 4),
-            # New fields
+            # Classification
             "label": classification["label"],
             "humanProb": classification["humanProb"],
             "mechanicalProb": classification.get("mechanicalProb", round(1.0 - classification["humanProb"], 4)),
+            # Ranging
             "distanceCm": pdp_result["distanceCm"],
             "wallDistance": pdp_result["wallDistance"],
+            # Motion Gate
+            "motionDetected": motion_result["motionDetected"],
+            "motionVariance": motion_result["variance"],
+            # ISAR/MUSIC AoA
+            "musicAngle": music_result["peakAngle"],
+            "musicPower": music_result["peakPower"],
+            "musicReady": music_result["ready"],
         }
+
+        # Record history for reporting module
+        self._amplitude_history.append(dyn_amp)
+        self._speed_history.append(speed)
+        if len(self._amplitude_history) > self._max_history:
+            self._amplitude_history = self._amplitude_history[-self._max_history:]
+            self._speed_history = self._speed_history[-self._max_history:]
 
         self.last_result = result
         return result
@@ -797,12 +1121,16 @@ class CSIFilterPipeline:
         self.dwt_h2_im.reset()
         self.phase_sanitizer.reset()
         self.bg_sub.reset()
+        self.motion_gate.reset()
         self.classifier.reset()
         self.pdp_ranger.reset()
+        self.isar_music.reset()
         self.kalman.reset()
         self.point_buffer.clear()
         self.frame_count = 0
         self.last_result = None
+        self._amplitude_history.clear()
+        self._speed_history.clear()
 
 
 # ═══════════════════════════════════════════════════════════════════

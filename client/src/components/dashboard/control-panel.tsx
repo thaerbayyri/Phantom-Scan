@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Target, Hand, Gauge, ShieldCheck, Radar, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Settings, Target, ShieldCheck, Radar, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -52,9 +52,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
         <div className="flex flex-col items-center gap-3 pt-4">
           <span title="Clutter Removal"><ShieldCheck className="h-4 w-4 text-emerald-500" /></span>
           <span title="Motion Gate"><Radar className="h-4 w-4 text-amber-500" /></span>
-          <span title="Nulling Engine"><Gauge className="h-4 w-4 text-chart-1" /></span>
           <span title="ISAR / MUSIC"><Target className="h-4 w-4 text-chart-2" /></span>
-          <span title="Gesture Recognition"><Hand className="h-4 w-4 text-chart-3" /></span>
         </div>
       )}
 
@@ -63,7 +61,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
         <div className="px-4 pb-4 flex-1">
           <Accordion
             type="multiple"
-            defaultValue={["clutter", "motion", "nulling", "isar", "gesture"]}
+            defaultValue={["clutter", "motion", "isar"]}
             className="space-y-2"
           >
             {/* ── Clutter Removal ── */}
@@ -172,57 +170,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
               </Card>
             </AccordionItem>
 
-            {/* ── Nulling Engine ── */}
-            <AccordionItem value="nulling" className="border-none">
-              <Card>
-                <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                  <CardHeader className="p-0 flex flex-row items-center gap-2">
-                    <Gauge className="h-4 w-4 text-chart-1" />
-                    <CardTitle className="text-sm">Nulling Engine</CardTitle>
-                  </CardHeader>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <CardContent className="pt-2 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="nulling-enabled" className="text-sm">
-                        Enable Nulling
-                      </Label>
-                      <Switch
-                        id="nulling-enabled"
-                        checked={config.nullingEnabled}
-                        onCheckedChange={(checked) =>
-                          onConfigChange({ nullingEnabled: checked })
-                        }
-                        data-testid="switch-nulling-enabled"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm">Threshold (dB)</Label>
-                        <span className="text-sm font-mono text-muted-foreground">
-                          {config.nullingThreshold}
-                        </span>
-                      </div>
-                      <Slider
-                        value={[config.nullingThreshold]}
-                        min={0}
-                        max={100}
-                        step={1}
-                        onValueChange={([v]) =>
-                          onConfigChange({ nullingThreshold: v })
-                        }
-                        disabled={!config.nullingEnabled}
-                        data-testid="slider-nulling-threshold"
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground p-2 bg-muted rounded-md">
-                      Computes p = -h1/h2 to subtract static reflections using
-                      iterative nulling algorithm.
-                    </div>
-                  </CardContent>
-                </AccordionContent>
-              </Card>
-            </AccordionItem>
+
 
             {/* ── ISAR / MUSIC ── */}
             <AccordionItem value="isar" className="border-none">
@@ -305,58 +253,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
               </Card>
             </AccordionItem>
 
-            {/* ── Gesture Recognition ── */}
-            <AccordionItem value="gesture" className="border-none">
-              <Card>
-                <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                  <CardHeader className="p-0 flex flex-row items-center gap-2">
-                    <Hand className="h-4 w-4 text-chart-3" />
-                    <CardTitle className="text-sm">Gesture Recognition</CardTitle>
-                  </CardHeader>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <CardContent className="pt-2 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="gesture-enabled" className="text-sm">
-                        Enable Gestures
-                      </Label>
-                      <Switch
-                        id="gesture-enabled"
-                        checked={config.gestureEnabled}
-                        onCheckedChange={(checked) =>
-                          onConfigChange({ gestureEnabled: checked })
-                        }
-                        data-testid="switch-gesture-enabled"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm">Centroid Threshold</Label>
-                        <span className="text-sm font-mono text-muted-foreground">
-                          {config.centroidThreshold}
-                        </span>
-                      </div>
-                      <Slider
-                        value={[config.centroidThreshold]}
-                        min={0}
-                        max={50}
-                        step={1}
-                        onValueChange={([v]) =>
-                          onConfigChange({ centroidThreshold: v })
-                        }
-                        disabled={!config.gestureEnabled}
-                        data-testid="slider-centroid-threshold"
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground p-2 bg-muted rounded-md">
-                      <strong>Bit 0:</strong> Step forward then backward<br />
-                      <strong>Bit 1:</strong> Step backward then forward<br />
-                      Detected via spatial centroid shift in matched filter.
-                    </div>
-                  </CardContent>
-                </AccordionContent>
-              </Card>
-            </AccordionItem>
+
           </Accordion>
         </div>
       )}
