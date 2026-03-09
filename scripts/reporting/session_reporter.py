@@ -517,3 +517,79 @@ class SessionReporter:
         with open(filepath, "w") as f:
             f.write("\n".join(lines))
         return filepath
+
+def compile_case_report(csv_path: str) -> None:
+    import os
+    import csv
+    print(f"[SessionReporter] Compiling report for {csv_path}")
+    if not os.path.exists(csv_path):
+        print(f"Error: File not found {csv_path}")
+        return
+        
+    case_name = os.path.basename(csv_path).replace(".csv", "")
+    reporter = SessionReporter(session_id=case_name)
+    reporter.start()
+    
+    from scripts.reporting.models import ActivityResult, ActivityLabel
+    
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                ts = float(row.get("timestamp", 0))
+                x = float(row.get("x", 0) or 0.0)
+                z = float(row.get("z", 0) or 0.0)
+                speed = float(row.get("speed", 0) or 0.0)
+                label_str = row.get("label", "unknown")
+                distance_cm = float(row.get("distance_cm", 0) or 0.0)
+                
+                pipeline_res = {
+                    "timestamp": ts,
+                    "x": x,
+                    "z": z,
+                    "speed": speed,
+                    "isMoving": speed > 0.05,
+                    "distanceCm": distance_cm,
+                }
+                
+                try:
+                    mapped_label = ActivityLabel(label_str)
+                except ValueError:
+                    mapped_label = ActivityLabel.UNKNOWN
+                    
+                activity_res = ActivityResult(
+                    label=mapped_label,
+                    human_prob=1.0 if "human" in label_str.lower() else 0.0,
+                    mechanical_prob=1.0 if "mechanical" in label_str.lower() else 0.0,
+                    snr=10.0
+                )
+                
+                reporter.add_frame(pipeline_res, None, activity_res)
+            except Exception as e:
+                print(f"[SessionReporter] Row error: {e}")
+                continue
+                
+    reporter.stop()
+    json_path = csv_path.replace(".csv", ".json")
+    reporter.export_json(json_path)
+    
+    pdf_path = csv_path.replace(".csv", ".pdf")
+    reporter.export_pdf(pdf_path)
+    
+    print(f"[SessionReporter] Report saved to {json_path}")
+    print(f"[SessionReporter] PDF Report saved to {pdf_path}")
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    
+    # Ensure scripts/ is importable from the project root
+    _project_root = str(Path(__file__).resolve().parent.parent.parent)
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
+        
+    if len(sys.argv) > 1:
+        compile_case_report(sys.argv[1])
+    else:
+        print("Usage: python session_reporter.py <path_to_csv>")
+

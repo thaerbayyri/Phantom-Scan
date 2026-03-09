@@ -1,7 +1,5 @@
-import { useState } from "react";
-import { Circle, Wifi, WifiOff, Play, Square, Download, FileText, Database } from "lucide-react";
+import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, Cpu, Terminal, TerminalSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -11,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { SystemStatus, DataSource, MotionStatus, RecordingStatus } from "@shared/schema";
+import { ScanController } from "./scan-controller";
 
 interface TopBarProps {
   status: SystemStatus;
@@ -22,6 +21,10 @@ interface TopBarProps {
   onDataSourceChange: (source: DataSource) => void;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onOpenSettings: () => void;
+  onOpenHardware: () => void;
+  onOpenSystemControl: () => void;
+  onOpenDiagnostic: () => void;
 }
 
 export function TopBar({
@@ -34,9 +37,11 @@ export function TopBar({
   onDataSourceChange,
   onStartRecording,
   onStopRecording,
+  onOpenSettings,
+  onOpenHardware,
+  onOpenSystemControl,
+  onOpenDiagnostic,
 }: TopBarProps) {
-  const [sessionName, setSessionName] = useState("");
-
   return (
     <div className="h-14 border-b bg-card flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
@@ -91,6 +96,13 @@ export function TopBar({
             DEMO
           </Badge>
         ) : null}
+
+        {/* Active Case indicator */}
+        {status.isProcessing && status.sessionName && (
+          <Badge variant="outline" className="gap-1 bg-blue-500/10 text-blue-500 border-blue-500/20">
+            Case: {status.sessionName}
+          </Badge>
+        )}
 
         {/* Motion indicator */}
         {status.isProcessing && (
@@ -170,40 +182,61 @@ export function TopBar({
           History
         </Button>
 
-        {/* Start/Stop processing */}
-        {status.isProcessing ? (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={onStop}
-            className="gap-1.5"
-            data-testid="btn-stop-processing"
-          >
-            <Square className="h-3 w-3" />
-            Stop
-          </Button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Input
-              type="text"
-              placeholder="Session Object/Name"
-              value={sessionName}
-              onChange={(e) => setSessionName(e.target.value)}
-              className="h-8 w-40 text-xs"
-              data-testid="input-session-name"
-            />
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => onStart(sessionName)}
-              className="gap-1.5"
-              data-testid="btn-start-processing"
-            >
-              <Play className="h-3 w-3" />
-              Start
-            </Button>
-          </div>
-        )}
+        {/* Start/Stop processing via ScanController */}
+        <ScanController
+          isProcessing={status.isProcessing}
+          onStart={onStart}
+          onStop={onStop}
+        />
+
+        {/* WSL Diagnostic Terminal */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenDiagnostic}
+          title="Diagnostic Virtual Terminal"
+          className="gap-1.5"
+        >
+          <TerminalSquare className="h-4 w-4" />
+          Diagnostic
+        </Button>
+
+        {/* Hardware Config */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenHardware}
+          title="Hardware Node Config"
+          data-testid="btn-hardware"
+          className="gap-1.5"
+        >
+          <Cpu className="h-4 w-4" />
+          antena conf
+        </Button>
+
+        {/* System Control Panel */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenSystemControl}
+          title="System Control Shell"
+          data-testid="btn-system-control"
+          className="gap-1.5"
+        >
+          <Terminal className="h-4 w-4" />
+          Terminal
+        </Button>
+
+        {/* Open Settings Sheet */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenSettings}
+          title="Signal Processing Settings"
+          data-testid="btn-settings"
+        >
+          <Settings className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );

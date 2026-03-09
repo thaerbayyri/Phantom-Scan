@@ -1109,6 +1109,46 @@ class CSIFilterPipeline:
         confidence = float(mask.sum()) / len(labels)
         return cx, cz, min(1.0, confidence + 0.3)
 
+    def count_occupancy(self, csi_matrix: np.ndarray) -> int:
+        """
+        Count the number of people in the room using Spatial Variance of CSI amplitude.
+        
+        Args:
+            csi_matrix (np.ndarray): 2D array of CSI amplitudes A[theta, n] where 
+                                     theta represents spatial dimension (subcarriers/antennas)
+                                     and n represents time.
+        
+        Returns:
+            int: Estimated number of people (0, 1, 2, 3).
+        """
+        if csi_matrix is None or csi_matrix.size == 0:
+            return 0
+            
+        # Calculate spatial centroid C[n] over the current time window
+        # C[n] is the mean of the amplitudes across the spatial dimension (theta)
+        C = np.mean(csi_matrix, axis=0)
+        
+        # Compute the Spatial Variance VAR[n] = sum_theta (A[theta, n] - C[n])^2
+        # We compute this for each time step n
+        VAR_n = np.sum((csi_matrix - C)**2, axis=0)
+        
+        # Get the mean variance across the time window to stabilize the reading
+        mean_var = float(np.mean(VAR_n))
+        
+        # Thresholding logic for occupancy estimation
+        t1 = 0.5  # Threshold for 0 -> 1 person
+        t2 = 5.0  # Threshold for 1 -> 2 people
+        t3 = 15.0 # Threshold for 2 -> 3 people
+        
+        if mean_var < t1:
+            return 0
+        elif mean_var < t2:
+            return 1
+        elif mean_var < t3:
+            return 2
+        else:
+            return 3
+
     def reset(self):
         """Reset all pipeline state."""
         self.hampel_h1_re.reset()

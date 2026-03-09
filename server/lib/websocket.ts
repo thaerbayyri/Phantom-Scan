@@ -21,7 +21,8 @@ import {
   PDPRanger,
 } from "./signal-processing";
 import { TrackingProcessor } from "./tracking";
-import { magnitude } from "./complex";
+import { magnitude, conj, mul, phase } from "./complex";
+import { VitalsComputer } from "./vitals";
 import * as fs from "fs";
 import * as path from "path";
 import { sessionStore } from "./session-store";
@@ -55,6 +56,7 @@ export class SignalProcessingServer {
     framesProcessed: 0,
     lastUpdate: Date.now(),
     isProcessing: false,
+    sessionName: "",
   };
 
   // Processing engines
@@ -66,6 +68,7 @@ export class SignalProcessingServer {
   private trackingProcessor = new TrackingProcessor();
   private microDopplerClassifier = new MicroDopplerClassifier();
   private pdpRanger = new PDPRanger();
+  private vitalsComputer = new VitalsComputer();
 
   // Buffers
   private sampleBuffer: { re: number; im: number }[] = [];
@@ -80,7 +83,13 @@ export class SignalProcessingServer {
 
   // Recording state
   private isRecording = false;
-  private recordingBuffer: CSISample[] = [];
+  private recordingBuffer: (CSISample & {
+    x?: number;
+    z?: number;
+    speed?: number;
+    label?: string;
+    distanceCm?: number;
+  })[] = [];
   private recordingStartTime = 0;
   private lastRecordingFile?: string;
 
@@ -158,6 +167,7 @@ export class SignalProcessingServer {
     switch (message.type) {
       case "startProcessing":
         this.currentSessionName = (message.data as any)?.customName || "";
+        this.status.sessionName = this.currentSessionName;
         this.startProcessing();
         break;
       case "stopProcessing":
@@ -269,6 +279,7 @@ export class SignalProcessingServer {
 
     this.isStopping = true;
     this.status.isProcessing = false;
+    this.status.sessionName = "";
     this.status.lastUpdate = Date.now();
 
     this.broadcast("status", this.status);
@@ -297,6 +308,7 @@ export class SignalProcessingServer {
     this.motionGate.reset();
     this.dopplerComputer.reset();
     this.trackingProcessor.reset();
+    this.vitalsComputer.reset();
 
     this.broadcast("status", this.status);
   }
@@ -327,6 +339,7 @@ export class SignalProcessingServer {
         console.log(
           `[REC] Recording saved: ${sampleCount} samples, ${(durationMs / 1000).toFixed(1)}s → ${this.lastRecordingFile}`
         );
+        this.triggerReportGeneration(this.lastRecordingFile);
       } catch (err) {
         console.error("[REC] Failed to save recording:", err);
       }
@@ -335,6 +348,28 @@ export class SignalProcessingServer {
     }
 
     this.broadcastRecordingStatus();
+  }
+
+  private triggerReportGeneration(csvPath: string) {
+    const { spawn } = require("child_process");
+    console.log(`[REPORT] Triggering auto-report generation for: ${csvPath}`);
+    const scriptPath = path.resolve("scripts", "reporting", "session_reporter.py");
+    const pythonProc = spawn("python", [scriptPath, csvPath]);
+
+    pythonProc.stdout.on('data', (data: Buffer) => {
+      console.log(`[REPORT] STDOUT: ${data.toString().trim()}`);
+    });
+
+    pythonProc.stderr.on('data', (data: Buffer) => {
+      console.error(`[REPORT] STDERR: ${data.toString().trim()}`);
+    });
+
+    pythonProc.on('close', (code: number) => {
+      console.log(`[REPORT] Python process exited with code ${code}`);
+      if (code === 0) {
+        this.broadcast("reportReady", { file: csvPath });
+      }
+    });
   }
 
   private broadcastRecordingStatus() {
@@ -349,19 +384,20 @@ export class SignalProcessingServer {
   }
 
   private serializeToCSV(): string {
-    const dir = path.resolve("recordings");
+    const dir = path.resolve("data", "sessions");
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    const safeName = (this.currentSessionName || "session").replace(/[^a-z0-9_-]/gi, '_');
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const filePath = path.join(dir, `csi_session_${ts}.csv`);
+    const filePath = path.join(dir, `${safeName}_${ts}.csv`);
 
     const header =
-      "timestamp,subcarrier_index,h1_re,h1_im,h2_re,h2_im,rssi\n";
+      "timestamp,subcarrier_index,h1_re,h1_im,h2_re,h2_im,rssi,x,z,speed,label,distance_cm\n";
     const rows = this.recordingBuffer.map(
       (s) =>
-        `${s.timestamp},${s.subcarrierIndex ?? 0},${s.h1.re},${s.h1.im},${s.h2.re},${s.h2.im},${s.rssi ?? ""}`
+        `${s.timestamp},${s.subcarrierIndex ?? 0},${s.h1.re},${s.h1.im},${s.h2.re},${s.h2.im},${s.rssi ?? ""},${s.x?.toFixed(3) ?? ""},${s.z?.toFixed(3) ?? ""},${s.speed?.toFixed(3) ?? ""},${s.label ?? ""},${s.distanceCm?.toFixed(1) ?? ""}`
     );
 
     fs.writeFileSync(filePath, header + rows.join("\n"), "utf-8");
@@ -400,15 +436,6 @@ export class SignalProcessingServer {
     }
 
     this.status.samplesReceived++;
-
-    // ── Record raw sample if recording ──
-    if (this.isRecording) {
-      this.recordingBuffer.push({ ...sample });
-      // Broadcast recording status every 50 samples
-      if (this.recordingBuffer.length % 50 === 0) {
-        this.broadcastRecordingStatus();
-      }
-    }
 
     // ── 1. Background subtraction (clutter removal) ──
     let h1Proc = sample.h1;
@@ -475,6 +502,12 @@ export class SignalProcessingServer {
 
     this.broadcast("csiFrame", estimate);
 
+    // ── 3.5 Vitals Phase Extraction ──
+    // Multiply H1 by the conjugate of H2 to remove CFO and extract relative phase
+    const h1_conj_h2 = mul(h1Proc, conj(h2Proc));
+    const currentPhase = phase(h1_conj_h2);
+    this.vitalsComputer.push(currentPhase);
+
     // ── 4. Doppler spectrogram ──
     this.dopplerComputer.addSample(estimate.timestamp, dynamicAmplitude);
     if (this.status.framesProcessed % 3 === 0) {
@@ -487,6 +520,12 @@ export class SignalProcessingServer {
     if (this.sampleBuffer.length > this.config.arrayLength) {
       this.sampleBuffer.shift();
     }
+
+    let currentRadX = 0;
+    let currentRadZ = 0;
+    let currentSpeed = 0;
+    let currentLabel = "";
+    let currentDistanceCm = 0;
 
     if (
       this.config.isarEnabled &&
@@ -700,6 +739,28 @@ export class SignalProcessingServer {
         });
         this.reportLastSummaryFrame = this.reportFrameCount;
       }
+
+      currentRadX = radX;
+      currentRadZ = radZ;
+      currentSpeed = speed;
+      currentLabel = classification.label;
+      currentDistanceCm = pdpResult.distanceCm;
+    }
+
+    // ── Record sample with metadata if recording ──
+    if (this.isRecording) {
+      this.recordingBuffer.push({
+        ...sample,
+        x: currentRadX,
+        z: currentRadZ,
+        speed: currentSpeed,
+        label: currentLabel,
+        distanceCm: currentDistanceCm,
+      });
+      // Broadcast recording status every 50 samples
+      if (this.recordingBuffer.length % 50 === 0) {
+        this.broadcastRecordingStatus();
+      }
     }
 
     this.reportFrameCount++;
@@ -708,6 +769,10 @@ export class SignalProcessingServer {
 
     if (this.status.framesProcessed % 20 === 0) {
       this.broadcast("status", this.status);
+
+      // Calculate and broadcast vitals
+      const vitals = this.vitalsComputer.computeVitals();
+      this.broadcast("vitalSigns", vitals);
     }
   }
 

@@ -1,0 +1,366 @@
+{
+  "sessionId": "session-1773084191022",
+  "startTime": 1773084191022,
+  "endTime": 1773084273470,
+  "durationS": 82.4,
+  "totalFrames": 2343,
+  "isActive": false,
+  "targetClassification": "human",
+  "classificationConfidence": 1,
+  "classificationBreakdown": {
+    "human": 6
+  },
+  "spatialMetrics": {
+    "minDistanceCm": 228.9,
+    "maxDistanceCm": 538.5,
+    "avgDistanceCm": 408.6,
+    "boundingBox": {
+      "xMin": 0.4,
+      "xMax": 0.8,
+      "zMin": -0.69,
+      "zMax": 0.69
+    }
+  },
+  "kinematicData": {
+    "avgSpeedMs": 10.412,
+    "maxSpeedMs": 27.713
+  },
+  "eventTimeline": [
+    {
+      "time": 1773084191022,
+      "elapsed": 0,
+      "description": "Session started — data source: esp32",
+      "elapsedFormatted": "00:00"
+    },
+    {
+      "time": 1773084192025,
+      "elapsed": 1.003,
+      "description": "Entered Far range (>4m) — distance: 5.15m",
+      "distance": 515,
+      "elapsedFormatted": "00:01"
+    },
+    {
+      "time": 1773084194059,
+      "elapsed": 3.037,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.98m",
+      "distance": 397.8,
+      "elapsedFormatted": "00:03"
+    },
+    {
+      "time": 1773084196100,
+      "elapsed": 5.078,
+      "description": "Entered Far range (>4m) — distance: 4.52m",
+      "distance": 451.9,
+      "elapsedFormatted": "00:05"
+    },
+    {
+      "time": 1773084197682,
+      "elapsed": 6.66,
+      "description": "Position update — avg distance: 3.97m, avg speed: 9.7 m/s, zone: far",
+      "distance": 419.7,
+      "elapsedFormatted": "00:06"
+    },
+    {
+      "time": 1773084198744,
+      "elapsed": 7.722,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.73m",
+      "distance": 372.8,
+      "elapsedFormatted": "00:07"
+    },
+    {
+      "time": 1773084200886,
+      "elapsed": 9.864,
+      "description": "Entered Far range (>4m) — distance: 4.15m",
+      "distance": 414.6,
+      "elapsedFormatted": "00:09"
+    },
+    {
+      "time": 1773084202903,
+      "elapsed": 11.881,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.57m",
+      "distance": 356.8,
+      "elapsedFormatted": "00:11"
+    },
+    {
+      "time": 1773084203683,
+      "elapsed": 12.661,
+      "description": "Position update — avg distance: 4.01m, avg speed: 10.0 m/s, zone: mid",
+      "distance": 384.6,
+      "elapsedFormatted": "00:12"
+    },
+    {
+      "time": 1773084204971,
+      "elapsed": 13.949,
+      "description": "Entered Far range (>4m) — distance: 4.27m",
+      "distance": 427,
+      "elapsedFormatted": "00:13"
+    },
+    {
+      "time": 1773084207153,
+      "elapsed": 16.131,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.91m",
+      "distance": 390.9,
+      "elapsedFormatted": "00:16"
+    },
+    {
+      "time": 1773084209176,
+      "elapsed": 18.154,
+      "description": "Entered Far range (>4m) — distance: 4.26m",
+      "distance": 425.7,
+      "elapsedFormatted": "00:18"
+    },
+    {
+      "time": 1773084209790,
+      "elapsed": 18.768,
+      "description": "Position update — avg distance: 4.07m, avg speed: 10.8 m/s, zone: far",
+      "distance": 444.1,
+      "elapsedFormatted": "00:18"
+    },
+    {
+      "time": 1773084211184,
+      "elapsed": 20.162,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.62m",
+      "distance": 361.8,
+      "elapsedFormatted": "00:20"
+    },
+    {
+      "time": 1773084213446,
+      "elapsed": 22.424,
+      "description": "Entered Far range (>4m) — distance: 4.36m",
+      "distance": 435.6,
+      "elapsedFormatted": "00:22"
+    },
+    {
+      "time": 1773084215452,
+      "elapsed": 24.43,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.80m",
+      "distance": 380.2,
+      "elapsedFormatted": "00:24"
+    },
+    {
+      "time": 1773084215877,
+      "elapsed": 24.855,
+      "description": "Position update — avg distance: 4.04m, avg speed: 11.0 m/s, zone: far",
+      "distance": 452.2,
+      "elapsedFormatted": "00:24"
+    },
+    {
+      "time": 1773084218388,
+      "elapsed": 27.366,
+      "description": "Entered Far range (>4m) — distance: 4.39m",
+      "distance": 438.7,
+      "elapsedFormatted": "00:27"
+    },
+    {
+      "time": 1773084220512,
+      "elapsed": 29.49,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.85m",
+      "distance": 384.8,
+      "elapsedFormatted": "00:29"
+    },
+    {
+      "time": 1773084221911,
+      "elapsed": 30.889,
+      "description": "Position update — avg distance: 4.09m, avg speed: 10.8 m/s, zone: mid",
+      "distance": 395.4,
+      "elapsedFormatted": "00:30"
+    },
+    {
+      "time": 1773084223507,
+      "elapsed": 32.485,
+      "description": "Entered Far range (>4m) — distance: 4.26m",
+      "distance": 425.7,
+      "elapsedFormatted": "00:32"
+    },
+    {
+      "time": 1773084225509,
+      "elapsed": 34.487,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.59m",
+      "distance": 359.3,
+      "elapsedFormatted": "00:34"
+    },
+    {
+      "time": 1773084227549,
+      "elapsed": 36.527,
+      "description": "Entered Far range (>4m) — distance: 4.27m",
+      "distance": 427.4,
+      "elapsedFormatted": "00:36"
+    },
+    {
+      "time": 1773084227954,
+      "elapsed": 36.932,
+      "description": "Position update — avg distance: 4.03m, avg speed: 10.9 m/s, zone: far",
+      "distance": 449.6,
+      "elapsedFormatted": "00:36"
+    },
+    {
+      "time": 1773084229896,
+      "elapsed": 38.874,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.76m",
+      "distance": 375.9,
+      "elapsedFormatted": "00:38"
+    },
+    {
+      "time": 1773084231939,
+      "elapsed": 40.917,
+      "description": "Entered Far range (>4m) — distance: 4.62m",
+      "distance": 461.5,
+      "elapsedFormatted": "00:40"
+    },
+    {
+      "time": 1773084233964,
+      "elapsed": 42.942,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.97m",
+      "distance": 397.4,
+      "elapsedFormatted": "00:42"
+    },
+    {
+      "time": 1773084234027,
+      "elapsed": 43.005,
+      "description": "Position update — avg distance: 4.04m, avg speed: 10.4 m/s, zone: far",
+      "distance": 434.7,
+      "elapsedFormatted": "00:43"
+    },
+    {
+      "time": 1773084236002,
+      "elapsed": 44.98,
+      "description": "Entered Far range (>4m) — distance: 4.83m",
+      "distance": 482.7,
+      "elapsedFormatted": "00:44"
+    },
+    {
+      "time": 1773084238963,
+      "elapsed": 47.941,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.71m",
+      "distance": 371.4,
+      "elapsedFormatted": "00:47"
+    },
+    {
+      "time": 1773084240190,
+      "elapsed": 49.168,
+      "description": "Position update — avg distance: 4.16m, avg speed: 10.6 m/s, zone: mid",
+      "distance": 391.9,
+      "elapsedFormatted": "00:49"
+    },
+    {
+      "time": 1773084240989,
+      "elapsed": 49.967,
+      "description": "Entered Far range (>4m) — distance: 4.37m",
+      "distance": 436.7,
+      "elapsedFormatted": "00:49"
+    },
+    {
+      "time": 1773084243024,
+      "elapsed": 52.002,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.72m",
+      "distance": 372,
+      "elapsedFormatted": "00:52"
+    },
+    {
+      "time": 1773084245084,
+      "elapsed": 54.062,
+      "description": "Entered Far range (>4m) — distance: 4.09m",
+      "distance": 409,
+      "elapsedFormatted": "00:54"
+    },
+    {
+      "time": 1773084246348,
+      "elapsed": 55.326,
+      "description": "Position update — avg distance: 4.16m, avg speed: 10.6 m/s, zone: far",
+      "distance": 459,
+      "elapsedFormatted": "00:55"
+    },
+    {
+      "time": 1773084246531,
+      "elapsed": 55.509,
+      "description": "First classification: 'human' detected at 4.2m",
+      "distance": 416.6,
+      "elapsedFormatted": "00:55"
+    },
+    {
+      "time": 1773084247261,
+      "elapsed": 56.239,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.96m",
+      "distance": 396.3,
+      "elapsedFormatted": "00:56"
+    },
+    {
+      "time": 1773084249473,
+      "elapsed": 58.451,
+      "description": "Entered Far range (>4m) — distance: 4.23m",
+      "distance": 422.8,
+      "elapsedFormatted": "00:58"
+    },
+    {
+      "time": 1773084251826,
+      "elapsed": 60.804,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.85m",
+      "distance": 384.6,
+      "elapsedFormatted": "01:00"
+    },
+    {
+      "time": 1773084252509,
+      "elapsed": 61.487,
+      "description": "Position update — avg distance: 4.16m, avg speed: 10.0 m/s, zone: mid",
+      "distance": 376.6,
+      "elapsedFormatted": "01:01"
+    },
+    {
+      "time": 1773084254008,
+      "elapsed": 62.986,
+      "description": "Entered Far range (>4m) — distance: 4.12m",
+      "distance": 412.3,
+      "elapsedFormatted": "01:02"
+    },
+    {
+      "time": 1773084256272,
+      "elapsed": 65.25,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.98m",
+      "distance": 397.5,
+      "elapsedFormatted": "01:05"
+    },
+    {
+      "time": 1773084258398,
+      "elapsed": 67.376,
+      "description": "Entered Far range (>4m) — distance: 4.29m",
+      "distance": 428.8,
+      "elapsedFormatted": "01:07"
+    },
+    {
+      "time": 1773084258645,
+      "elapsed": 67.623,
+      "description": "Position update — avg distance: 4.14m, avg speed: 9.8 m/s, zone: far",
+      "distance": 437.1,
+      "elapsedFormatted": "01:07"
+    },
+    {
+      "time": 1773084260421,
+      "elapsed": 69.399,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.62m",
+      "distance": 362.4,
+      "elapsedFormatted": "01:09"
+    },
+    {
+      "time": 1773084262444,
+      "elapsed": 71.422,
+      "description": "Entered Far range (>4m) — distance: 4.67m",
+      "distance": 466.9,
+      "elapsedFormatted": "01:11"
+    },
+    {
+      "time": 1773084263073,
+      "elapsed": 72.051,
+      "description": "Session ended — 2343 frames processed in 72.1s",
+      "elapsedFormatted": "01:12"
+    },
+    {
+      "time": 1773084273470,
+      "elapsed": 82.448,
+      "description": "Session ended — 2343 frames processed in 82.4s",
+      "elapsedFormatted": "01:22"
+    }
+  ],
+  "dataSource": "esp32",
+  "id": "000000013 - 2026-03-09",
+  "name": "case001"
+}

@@ -914,9 +914,20 @@ export class DemoDataGenerator {
     const h2Static = fromPolar(staticMag * 0.9, staticPhase + 0.1);
 
     // Moving component (person)
-    const movingPhase = 2 * Math.PI * Math.sin(theta) + (this.time / 1000) * 0.5;
-    const h1Moving = fromPolar(movingMag, movingPhase);
-    const h2Moving = fromPolar(movingMag * 0.95, movingPhase + 0.05);
+    const t = this.time / 1000;
+    const movingPhase = 2 * Math.PI * Math.sin(theta) + t * 0.5;
+
+    // Simulate Vital Signs on both antennas, but diff projection to survive conjugate math
+    // Breathing: ~0.3 Hz (18 RPM), Heart Rate: ~1.2 Hz (72 BPM)
+    const respPhase = 0.8 * Math.sin(2 * Math.PI * 0.3 * t);
+    const hrPhase = 0.15 * Math.sin(2 * Math.PI * 1.2 * t);
+
+    // Antenna 1 sees 100% of the displacement, Antenna 2 sees 50%
+    const h1Phase = movingPhase + respPhase + hrPhase;
+    const h2Phase = movingPhase + 0.05 + 0.5 * (respPhase + hrPhase);
+
+    const h1Moving = fromPolar(movingMag, h1Phase);
+    const h2Moving = fromPolar(movingMag * 0.95, h2Phase);
 
     // Add noise
     const noiseLevel = 0.02;

@@ -28,35 +28,24 @@ export function PointCloud3D({ points, radialTarget, className = "" }: PointClou
   }, [points]);
 
   return (
-    <Card className={`flex flex-col ${className}`}>
-      <CardHeader className="flex flex-row items-center gap-2 pb-2">
-        <Box className="h-4 w-4 text-primary" />
-        <CardTitle className="text-sm">3D Radial Scene</CardTitle>
-        {radialTarget && (
-          <span className="ml-auto text-xs text-muted-foreground font-mono">
-            r={radialTarget.r.toFixed(1)}m · θ={((radialTarget.theta * 180) / Math.PI).toFixed(0)}°
-            {radialTarget.isMoving ? " · MOVING" : " · IDLE"}
-          </span>
-        )}
-      </CardHeader>
-      <CardContent className="flex-1 p-0 relative min-h-[300px]">
-        <Canvas camera={{ position: [0, 8, 6], fov: 50 }}>
-          <color attach="background" args={["#000810"]} />
-          <RadialScene radialTarget={radialTarget ?? null} points={renderPoints} />
-          <OrbitControls
-            makeDefault
-            maxPolarAngle={Math.PI / 2.1}
-            minDistance={3}
-            maxDistance={20}
-          />
-        </Canvas>
+    <div className={`relative w-full h-full ${className}`}>
+      <Canvas camera={{ position: [0, 8, 6], fov: 50 }}>
+        <color attach="background" args={["#000810"]} />
+        <RadialScene radialTarget={radialTarget ?? null} points={renderPoints} />
+        <OrbitControls
+          makeDefault
+          maxPolarAngle={Math.PI / 2.1}
+          minDistance={3}
+          maxDistance={30}
+        />
+      </Canvas>
 
-        {/* Overlay stats */}
-        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm p-2 rounded text-xs text-white pointer-events-none">
-          Points: {renderPoints.length}<br />
-          Target: {radialTarget ? "TRACKING" : "SEARCHING..."}
-        </div>
-      </CardContent>
-    </Card>
+      {/* Overlay stats */}
+      <div className="absolute top-4 left-4 text-xs font-mono text-white/50 pointer-events-none">
+        [ 3D RADIAL SCENE ]<br />
+        Points: {renderPoints.length}<br />
+        Target: {radialTarget ? `r=${radialTarget.r.toFixed(1)}m θ=${((radialTarget.theta * 180) / Math.PI).toFixed(0)}°` : "SEARCHING..."}
+      </div>
+    </div>
   );
 }

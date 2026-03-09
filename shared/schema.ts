@@ -63,6 +63,14 @@ export const heatmapDataSchema = z.object({
 });
 export type HeatmapData = z.infer<typeof heatmapDataSchema>;
 
+// Vitals (Heart Rate & Respiration)
+export const vitalSignsSchema = z.object({
+  heartRateBpm: z.number(),
+  respirationRateRpm: z.number(),
+  vitalsReliable: z.boolean(),
+});
+export type VitalSigns = z.infer<typeof vitalSignsSchema>;
+
 // Motion status
 export const motionStatusSchema = z.object({
   motionDetected: z.boolean(),
@@ -122,6 +130,7 @@ export const systemStatusSchema = z.object({
   framesProcessed: z.number(),
   lastUpdate: z.number(),
   isProcessing: z.boolean(),
+  sessionName: z.string().optional(),
 });
 export type SystemStatus = z.infer<typeof systemStatusSchema>;
 
@@ -184,6 +193,8 @@ export const wsMessageTypeSchema = z.enum([
   "trackedTarget",
   "radialTarget",
   "targetIdentity",
+  "reportReady",
+  "vitalSigns",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
@@ -198,6 +209,7 @@ export const streamFrameSchema = z.object({
     z.array(pointCloudPointSchema),
     heatmapDataSchema,
     processingConfigSchema,
+    vitalSignsSchema,
     z.string(),
   ]),
 });

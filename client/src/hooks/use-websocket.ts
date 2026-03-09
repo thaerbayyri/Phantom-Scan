@@ -13,6 +13,7 @@ import type {
   TrackedTarget,
   RadialTarget,
   TargetIdentity,
+  VitalSigns,
 } from "@shared/schema";
 
 interface WSState {
@@ -29,6 +30,7 @@ interface WSState {
   trackedTarget: TrackedTarget | null;
   radialTarget: RadialTarget | null;
   targetIdentity: TargetIdentity | null;
+  vitalSigns: VitalSigns | null;
   isConnected: boolean;
   error: string | null;
 }
@@ -88,6 +90,7 @@ export function useWebSocket() {
     trackedTarget: null,
     radialTarget: null,
     targetIdentity: null,
+    vitalSigns: null,
     isConnected: false,
     error: null,
   });
@@ -279,6 +282,18 @@ export function useWebSocket() {
         }));
         break;
 
+      case "vitalSigns":
+        setState((prev) => ({
+          ...prev,
+          vitalSigns: message.data as VitalSigns,
+        }));
+        break;
+
+      case "reportReady":
+        console.log("Report is ready, downloading...");
+        window.open("/api/recording/download?format=pdf", "_blank");
+        break;
+
       case "error":
         setState((prev) => ({
           ...prev,
@@ -311,7 +326,7 @@ export function useWebSocket() {
     sendMessage("startProcessing", { customName });
     setState((prev) => ({
       ...prev,
-      status: { ...prev.status, isProcessing: true },
+      status: { ...prev.status, isProcessing: true, sessionName: customName },
     }));
   }, [sendMessage]);
 

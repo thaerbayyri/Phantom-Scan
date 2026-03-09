@@ -1,0 +1,150 @@
+{
+  "sessionId": "session-1773082673454",
+  "startTime": 1773082673454,
+  "endTime": 1773082697773,
+  "durationS": 24.3,
+  "totalFrames": 773,
+  "isActive": true,
+  "targetClassification": "mechanical",
+  "classificationConfidence": 1,
+  "classificationBreakdown": {
+    "mechanical": 1
+  },
+  "spatialMetrics": {
+    "minDistanceCm": 317.8,
+    "maxDistanceCm": 529.7,
+    "avgDistanceCm": 415.3,
+    "boundingBox": {
+      "xMin": 0.4,
+      "xMax": 0.8,
+      "zMin": -0.69,
+      "zMax": 0.69
+    }
+  },
+  "kinematicData": {
+    "avgSpeedMs": 9.341,
+    "maxSpeedMs": 26.684
+  },
+  "eventTimeline": [
+    {
+      "time": 1773082673454,
+      "elapsed": 0,
+      "description": "Session started — data source: esp32",
+      "elapsedFormatted": "00:00"
+    },
+    {
+      "time": 1773082674443,
+      "elapsed": 0.989,
+      "description": "First classification: 'mechanical' detected at 3.9m",
+      "distance": 385.3,
+      "elapsedFormatted": "00:00"
+    },
+    {
+      "time": 1773082674510,
+      "elapsed": 1.056,
+      "description": "Speed spike detected: 5.0 m/s (new peak)",
+      "distance": 385.7,
+      "elapsedFormatted": "00:01"
+    },
+    {
+      "time": 1773082676571,
+      "elapsed": 3.117,
+      "description": "Entered Far range (>4m) — distance: 4.80m",
+      "distance": 479.7,
+      "elapsedFormatted": "00:03"
+    },
+    {
+      "time": 1773082679190,
+      "elapsed": 5.736,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.99m",
+      "distance": 399.1,
+      "elapsedFormatted": "00:05"
+    },
+    {
+      "time": 1773082679971,
+      "elapsed": 6.517,
+      "description": "Position update — avg distance: 4.25m, avg speed: 8.6 m/s, zone: mid",
+      "distance": 364.5,
+      "elapsedFormatted": "00:06"
+    },
+    {
+      "time": 1773082681392,
+      "elapsed": 7.938,
+      "description": "Entered Far range (>4m) — distance: 4.41m",
+      "distance": 441.1,
+      "elapsedFormatted": "00:07"
+    },
+    {
+      "time": 1773082684243,
+      "elapsed": 10.789,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.81m",
+      "distance": 380.8,
+      "elapsedFormatted": "00:10"
+    },
+    {
+      "time": 1773082686153,
+      "elapsed": 12.699,
+      "description": "Position update — avg distance: 4.21m, avg speed: 9.0 m/s, zone: far",
+      "distance": 419.3,
+      "elapsedFormatted": "00:12"
+    },
+    {
+      "time": 1773082686281,
+      "elapsed": 12.827,
+      "description": "Entered Far range (>4m) — distance: 4.01m",
+      "distance": 401.4,
+      "elapsedFormatted": "00:12"
+    },
+    {
+      "time": 1773082688454,
+      "elapsed": 15,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.95m",
+      "distance": 395,
+      "elapsedFormatted": "00:15"
+    },
+    {
+      "time": 1773082690472,
+      "elapsed": 17.018,
+      "description": "Entered Far range (>4m) — distance: 4.25m",
+      "distance": 425.4,
+      "elapsedFormatted": "00:17"
+    },
+    {
+      "time": 1773082692331,
+      "elapsed": 18.877,
+      "description": "Position update — avg distance: 4.15m, avg speed: 9.2 m/s, zone: mid",
+      "distance": 392.6,
+      "elapsedFormatted": "00:18"
+    },
+    {
+      "time": 1773082692516,
+      "elapsed": 19.062,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.75m",
+      "distance": 375,
+      "elapsedFormatted": "00:19"
+    },
+    {
+      "time": 1773082694530,
+      "elapsed": 21.076,
+      "description": "Entered Far range (>4m) — distance: 4.52m",
+      "distance": 451.9,
+      "elapsedFormatted": "00:21"
+    },
+    {
+      "time": 1773082696617,
+      "elapsed": 23.163,
+      "description": "Entered Mid range (1.5–4m) — distance: 3.76m",
+      "distance": 376.4,
+      "elapsedFormatted": "00:23"
+    },
+    {
+      "time": 1773082697773,
+      "elapsed": 24.319,
+      "description": "Session ended — 773 frames processed in 24.3s",
+      "elapsedFormatted": "00:24"
+    }
+  ],
+  "dataSource": "esp32",
+  "id": "000000008 - 2026-03-09",
+  "name": "Investigation_Beta"
+}
