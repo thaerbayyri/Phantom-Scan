@@ -1,14 +1,14 @@
-# π Phantom Scan
+#  Phantom Scan
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/thaerbayyri/Phantom-Scan/main/assets/phantom-hero.jpg" alt="Phantom Scan - WiFi CSI Tracking" width="100%">
+  <img src="client/public/wifi.png" alt="Phantom Scan - WiFi CSI Tracking" width="100%">
 </p>
 
 ## **Perceive the Invisible: Through-Wall WiFi CSI Sensing** ##
 
 **Real-time human detection, vital signs tracking, and spatial mapping using Channel State Information.** No cameras. No infrared. Just radio waves and physics.
 
-### π Phantom Scan is a high-performance WiFi sensing dashboard designed for stealthy environmental observability.
+###  Phantom Scan is a high-performance WiFi sensing dashboard designed for stealthy environmental observability.
 
 By analyzing disturbances in the WiFi signal field (Channel State Information), Phantom Scan reconstructs human presence, determines Angle of Arrival (AoA) for target tracking, and estimates vital signs (heart rate/breathing) with sub-millimeter precision.
 
@@ -45,6 +45,7 @@ Built for **Low-SWaP (Size, Weight, and Power)** edge applications, the system b
 | Document | Description |
 |----------|-------------|
 | [Ubuntu & ESP32-S3 Setup](docs/UBUNTU_ESP32_SETUP.md) | **Recommended** - Guide for Node.js, ESP-IDF, and CSI firmware setup |
+| [Windows & ESP32-S3 Setup](docs/WINDOWS_ESP32_SETUP.md) | Guide for Node.js, ESP-IDF, and CSI firmware setup on Windows |
 | [WSL Setup Guide](docs/wsl_usb_setup.md) | How to bind physical USB sensors to Windows Subsystem for Linux |
 | [API Reference](#api-reference) | Technical details for REST and WebSocket interfaces |
 | [Signal Logic](#-the-signal-logic) | Visualizing the 8-stage DSP pipeline |
@@ -97,7 +98,7 @@ graph TD
 | 🏥 | **Elderly Care** | Fall detection & vitals monitoring (no wearables) | Wearable pendants (low compliance) |
 | 🔒 | **Secure Facilities** | Covert through-wall tracking without cameras | PIR Sensors (easily spoofed/blocked) |
 | 🏭 | **Industrial Safety** | Worker proximity alerts in dusty/smoky zones | LIDAR (fails in poor visibility) |
-
+| ⚔️ | **Tactical Urban Operations using Drone Recon** | Identifies hostile vs. hostage pose through concrete, Operates in smoke, fog, and GNSS-denied zones |
 ---
 
 ## 📦 System Architecture
