@@ -128,11 +128,15 @@ export default function Dashboard() {
 
             {/* Right Floating Widgets */}
             <div className="flex flex-col gap-3 w-96 pointer-events-auto drop-shadow-xl h-full overflow-y-auto pr-2 pb-4 scrollbar-hidden">
-              <TargetIdentityCard identity={targetIdentity ?? null} />
+              <TargetIdentityCard 
+                identity={targetIdentity ?? null} 
+                bearingRad={radialTarget?.theta}
+              />
               <div className="grid grid-cols-2 gap-3">
                 <DistanceMeter
                   distanceCm={radialTarget?.distanceCm ?? 200}
                   wallDistance={radialTarget?.wallDistance ?? 5.0}
+                  bearingRad={radialTarget?.theta}
                 />
                 <VitalsMonitor vitals={vitalSigns} />
               </div>

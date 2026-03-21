@@ -569,9 +569,9 @@ export class SignalProcessingServer {
           const dist = 1 + (1 - relPower) * 4;
           const thetaRad = (sp.angle * Math.PI) / 180;
           pointCloud.push({
-            x: dist * Math.sin(thetaRad),
-            y: dist * Math.cos(thetaRad),
-            z:
+            x: -dist * Math.sin(thetaRad),
+            z: dist * Math.cos(thetaRad),
+            y:
               dynamicAmplitude *
               Math.sin(this.status.framesProcessed * 0.05) *
               0.3,
@@ -607,18 +607,37 @@ export class SignalProcessingServer {
       const r = 0.8 + (1 - relPower) * 5; // 0.8m to 5.8m range
 
       // Polar → Cartesian (ESP32 at origin)
-      const radX = r * Math.cos(thetaRad);
-      const radZ = r * Math.sin(thetaRad);
+      // Final Alignment: North (+Z local) = Top (-Z world), East (+X world) = Right
+      const rawRadX = -r * Math.sin(thetaRad);
+      const rawRadZ = r * Math.cos(thetaRad);
 
-      // Velocity vector
-      const dx = radX - this.prevRadialX;
-      const dz = radZ - this.prevRadialZ;
-      const speed = Math.sqrt(dx * dx + dz * dz) * 20; // ×sampleRate for m/s
+      let radX = rawRadX;
+      let radZ = rawRadZ;
+      let targetVx = 0;
+      let targetVz = 0;
+      let speed = 0;
+
+      if (trackedTarget) {
+        // Use smooth coordinates and bounded velocity from Kalman Filter
+        radX = trackedTarget.x;
+        radZ = trackedTarget.z;
+        targetVx = trackedTarget.vx;
+        targetVz = trackedTarget.vz;
+        speed = Math.sqrt(targetVx * targetVx + targetVz * targetVz);
+      } else {
+        // Fallback to instantaneous noisy physics
+        const dx = rawRadX - this.prevRadialX;
+        const dz = rawRadZ - this.prevRadialZ;
+        targetVx = dx * 20;
+        targetVz = dz * 20;
+        speed = Math.sqrt(targetVx * targetVx + targetVz * targetVz);
+      }
+
       const isMoving = motionResult.motionDetected && speed > 0.05;
 
       // Direction of travel (smooth)
       if (isMoving && speed > 0.02) {
-        const rawAngle = Math.atan2(dz, dx);
+        const rawAngle = Math.atan2(targetVz, targetVx);
         const angleDiff = rawAngle - this.radialAngle;
         const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
         this.radialAngle += wrapped * 0.3;
@@ -645,8 +664,8 @@ export class SignalProcessingServer {
         z: radZ,
         r,
         theta: thetaRad,
-        vx: dx * 20,
-        vz: dz * 20,
+        vx: targetVx,
+        vz: targetVz,
         isMoving,
         angle: this.radialAngle,
         speed,

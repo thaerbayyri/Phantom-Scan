@@ -145,6 +145,8 @@ export const trackedTargetSchema = z.object({
   vz: z.number(),
   intensity: z.number(), // mapped to opacity
   confidence: z.number(), // based on cluster density/size
+  isMoving: z.boolean().optional(),
+  angle: z.number().optional()
 });
 export type TrackedTarget = z.infer<typeof trackedTargetSchema>;
 

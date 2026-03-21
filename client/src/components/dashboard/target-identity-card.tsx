@@ -4,16 +4,29 @@ import { User, Cog } from "lucide-react";
 
 interface TargetIdentityCardProps {
     identity: TargetIdentity | null;
+    bearingRad?: number;
     className?: string;
 }
 
-export function TargetIdentityCard({ identity, className = "" }: TargetIdentityCardProps) {
+export function TargetIdentityCard({ identity, bearingRad, className = "" }: TargetIdentityCardProps) {
     const label = identity?.label ?? "unknown";
     const humanProb = identity?.humanProb ?? 0.5;
     const mechProb = identity?.mechanicalProb ?? 0.5;
 
     const isHuman = label === "human";
     const isMech = label === "mechanical";
+
+    const getCardinal = (rad: number) => {
+        const deg = (rad * 180) / Math.PI;
+        if (deg >= -22.5 && deg <= 22.5) return "N";
+        if (deg > 22.5 && deg <= 67.5) return "NE";
+        if (deg > 67.5 && deg <= 112.5) return "E";
+        if (deg < -22.5 && deg >= -67.5) return "NW";
+        if (deg < -67.5 && deg >= -112.5) return "W";
+        if (deg > 112.5 && deg <= 157.5) return "SE";
+        if (deg < -112.5 && deg >= -157.5) return "SW";
+        return "S";
+    };
 
     return (
         <Card className={`${className}`}>
@@ -26,12 +39,19 @@ export function TargetIdentityCard({ identity, className = "" }: TargetIdentityC
                     <User className="h-4 w-4 text-muted-foreground" />
                 )}
                 <CardTitle className="text-sm">Target Identity</CardTitle>
-                <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${isHuman ? "bg-cyan-900/50 text-cyan-300" :
-                        isMech ? "bg-amber-900/50 text-amber-300" :
-                            "bg-muted text-muted-foreground"
-                    }`}>
-                    {label.toUpperCase()}
-                </span>
+                <div className="ml-auto flex items-center gap-2">
+                    {bearingRad !== undefined && (
+                        <span className="text-xs font-mono bg-primary/20 text-primary px-2 py-0.5 rounded border border-primary/30 animate-pulse">
+                            BEARING: {getCardinal(bearingRad)}
+                        </span>
+                    )}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isHuman ? "bg-cyan-900/50 text-cyan-300" :
+                            isMech ? "bg-amber-900/50 text-amber-300" :
+                                "bg-muted text-muted-foreground"
+                        }`}>
+                        {label.toUpperCase()}
+                    </span>
+                </div>
             </CardHeader>
             <CardContent className="space-y-3">
                 {/* Probability bar */}

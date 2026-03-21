@@ -4,10 +4,11 @@ import { Ruler } from "lucide-react";
 interface DistanceMeterProps {
     distanceCm: number;
     wallDistance: number;
+    bearingRad?: number;
     className?: string;
 }
 
-export function DistanceMeter({ distanceCm, wallDistance, className = "" }: DistanceMeterProps) {
+export function DistanceMeter({ distanceCm, wallDistance, bearingRad, className = "" }: DistanceMeterProps) {
     const distanceM = distanceCm / 100;
     const maxRange = 8; // meters
 
@@ -91,8 +92,31 @@ export function DistanceMeter({ distanceCm, wallDistance, className = "" }: Dist
                 </svg>
 
                 {/* Distance in meters subtitle */}
-                <div className="text-xs text-muted-foreground font-mono">
-                    {distanceM.toFixed(2)}m from ESP32
+                <div className="text-xs text-muted-foreground font-mono flex items-center justify-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-1 rounded-md border border-white/5">
+                        <span className="text-primary/60">{distanceM.toFixed(2)}m</span>
+                        {bearingRad !== undefined && (
+                            <>
+                                <span className="text-white/20">|</span>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">Bearing</span>
+                                    <span className="font-black text-primary text-sm animate-pulse-slow">
+                                        {(() => {
+                                            const deg = (bearingRad * 180) / Math.PI;
+                                            if (deg >= -22.5 && deg <= 22.5) return "N";
+                                            if (deg > 22.5 && deg <= 67.5) return "NE";
+                                            if (deg > 67.5 && deg <= 112.5) return "E";
+                                            if (deg < -22.5 && deg >= -67.5) return "NW";
+                                            if (deg < -67.5 && deg >= -112.5) return "W";
+                                            if (deg > 112.5 && deg <= 157.5) return "SE";
+                                            if (deg < -112.5 && deg >= -157.5) return "SW";
+                                            return "S";
+                                        })()}
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </CardContent>
         </Card>

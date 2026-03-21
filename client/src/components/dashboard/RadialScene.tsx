@@ -1,5 +1,6 @@
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
+import { Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
 import type { RadialTarget, PointCloudPoint } from "@shared/schema";
 import { DirectionalNode } from "./DirectionalNode";
@@ -51,6 +52,20 @@ function PolarGrid() {
                     </mesh>
                 );
             })}
+
+            {/* Cardinal Markers (Labels on floor grid) */}
+            <Billboard position={[0, 6.5, 0.15]} follow={true}>
+                <Text fontSize={0.7} color="#00ffff" font="monospace" anchorX="center" anchorY="middle">N</Text>
+            </Billboard>
+            <Billboard position={[0, -6.5, 0.15]} follow={true}>
+                <Text fontSize={0.6} color="#00cccc" font="monospace" anchorX="center" anchorY="middle">S</Text>
+            </Billboard>
+            <Billboard position={[6.5, 0, 0.15]} follow={true}>
+                <Text fontSize={0.6} color="#00cccc" font="monospace" anchorX="center" anchorY="middle">E</Text>
+            </Billboard>
+            <Billboard position={[-6.5, 0, 0.15]} follow={true}>
+                <Text fontSize={0.6} color="#00cccc" font="monospace" anchorX="center" anchorY="middle">W</Text>
+            </Billboard>
         </group>
     );
 }

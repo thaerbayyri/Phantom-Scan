@@ -114,7 +114,9 @@ export class KalmanFilter {
 
     public predict() {
         const now = Date.now();
-        const dt = (now - this.lastUpdate) / 1000;
+        // Clamp dt to a reasonable minimum (e.g. 20Hz = 0.05s) to avoid 
+        // infinite velocity explosions during sudden packet bursts.
+        const dt = Math.max(0.05, (now - this.lastUpdate) / 1000);
         this.lastUpdate = now;
 
         // State Transition Matrix F
@@ -172,6 +174,12 @@ export class KalmanFilter {
                 this.x[i] += K[i][j] * y[j];
             }
         }
+
+        // Physics-based constrain: human sprint limit (~10 m/s)
+        const MAX_HUMAN_SPEED = 10.0;
+        this.x[3] = Math.max(-MAX_HUMAN_SPEED, Math.min(MAX_HUMAN_SPEED, this.x[3])); // vx
+        this.x[4] = Math.max(-MAX_HUMAN_SPEED, Math.min(MAX_HUMAN_SPEED, this.x[4])); // vy
+        this.x[5] = Math.max(-MAX_HUMAN_SPEED, Math.min(MAX_HUMAN_SPEED, this.x[5])); // vz
 
         // Update Covariance: P = (I - K*H)*P
         const I = this.identity(6);

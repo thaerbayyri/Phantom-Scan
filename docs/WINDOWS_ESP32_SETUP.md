@@ -1,100 +1,108 @@
-# Windows & ESP32-S3 Setup Guide
+# Windows ESP32-S3 Setup Guide (Phantom Scan)
 
-This guide provides step-by-step instructions for running **Phantom Scan** on a Windows environment and setting up the **ESP32-S3** framework for CSI data capture.
-
----
-
-## 1. Windows System Setup
-
-### Install Dependencies
-Before starting, ensure you have the following installed on your system:
-- **Git for Windows**: Download from [git-scm.com](https://git-scm.com/)
-- **Python 3**: Download from [python.org](https://www.python.org/downloads/) (Make sure to check "Add Python to PATH" during installation)
-- **Node.js**: Download the LTS version (e.g., v18 or v20) from [nodejs.org](https://nodejs.org/). Alternatively, use [nvm-windows](https://github.com/coreybutler/nvm-windows) to manage multiple Node versions.
-
-### Clone and Run Phantom Scan
-Open your terminal (Command Prompt or PowerShell) and run:
-
-```cmd
-git clone https://github.com/thaerbayyri/Phantom-Scan.git
-cd "Phantom-Scan"
-npm install
-npm run dev
-```
-The dashboard will be live at `http://localhost:5000`.
+This guide provides a comprehensive walkthrough for setting up the **ESP32-S3** in a Windows environment to capture Channel State Information (CSI) for the **Phantom Scan** project.
 
 ---
 
-## 2. ESP32-S3 ESP-IDF Framework Setup
+## 1. Prerequisites
 
-The ESP32-S3 requires the **ESP-IDF** (Espressif IoT Development Framework) to build and flash custom firmware. On Windows, this process is heavily automated by the Espressif Installer.
-
-### Install ESP-IDF
-1. Go to the [ESP-IDF Windows Installer Download Page](https://dl.espressif.com/dl/esp-idf/).
-2. Download the **ESP-IDF Online Installer** or the **Offline Installer**.
-3. Run the installer. It will automatically install all required prerequisites (CMake, Ninja, cross-compiler toolchains, etc.).
-4. When finished, it will create shortcut commands like **ESP-IDF X.X CMD** or **ESP-IDF X.X PowerShell** in your Start Menu.
+Before installing the ESP-IDF, ensure you have the following installed on your Windows machine:
+- **Git for Windows**: Download from [git-scm.com](https://git-scm.com/download/win).
+- **Python 3.x**: Ensure "Add Python to PATH" is checked during installation.
+- **Visual Studio Code**: Recommended IDE for Windows users.
 
 ---
 
-## 3. CSI Firmware Setup & Flashing
+## 2. ESP-IDF Framework Installation
 
-To capture Channel State Information (CSI), you must flash a CSI-capable firmware to your ESP32-S3.
+The easiest way to set up the ESP-IDF on Windows is by using the **Espressif Online Installer**.
 
-### Download CSI Firmware Project
-Open the **ESP-IDF PowerShell** or **ESP-IDF CMD** shortcut from your Start Menu (this ensures all `idf.py` commands are available). Then run:
+### Steps:
+1. Download the **ESP-IDF Tools Installer** from the [official Espressif website](https://dl.espressif.com/dl/esp-idf/).
+2. Run the installer and select the following options:
+   - **Installation Type**: `Online`
+   - **ESP-IDF Version**: `v5.1` or higher (Recommended).
+   - **Target**: `ESP32-S3`
+3. The installer will automatically download the required tools (CMake, Ninja, Cross-compilers).
+4. Once completed, you will have an **ESP-IDF PowerShell** and **ESP-IDF Command Prompt** on your desktop.
 
-```cmd
-mkdir %USERPROFILE%\esp
-cd %USERPROFILE%\esp
+---
+
+## 3. Driver Installation
+
+The ESP32-S3 usually uses a built-in USB-to-Serial converter or an external silicon chip (like CP210x/CH340).
+
+- **S3 Built-in Port**: Windows typically detects this automatically as a "USB Serial Port (COMx)".
+- **External Chips**: If your board isn't recognized, download drivers:
+  - [CP210x VCP Drivers](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers)
+  - [CH340 Drivers](http://www.wch-ic.com/downloads/CH341SER_EXE.html)
+
+Check your device manager under `Ports (COM & LPT)` to identify your COM port (e.g., `COM5`).
+
+---
+
+## 4. CSI Firmware Setup & Flashing
+
+### Clone components
+Open the **ESP-IDF PowerShell** (installed in Step 2) and run:
+
+```powershell
+mkdir esp
+cd esp
 git clone https://github.com/espressif/esp-csi.git
 cd esp-csi\examples\get-started\csi_recv
 ```
 
-### Set Target & Configure
-```cmd
-idf.py set-target esp32s3
-idf.py menuconfig
-```
-In the config menu:
-- Navigate to `Component config` -> `ESP-CSI Configuration`.
-- Set the Wi-Fi Channel and Filter Mac as per your target environment.
-- Save and exit (press `S` then `Q`).
-
 ### Build and Flash
-Connect your ESP32-S3 via USB. To find its COM port:
-- Right-click the **Start Menu** and open **Device Manager**.
-- Expand the **Ports (COM & LPT)** section and look for your ESP32-S3 device (e.g., `COM3`, `COM5`).
-
-```cmd
-# Build the firmware
-idf.py build
-
-# Flash and open serial monitor (replace COM5 with your actual port)
-idf.py -p COM5 flash monitor
-```
+1. **Set target**:
+   ```powershell
+   idf.py set-target esp32s3
+   ```
+2. **Configure Channel**:
+   ```powershell
+   idf.py menuconfig
+   # Navigate: Component config -> ESP-CSI Configuration
+   # Set the WiFi channel to match your router
+   ```
+3. **Flash firmware**:
+   ```powershell
+   idf.py -p COMx flash monitor
+   # Replace COMx with your port (e.g., COM5)
+   ```
 
 ---
 
-## 4. Connecting ESP32 to Phantom Scan
+## 5. Bridging to Phantom Scan Dashboard
 
-Once the firmware is flashed and printing CSI data to the serial monitor, use the provided capture script to bridge the data to the Node.js dashboard.
+Once the ESP32 is flashing and printing data, you need to bridge that data to the dashboard using Python.
 
-### Run Capture Script
-Open a new standard command prompt or PowerShell inside the `phantom scan` directory (where the `scripts` folder is located):
+### Setup Python Environment
+Open a standard Windows Terminal/PowerShell in the project's root:
 
-```cmd
+```powershell
 cd scripts
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\activate
 pip install requests pyserial numpy
+```
 
+### Run Capture Script
+```powershell
 python csi_capture.py --url http://localhost:5000 --baud 115200 --esp32
 ```
 
 ---
 
+## 6. Troubleshooting (Windows-Specific)
+
+- **Port Busy Error**: Ensure no other serial monitors (like Arduino Serial Monitor) are open.
+- **Python Path**: If `python` command is not found, ensure it is added to your Environment Variables.
+- **WSL Conflict**: If you are running the dashboard in WSL and the capture script in Windows, ensure they can communicate over `localhost` or your internal IP.
+- **Permission Denied**: If flashing fails, try running the ESP-IDF PowerShell as Administrator.
+
+---
+
 ## 🏁 Verification
-1. Open `http://localhost:5000` in your browser.
-2. Ensure the **Data Source** is set to **Hardware** in the top bar.
-3. Observe the real-time **CSI Traces** and **3D Point Cloud** updating as movement is detected.
+1. Launch the Phantom Scan dashboard (`npm run dev`).
+2. Set **Data Source** to **Hardware**.
+3. Verify that the **CSI Graph** starts populating as the capture script sends data.
