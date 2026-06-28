@@ -275,6 +275,25 @@ def run_inference(node_id: int, mags_hist: list, rssi_hist: list):
         except Exception as e:
             print(f"[WS] Send error: {e}")
 
+# ─── Inference Throttler Helper ────────────────────────────────────────
+
+last_inference_time = 0.0
+
+def trigger_inference(node_id, mags_hist, rssi_hist):
+    global last_inference_time
+    now = time.time()
+    if now - last_inference_time < 0.2:  # Throttle to max 5 Hz (every 200ms)
+        return
+    last_inference_time = now
+    
+    mags_copy = list(mags_hist)
+    rssi_copy = list(rssi_hist)
+    threading.Thread(
+        target=run_inference,
+        args=(node_id, mags_copy, rssi_copy),
+        daemon=True
+    ).start()
+
 # ─── WebSocket Client Threads ──────────────────────────────────────────
 
 def on_message(ws_conn, message):
@@ -325,13 +344,7 @@ def on_message(ws_conn, message):
                     hist["timestamps"].pop(0)
                     
                 if len(hist["mags"]) >= HISTORY_LEN:
-                    mags_copy = list(hist["mags"])
-                    rssi_copy = list(hist["rssi"])
-                    threading.Thread(
-                        target=run_inference,
-                        args=(node_id, mags_copy, rssi_copy),
-                        daemon=True
-                    ).start()
+                    trigger_inference(node_id, hist["mags"], hist["rssi"])
     except Exception as e:
         pass
 
@@ -399,14 +412,7 @@ def run_udp_receiver():
                 
             # Perform inference if we have enough history
             if len(hist["mags"]) >= HISTORY_LEN:
-                # Trigger inference in a background thread to prevent blocking receiver
-                mags_copy = list(hist["mags"])
-                rssi_copy = list(hist["rssi"])
-                threading.Thread(
-                    target=run_inference,
-                    args=(node_id, mags_copy, rssi_copy),
-                    daemon=True
-                ).start()
+                trigger_inference(node_id, hist["mags"], hist["rssi"])
 
 # ─── Main ─────────────────────────────────────────────────────────────
 
