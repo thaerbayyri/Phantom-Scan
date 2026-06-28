@@ -613,15 +613,21 @@ export class SignalProcessingServer {
         this.broadcast("trackedTarget", null);
       }
 
+      // ── 10. Micro-Doppler Classification ──
+      const dynamicAmp = magnitude({
+        re: h1Proc.re - sample.h1.re,
+        im: h1Proc.im - sample.h1.im,
+      });
+      const classification = this.microDopplerClassifier.push(dynamicAmp);
 
+      // ── 11. PDP Ranging ──
+      const pdpResult = this.pdpRanger.push(h1Proc, h2Proc, sample.rssi ?? -50);
 
       // ── 9. Radial Target (ESP-Centric Coordinates) ──
       // Use MUSIC peak angle as bearing θ, tracked target distance as r
       const thetaRad = (peak.angle * Math.PI) / 180;
-      // Distance estimate: use relative Doppler power as proxy
-      // When peak is strong (close to maxPower), target is closer; weaker = farther
-      const relPower = Math.max(0, Math.min(1, (peak.power - pThreshold) / 10));
-      const r = 0.8 + (1 - relPower) * 5; // 0.8m to 5.8m range
+      // Distance estimate: use actual PDP ranging distance in meters
+      const r = pdpResult.distanceCm / 100;
 
       // Polar → Cartesian (ESP32 at origin)
       // Final Alignment: North (+Z local) = Top (-Z world), East (+X world) = Right
@@ -663,16 +669,6 @@ export class SignalProcessingServer {
       this.prevRadialX = radX;
       this.prevRadialZ = radZ;
 
-      // ── 10. Micro-Doppler Classification ──
-      const dynamicAmp = magnitude({
-        re: h1Proc.re - sample.h1.re,
-        im: h1Proc.im - sample.h1.im,
-      });
-      const classification = this.microDopplerClassifier.push(dynamicAmp);
-
-      // ── 11. PDP Ranging ──
-      const pdpResult = this.pdpRanger.push(h1Proc, h2Proc, sample.rssi ?? -50);
-
       // Broadcast target identity
       this.broadcast("targetIdentity", classification);
 
@@ -686,7 +682,7 @@ export class SignalProcessingServer {
         isMoving,
         angle: this.radialAngle,
         speed,
-        confidence: trackedTarget ? trackedTarget.confidence : relPower,
+        confidence: trackedTarget ? trackedTarget.confidence : 0.8,
         label: classification.label,
         humanProb: classification.humanProb,
         distanceCm: pdpResult.distanceCm,
