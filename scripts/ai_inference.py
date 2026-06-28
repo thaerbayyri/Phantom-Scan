@@ -271,6 +271,7 @@ def run_inference(node_id: int, mags_hist: list, rssi_hist: list):
                     "periodicity": float(features_8d[2])
                 }
             }))
+            print(f"[AI] Inference run completed for node {node_id}: label={label}, motion={motion_energy:.3f}")
         except Exception as e:
             print(f"[WS] Send error: {e}")
 
