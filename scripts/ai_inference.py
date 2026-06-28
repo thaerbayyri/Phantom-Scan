@@ -98,6 +98,7 @@ lock = threading.Lock()
 
 # Node-specific histories: node_id -> {"timestamps": [], "mags": [], "rssi": []}
 node_histories = {}
+last_udp_time = 0.0
 
 # ─── Model Loading ────────────────────────────────────────────────────
 
@@ -276,7 +277,62 @@ def run_inference(node_id: int, mags_hist: list, rssi_hist: list):
 # ─── WebSocket Client Threads ──────────────────────────────────────────
 
 def on_message(ws_conn, message):
-    pass
+    global last_udp_time
+    # If we received a real UDP packet in the last 2 seconds, ignore WebSocket raw samples
+    if time.time() - last_udp_time < 2.0:
+        return
+        
+    try:
+        msg = json.loads(message)
+        if msg.get("type") == "rawSample":
+            data = msg.get("data")
+            if not data:
+                return
+                
+            node_id = data.get("nodeId", 1)
+            h1 = data.get("h1")
+            h2 = data.get("h2")
+            rssi = data.get("rssi", -50)
+            timestamp = data.get("timestamp", time.time() * 1000)
+            
+            if not h1:
+                return
+                
+            # Synthesize 56-subcarrier magnitudes from the dominant complex numbers
+            mag1 = math.sqrt(h1["re"]**2 + h1["im"]**2)
+            mag2 = math.sqrt(h2["re"]**2 + h2["im"]**2) if h2 else mag1
+            
+            # Generate synthetic 56 subcarriers with frequency-selective fading + noise
+            mags = np.zeros(56)
+            for i in range(56):
+                fade = 1.0 + 0.3 * math.sin(i * 0.15)
+                mags[i] = (mag1 * 0.7 + mag2 * 0.3) * fade + np.random.normal(0, 0.05)
+                mags[i] = max(0.01, mags[i])
+                
+            with lock:
+                if node_id not in node_histories:
+                    node_histories[node_id] = {"mags": [], "rssi": [], "timestamps": []}
+                    
+                hist = node_histories[node_id]
+                hist["mags"].append(mags)
+                hist["rssi"].append(rssi)
+                hist["timestamps"].append(timestamp)
+                
+                if len(hist["mags"]) > HISTORY_LEN:
+                    hist["mags"].pop(0)
+                    hist["rssi"].pop(0)
+                    hist["timestamps"].pop(0)
+                    
+                if len(hist["mags"]) >= HISTORY_LEN:
+                    mags_copy = list(hist["mags"])
+                    rssi_copy = list(hist["rssi"])
+                    threading.Thread(
+                        target=run_inference,
+                        args=(node_id, mags_copy, rssi_copy),
+                        daemon=True
+                    ).start()
+    except Exception as e:
+        pass
 
 def on_error(ws_conn, error):
     print(f"[WS] Error: {error}")
@@ -311,6 +367,7 @@ def run_ws_client():
 # ─── UDP Receiver Thread ──────────────────────────────────────────────
 
 def run_udp_receiver():
+    global last_udp_time
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((UDP_HOST, UDP_PORT))
     print(f"[UDP] Listening for raw CSI on {UDP_HOST}:{UDP_PORT}...")
@@ -321,6 +378,7 @@ def run_udp_receiver():
         if sample is None:
             continue
             
+        last_udp_time = time.time()
         node_id = sample["node_id"]
         
         with lock:
