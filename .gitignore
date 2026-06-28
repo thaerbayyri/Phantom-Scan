@@ -4,3 +4,28 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# IDE/Agent state
+.agent/
+
+# Python cache & virtualenv
+__pycache__/
+*.pyc
+.venv/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Pytest cache
+.pytest_cache/
+
+# ESP32-S3 and CMake build directories
+firmware/esp32-csi-node/build/
+firmware/esp32-csi-node/.cache/
+sdkconfig.old
+build/
+
+# Local test data, recordings and sessions
+*.csv
+data/sessions/
+recordings/
