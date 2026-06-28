@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import sys
 import time
 import uuid
 from collections import Counter
@@ -21,15 +23,29 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .models import (
-    ActivityLabel,
-    ActivityResult,
-    DistanceResult,
-    KinematicData,
-    SessionEvent,
-    SessionReport,
-    SpatialMetrics,
-)
+# Allow running as a standalone subprocess (e.g. spawned by Express)
+# without needing to be part of a package
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from models import (  # type: ignore
+        ActivityLabel,
+        ActivityResult,
+        DistanceResult,
+        KinematicData,
+        SessionEvent,
+        SessionReport,
+        SpatialMetrics,
+    )
+else:
+    from .models import (
+        ActivityLabel,
+        ActivityResult,
+        DistanceResult,
+        KinematicData,
+        SessionEvent,
+        SessionReport,
+        SpatialMetrics,
+    )
 
 
 class SessionReporter:

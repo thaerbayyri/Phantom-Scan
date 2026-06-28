@@ -246,16 +246,15 @@ export function RadialScene({ radialTarget, points, poseFrame }: RadialSceneProp
             {/* Wall plane at detected reflection distance */}
             <WallPlane distance={wallDistance} />
 
-            {/* Conditional entity based on classification */}
+            {/* Conditional entity based on classification — human figure shown for unknown/human */}
             {radialTarget && (
-                label === "human" ? (
-                    <HumanMesh target={radialTarget} poseFrame={poseFrame} />
-                ) : label === "mechanical" ? (
+                label === "mechanical" ? (
                     <MachineStatic target={radialTarget} />
                 ) : (
-                    <DirectionalNode target={radialTarget} />
+                    <HumanMesh target={radialTarget} poseFrame={poseFrame} />
                 )
             )}
         </>
     );
 }
+

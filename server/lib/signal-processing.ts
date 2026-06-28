@@ -859,78 +859,47 @@ export class CSIDataParser {
 export class DemoDataGenerator {
   private time = 0;
   private readonly sampleRate = 20; // Hz
-  private personAngle = 0;
-  private personDirection = 1;
-  private gesturePhase = 0; // 0 = normal, 1 = forward, 2 = backward
+
+  // Room-walk simulation: person walks a figure-8 loop
+  // producing wide angle swings (-50° to +50°) that MUSIC can resolve
+  private walkPhase = 0;
 
   generateSample(): CSISample {
     this.time += 1000 / this.sampleRate;
+    this.walkPhase += (2 * Math.PI) / (this.sampleRate * 12); // 12s full loop
 
-    // Simulate gestures periodically
-    if (this.gesturePhase === 0 && Math.random() < 0.02) {
-      this.gesturePhase = Math.random() < 0.5 ? 1 : 2;
-    }
+    // Figure-8 path: angle oscillates widely between -50° and +50°
+    const personAngle = 50 * Math.sin(this.walkPhase);
+    // Depth oscillates so PDP range also changes 1.5m → 4.5m
+    const personDepth = 3.0 + 1.5 * Math.sin(this.walkPhase * 2);
 
-    // Gesture movement patterns
-    if (this.gesturePhase === 1) {
-      // Forward-backward (Bit 0)
-      this.personAngle += 3;
-      if (this.personAngle > 25) {
-        this.gesturePhase = -1; // Transition to backward
-      }
-    } else if (this.gesturePhase === -1) {
-      this.personAngle -= 3;
-      if (this.personAngle < 5) {
-        this.gesturePhase = 0;
-      }
-    } else if (this.gesturePhase === 2) {
-      // Backward-forward (Bit 1)
-      this.personAngle -= 3;
-      if (this.personAngle < -25) {
-        this.gesturePhase = -2; // Transition to forward
-      }
-    } else if (this.gesturePhase === -2) {
-      this.personAngle += 3;
-      if (this.personAngle > -5) {
-        this.gesturePhase = 0;
-      }
-    } else {
-      // Normal wandering movement
-      this.personAngle += this.personDirection * 0.5;
-      if (Math.abs(this.personAngle) > 30) {
-        this.personDirection *= -1;
-      }
-    }
+    const theta = (personAngle * Math.PI) / 180;
 
-    const theta = (this.personAngle * Math.PI) / 180;
-
-    // Generate channel estimates with static + moving components
+    // Static channel (walls/clutter)
     const staticMag = 0.8;
-    const movingMag = 0.3;
-
-    // Static component (walls, furniture)
     const staticPhase = Math.PI / 4;
     const h1Static = fromPolar(staticMag, staticPhase);
     const h2Static = fromPolar(staticMag * 0.9, staticPhase + 0.1);
 
-    // Moving component (person)
+    // Moving human: magnitude scales with depth (farther = weaker)
+    const movingMag = Math.max(0.1, 0.5 - personDepth * 0.05);
     const t = this.time / 1000;
-    const movingPhase = 2 * Math.PI * Math.sin(theta) + t * 0.5;
 
-    // Simulate Vital Signs on both antennas, but diff projection to survive conjugate math
-    // Breathing: ~0.3 Hz (18 RPM), Heart Rate: ~1.2 Hz (72 BPM)
+    // Vital signs: breathing 0.3Hz + heart rate 1.2Hz
     const respPhase = 0.8 * Math.sin(2 * Math.PI * 0.3 * t);
     const hrPhase = 0.15 * Math.sin(2 * Math.PI * 1.2 * t);
 
-    // Antenna 1 sees 100% of the displacement, Antenna 2 sees 50%
-    const h1Phase = movingPhase + respPhase + hrPhase;
-    const h2Phase = movingPhase + 0.05 + 0.5 * (respPhase + hrPhase);
+    // Directional phase: AoA drives inter-antenna phase difference
+    const aoapPhase = 2 * Math.PI * Math.sin(theta) * personDepth * 0.3 + t * 0.5;
+    const h1Phase = aoapPhase + respPhase + hrPhase;
+    // Antenna 2 sees slight different path length based on AoA
+    const h2Phase = aoapPhase + 0.4 * Math.sin(theta) + 0.5 * (respPhase + hrPhase);
 
     const h1Moving = fromPolar(movingMag, h1Phase);
     const h2Moving = fromPolar(movingMag * 0.95, h2Phase);
 
-    // Add noise
-    const noiseLevel = 0.02;
+    // Light noise
+    const noiseLevel = 0.015;
     const noise1: Complex = {
       re: (Math.random() - 0.5) * noiseLevel,
       im: (Math.random() - 0.5) * noiseLevel,
@@ -944,18 +913,17 @@ export class DemoDataGenerator {
       timestamp: Date.now(),
       h1: add(add(h1Static, h1Moving), noise1),
       h2: add(add(h2Static, h2Moving), noise2),
-      rssi: -50 + Math.random() * 10,
+      rssi: -55 + personDepth * -2 + Math.random() * 5,
     };
   }
 
   getPersonAngle(): number {
-    return this.personAngle;
+    return 50 * Math.sin(this.walkPhase);
   }
 
   reset() {
     this.time = 0;
-    this.personAngle = 0;
-    this.personDirection = 1;
-    this.gesturePhase = 0;
+    this.walkPhase = 0;
   }
 }
+

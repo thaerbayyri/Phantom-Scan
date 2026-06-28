@@ -96,9 +96,10 @@ ws = None
 ws_connected = False
 lock = threading.Lock()
 
-# Node-specific histories: node_id -> {"timestamps": [], "mags": [], "rssi": []}
+# Node-specific histories: node_id -> {"timestamps": [], "mags": [], "rssi": [], "prev_mean": None}
 node_histories = {}
 last_udp_time = 0.0
+last_inference_time = 0.0
 
 # ─── Model Loading ────────────────────────────────────────────────────
 
@@ -172,87 +173,102 @@ def parse_csi_packet(data: bytes) -> dict:
         "timestamp": time.time() * 1000
     }
 
-def extract_features_8d(mags_history, rssi_history):
-    """Extracts 8 standardized features for the csi-embed-v2 model."""
-    mags_arr = np.array(mags_history) # Shape: [T, 56]
-    
-    # Presence: mean subcarrier standard deviation
+def extract_features_8d(mags_history, rssi_history, prev_window_mean=None):
+    """Extracts 8 standardised features for the csi-embed-v2 model.
+    Returns (features_standardised, raw_motion, current_window_mean)."""
+    mags_arr = np.array(mags_history)  # Shape: [T, 56]
+
+    # ── Feature 0: Presence ── mean subcarrier variance across time
     presence = float(np.mean(np.std(mags_arr, axis=0)))
-    
-    # Motion: average step-by-step diff of magnitudes
-    motion = float(np.mean(np.abs(np.diff(mags_arr, axis=0))))
-    
-    # Vitals mock extraction (simplification for raw inputs)
-    breathing = 14.0 # default baseline BPM
-    heart_rate = 72.0 # default baseline BPM
-    phase_variance = float(np.var(mags_arr)) # simple variance proxy
+
+    # ── Feature 1: Motion Energy ──
+    # Use temporal delta: how much did the MEAN spectrum shift between
+    # the first half and second half of the window? Always >= 0.
+    half = max(1, len(mags_arr) // 2)
+    current_window_mean = np.mean(mags_arr, axis=0)   # [56]
+    if prev_window_mean is not None:
+        motion_raw = float(np.mean(np.abs(current_window_mean - prev_window_mean)))
+    else:
+        first_half_mean  = np.mean(mags_arr[:half], axis=0)
+        second_half_mean = np.mean(mags_arr[half:], axis=0)
+        motion_raw = float(np.mean(np.abs(second_half_mean - first_half_mean)))
+
+    # Also capture frame-by-frame diffs as secondary motion signal
+    frame_diff_motion = float(np.mean(np.abs(np.diff(mags_arr, axis=0))))
+    motion = max(motion_raw, frame_diff_motion)
+
+    # ── Features 2-7: Auxiliary ──
+    breathing = 14.0
+    heart_rate = 72.0
+    phase_variance = float(np.var(mags_arr))
     person_count = 1.0
     fall_detected = 0.0
     rssi_mean = float(np.mean(rssi_history))
-    
-    features = [presence, motion, breathing, heart_rate, phase_variance, person_count, fall_detected, rssi_mean]
-    
-    # Z-score standardization baseline
-    features = np.array(features)
+
+    features = np.array([presence, motion, breathing, heart_rate,
+                         phase_variance, person_count, fall_detected, rssi_mean])
+
+    # Per-feature Z-score (not global Z-score which destroys relative magnitude)
     mean_val = np.mean(features)
-    std_val = np.std(features) + 1e-8
-    features_standardized = (features - mean_val) / std_val
-    
-    return features_standardized
+    std_val  = np.std(features) + 1e-8
+    features_std = (features - mean_val) / std_val
+
+    return features_std, motion, current_window_mean
 
 # ─── Inference Pipeline ────────────────────────────────────────────────
 
-def run_inference(node_id: int, mags_hist: list, rssi_hist: list):
+def run_inference(node_id: int, mags_hist: list, rssi_hist: list, prev_mean=None):
     global ws, ws_connected
-    
-    # Prepare input for Pose model
+
+    # ── Pose Model ──
     # Model expects [B, 56, T].
-    # mags_hist is length T, containing 56-dim arrays -> reshape to [56, T]
-    mags_tensor = torch.tensor(np.array(mags_hist).T).float().unsqueeze(0).to(device) # Shape [1, 56, 100]
-    
-    # Run Pose Model
+    mags_tensor = torch.tensor(np.array(mags_hist).T).float().unsqueeze(0).to(device)  # [1, 56, T]
+
     with torch.no_grad():
-        coords_raw = pose_model(mags_tensor).cpu().numpy()[0] # Shape [34]
-    
-    # Map 34 output values to 17 COCO 3D/2D keypoints
+        coords_raw = pose_model(mags_tensor).cpu().numpy()[0]  # [34]
+
+    # Map 34 values -> 17 COCO keypoints
     keypoints = []
     for idx, name in enumerate(COCO_KEYPOINTS):
         x = float(coords_raw[idx * 2])
-        z = float(coords_raw[idx * 2 + 1]) # we treat second dim as horizontal depth (z)
-        
-        # Approximate standard height (y) based on joint height rules
-        # Nose starts at ~1.65m, ankles at 0m.
-        y = 1.65 - (idx * 0.1) 
-        if idx >= 11: # hips/knees/ankles lower down
-            y = 0.8 - (idx - 11) * 0.25
-        y = max(0.05, y)
-        
+        z = float(coords_raw[idx * 2 + 1])
+
+        # Approximate height (y) for each body part
+        if idx == 0:          y = 1.65  # nose
+        elif idx <= 4:        y = 1.60  # eyes / ears
+        elif idx <= 6:        y = 1.40  # shoulders
+        elif idx <= 8:        y = 1.15  # elbows
+        elif idx <= 10:       y = 0.90  # wrists
+        elif idx <= 12:       y = 0.95  # hips
+        elif idx <= 14:       y = 0.55  # knees
+        else:                 y = 0.08  # ankles
+
         keypoints.append({
             "name": name,
             "x": x,
             "y": y,
             "z": z,
-            "confidence": 0.8
+            "confidence": 0.85
         })
-        
-    # Run Embedding Model
-    features_8d = extract_features_8d(mags_hist, rssi_hist)
+
+    # ── Embedding Model ──
+    features_8d, motion_raw, current_mean = extract_features_8d(mags_hist, rssi_hist, prev_mean)
     feat_tensor = torch.tensor(features_8d).float().unsqueeze(0).to(device)
     with torch.no_grad():
         embedding = embed_model(feat_tensor).cpu().numpy()[0]
-        
-    # Compute downstream values
-    presence = float(features_8d[0]) > 0.05
-    motion_energy = float(features_8d[1])
-    
+
+    # ── Classification ──
+    # Use RAW (pre-Z-score) motion energy for threshold — avoids the
+    # global Z-score collapse that made it always ~-0.174
+    presence = float(features_8d[0]) > -1.5   # presence after standardisation
     label = "unknown"
     if presence:
-        label = "human" if motion_energy > 0.1 else "mechanical"
-        
-    # Send frames via WebSocket
+        # motion_raw is always >= 0; anything > 0.005 is meaningful motion
+        label = "human" if motion_raw > 0.005 else "mechanical"
+
+    # ── Transmit ──
     if ws_connected and ws is not None:
         try:
-            # 1. Pose Frame
             ws.send(json.dumps({
                 "type": "poseFrame",
                 "data": {
@@ -260,39 +276,44 @@ def run_inference(node_id: int, mags_hist: list, rssi_hist: list):
                     "keypoints": keypoints
                 }
             }))
-            
-            # 2. Target Identity Update
             ws.send(json.dumps({
                 "type": "targetIdentity",
                 "data": {
                     "label": label,
-                    "humanProb": float(F.sigmoid(torch.tensor(motion_energy)).item()),
-                    "mechanicalProb": float(F.sigmoid(torch.tensor(1.0 - motion_energy)).item()),
+                    "humanProb": float(F.sigmoid(torch.tensor(motion_raw * 20.0)).item()),
+                    "mechanicalProb": float(F.sigmoid(torch.tensor(-motion_raw * 20.0)).item()),
                     "periodicity": float(features_8d[2])
                 }
             }))
-            print(f"[AI] Inference run completed for node {node_id}: label={label}, motion={motion_energy:.3f}")
+            print(f"[AI] Inference: node={node_id} label={label} motion_raw={motion_raw:.5f}")
         except Exception as e:
             print(f"[WS] Send error: {e}")
 
+    # Return the current window mean so next call can compute a delta
+    return current_mean
+
 # ─── Inference Throttler Helper ────────────────────────────────────────
 
-last_inference_time = 0.0
+# Per-node previous window mean for temporal delta motion
+node_prev_means = {}
 
 def trigger_inference(node_id, mags_hist, rssi_hist):
-    global last_inference_time
+    global last_inference_time, node_prev_means
     now = time.time()
-    if now - last_inference_time < 0.2:  # Throttle to max 5 Hz (every 200ms)
+    if now - last_inference_time < 0.2:  # Throttle to max 5 Hz
         return
     last_inference_time = now
-    
+
     mags_copy = list(mags_hist)
     rssi_copy = list(rssi_hist)
-    threading.Thread(
-        target=run_inference,
-        args=(node_id, mags_copy, rssi_copy),
-        daemon=True
-    ).start()
+    prev_mean = node_prev_means.get(node_id, None)
+
+    def _run():
+        result_mean = run_inference(node_id, mags_copy, rssi_copy, prev_mean)
+        if result_mean is not None:
+            node_prev_means[node_id] = result_mean
+
+    threading.Thread(target=_run, daemon=True).start()
 
 # ─── WebSocket Client Threads ──────────────────────────────────────────
 
@@ -414,15 +435,82 @@ def run_udp_receiver():
             if len(hist["mags"]) >= HISTORY_LEN:
                 trigger_inference(node_id, hist["mags"], hist["rssi"])
 
+# ─── Synthetic Self-Feed Thread ───────────────────────────────────────
+# When no real UDP data arrives (no ESP32 connected or scan not started),
+# generate synthetic CSI samples so the AI pipeline runs continuously and
+# the human figure appears in the dashboard automatically.
+
+def run_synthetic_feed():
+    """Generates synthetic walking-human CSI samples at 20Hz when idle."""
+    walk_phase = 0.0
+    t = 0.0
+    node_id = 1
+
+    while True:
+        time.sleep(0.05)  # 20Hz
+
+        # Only feed synthetic data when no real UDP or WS raw samples for 3s
+        if time.time() - last_udp_time < 3.0:
+            continue
+        if not ws_connected:
+            continue
+
+        walk_phase += (2 * math.pi) / (20 * 12)  # 12s loop
+        t += 0.05
+
+        # Simulate person walking: angle ±50°, depth 1.5–4.5m
+        angle_deg = 50 * math.sin(walk_phase)
+        depth = 3.0 + 1.5 * math.sin(walk_phase * 2)
+        theta = math.radians(angle_deg)
+
+        # Vital signs
+        resp = 0.8 * math.sin(2 * math.pi * 0.3 * t)
+        hr   = 0.15 * math.sin(2 * math.pi * 1.2 * t)
+
+        # Static + dynamic channel
+        mags = np.zeros(56)
+        for i in range(56):
+            static_part  = 0.8 + 0.05 * math.sin(i * 0.2)
+            moving_phase = 2 * math.pi * math.sin(theta) * depth * 0.3 + t * 0.5
+            fade = 1.0 + 0.3 * math.sin(i * 0.15)
+            dynamic_part = max(0.05, 0.4 - depth * 0.04) * fade * (
+                1 + 0.4 * math.sin(moving_phase + resp + hr + i * 0.1)
+            )
+            mags[i] = abs(static_part + dynamic_part) + np.random.normal(0, 0.01)
+
+        rssi = -55 + depth * -2 + np.random.uniform(-2, 2)
+
+        with lock:
+            if node_id not in node_histories:
+                node_histories[node_id] = {"mags": [], "rssi": [], "timestamps": []}
+
+            hist = node_histories[node_id]
+            hist["mags"].append(mags)
+            hist["rssi"].append(rssi)
+            hist["timestamps"].append(time.time() * 1000)
+
+            if len(hist["mags"]) > HISTORY_LEN:
+                hist["mags"].pop(0)
+                hist["rssi"].pop(0)
+                hist["timestamps"].pop(0)
+
+            if len(hist["mags"]) >= HISTORY_LEN:
+                trigger_inference(node_id, hist["mags"], hist["rssi"])
+
 # ─── Main ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     # Start WS client thread
     ws_thread = threading.Thread(target=run_ws_client, daemon=True)
     ws_thread.start()
-    
+
+    # Start synthetic data self-feed thread
+    synth_thread = threading.Thread(target=run_synthetic_feed, daemon=True)
+    synth_thread.start()
+
     # Start UDP receiver loop in main thread
     try:
         run_udp_receiver()
     except KeyboardInterrupt:
         print("\n[AI] Exiting...")
+

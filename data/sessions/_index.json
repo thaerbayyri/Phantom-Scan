@@ -1,5 +1,57 @@
 [
   {
+    "id": "000000018 - 2026-06-28",
+    "name": "Demo_Case",
+    "startTime": 1782671979699,
+    "endTime": 1782672488584,
+    "durationS": 508.9,
+    "totalFrames": 13458,
+    "targetClassification": "human",
+    "classificationConfidence": 1,
+    "avgDistanceCm": 417.2,
+    "avgSpeedMs": 0.089,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000017 - 2026-06-28",
+    "name": "Test_Case_02",
+    "startTime": 1782668478542,
+    "endTime": 1782668653095,
+    "durationS": 174.6,
+    "totalFrames": 3648,
+    "targetClassification": "human",
+    "classificationConfidence": 1,
+    "avgDistanceCm": 414.9,
+    "avgSpeedMs": 0.101,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000016 - 2026-06-28",
+    "name": "Test_Case_01",
+    "startTime": 1782667934080,
+    "endTime": 1782668425689,
+    "durationS": 491.6,
+    "totalFrames": 16289,
+    "targetClassification": "human",
+    "classificationConfidence": 0.967,
+    "avgDistanceCm": 419.4,
+    "avgSpeedMs": 0.09,
+    "dataSource": "demo"
+  },
+  {
+    "id": "000000015 - 2026-06-28",
+    "name": "test",
+    "startTime": 1782667848913,
+    "endTime": 1782667888105,
+    "durationS": 39.2,
+    "totalFrames": 1335,
+    "targetClassification": "unknown",
+    "classificationConfidence": 0,
+    "avgDistanceCm": 404.5,
+    "avgSpeedMs": 0.096,
+    "dataSource": "esp32"
+  },
+  {
     "id": "000000014 - 2026-03-09",
     "name": "test",
     "startTime": 1773084984673,

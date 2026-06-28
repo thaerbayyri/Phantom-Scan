@@ -26,6 +26,7 @@ import { VitalsComputer } from "./vitals";
 import * as fs from "fs";
 import * as path from "path";
 import { sessionStore } from "./session-store";
+import { spawn } from "child_process";
 
 interface WSClient {
   ws: WebSocket;
@@ -194,13 +195,20 @@ export class SignalProcessingServer {
         }
         break;
       case "poseFrame":
-        this.broadcast("poseFrame", message.data);
+        // Only relay AI frames when actively processing — prevents OOM during idle
+        if (this.status.isProcessing) {
+          this.broadcast("poseFrame", message.data);
+        }
         break;
       case "targetIdentity":
-        this.broadcast("targetIdentity", message.data);
+        if (this.status.isProcessing) {
+          this.broadcast("targetIdentity", message.data);
+        }
         break;
       case "vitalSigns":
-        this.broadcast("vitalSigns", message.data);
+        if (this.status.isProcessing) {
+          this.broadcast("vitalSigns", message.data);
+        }
         break;
     }
   }
@@ -368,7 +376,6 @@ export class SignalProcessingServer {
   }
 
   private triggerReportGeneration(csvPath: string) {
-    const { spawn } = require("child_process");
     console.log(`[REPORT] Triggering auto-report generation for: ${csvPath}`);
     const scriptPath = path.resolve("scripts", "reporting", "session_reporter.py");
     const pythonProc = spawn("python", [scriptPath, csvPath]);
@@ -431,6 +438,7 @@ export class SignalProcessingServer {
     }
 
     let sample: CSISample;
+    let isDemoSample = false;
 
     // Get sample based on data source
     if (
@@ -443,6 +451,7 @@ export class SignalProcessingServer {
       } else {
         // No hardware data yet — fall back to demo so the UI stays alive
         sample = this.demoGenerator.generateSample();
+        isDemoSample = true;
       }
 
       if (this.hardwareSampleQueue.length > 1000) {
@@ -450,9 +459,14 @@ export class SignalProcessingServer {
       }
     } else {
       sample = this.demoGenerator.generateSample();
+      isDemoSample = true;
     }
 
     this.status.samplesReceived++;
+
+    if (isDemoSample) {
+      this.broadcastToAI("rawSample", sample);
+    }
 
     // ── 1. Background subtraction (clutter removal) ──
     let h1Proc = sample.h1;
@@ -781,14 +795,17 @@ export class SignalProcessingServer {
 
     // ── Record sample with metadata if recording ──
     if (this.isRecording) {
-      this.recordingBuffer.push({
-        ...sample,
-        x: currentRadX,
-        z: currentRadZ,
-        speed: currentSpeed,
-        label: currentLabel,
-        distanceCm: currentDistanceCm,
-      });
+      // Cap at 5000 samples to prevent unbounded memory growth
+      if (this.recordingBuffer.length < 5000) {
+        this.recordingBuffer.push({
+          ...sample,
+          x: currentRadX,
+          z: currentRadZ,
+          speed: currentSpeed,
+          label: currentLabel,
+          distanceCm: currentDistanceCm,
+        });
+      }
       // Broadcast recording status every 50 samples
       if (this.recordingBuffer.length % 50 === 0) {
         this.broadcastRecordingStatus();
