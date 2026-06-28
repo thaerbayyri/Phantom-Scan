@@ -14,6 +14,7 @@ export const csiSampleSchema = z.object({
   h2: complexNumberSchema,
   rssi: z.number().optional(),
   subcarrierIndex: z.number().optional(),
+  nodeId: z.number().optional(),
 });
 export type CSISample = z.infer<typeof csiSampleSchema>;
 
@@ -53,7 +54,14 @@ export const pointCloudPointSchema = z.object({
 });
 export type PointCloudPoint = z.infer<typeof pointCloudPointSchema>;
 
-
+// Gesture event
+export const gestureEventSchema = z.object({
+  timestamp: z.number(),
+  gestureType: z.enum(["0", "1", "unknown"]),
+  centroidShift: z.number(),
+  confidence: z.number(),
+});
+export type GestureEvent = z.infer<typeof gestureEventSchema>;
 
 // Heatmap data (Time vs Angle)
 export const heatmapDataSchema = z.object({
@@ -180,6 +188,23 @@ export const radialTargetSchema = z.object({
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 
+// 3D Pose Keypoint
+export const poseKeypointSchema = z.object({
+  name: z.string(),
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
+  confidence: z.number(),
+});
+export type PoseKeypoint = z.infer<typeof poseKeypointSchema>;
+
+// Pose Frame containing the 17 keypoints
+export const poseFrameSchema = z.object({
+  timestamp: z.number(),
+  keypoints: z.array(poseKeypointSchema),
+});
+export type PoseFrame = z.infer<typeof poseFrameSchema>;
+
 // WebSocket message types
 export const wsMessageTypeSchema = z.enum([
   "status",
@@ -197,6 +222,7 @@ export const wsMessageTypeSchema = z.enum([
   "targetIdentity",
   "reportReady",
   "vitalSigns",
+  "poseFrame",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
@@ -213,6 +239,7 @@ export const streamFrameSchema = z.object({
     processingConfigSchema,
     vitalSignsSchema,
     z.string(),
+    poseFrameSchema,
   ]),
 });
 export type StreamFrame = z.infer<typeof streamFrameSchema>;

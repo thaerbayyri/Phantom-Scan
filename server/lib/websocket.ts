@@ -30,6 +30,7 @@ import { sessionStore } from "./session-store";
 interface WSClient {
   ws: WebSocket;
   id: string;
+  isAI?: boolean;
 }
 
 export class SignalProcessingServer {
@@ -184,6 +185,22 @@ export class SignalProcessingServer {
         break;
       case "stopRecording":
         this.stopRecording();
+        break;
+      case "registerAIClient":
+        const client = this.clients.get(clientId);
+        if (client) {
+          client.isAI = true;
+          console.log(`[WS] Registered AI Inference client: ${clientId}`);
+        }
+        break;
+      case "poseFrame":
+        this.broadcast("poseFrame", message.data);
+        break;
+      case "targetIdentity":
+        this.broadcast("targetIdentity", message.data);
+        break;
+      case "vitalSigns":
+        this.broadcast("vitalSigns", message.data);
         break;
     }
   }
@@ -828,8 +845,27 @@ export class SignalProcessingServer {
     return this.lastRecordingFile;
   }
 
+  private broadcastToAI(type: string, data: unknown) {
+    const message = JSON.stringify({ type, data });
+    const clients = Array.from(this.clients.values());
+    for (const client of clients) {
+      if (client.isAI && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(message);
+      }
+    }
+  }
+
   // Hardware ingestion methods
   ingestSample(sample: CSISample): void {
+    // Forward raw sample to the AI inference client
+    this.broadcastToAI("rawSample", sample);
+
+    // Only allow primary node (Node 1 or undefined) to enter the legacy single-node processing pipeline
+    const primaryNodeId = 1;
+    if (sample.nodeId !== undefined && sample.nodeId !== primaryNodeId) {
+      return; // Skip standard processing for secondary nodes to prevent graph corruption
+    }
+
     this.hardwareSampleQueue.push(sample);
 
     const qLen = this.hardwareSampleQueue.length;
@@ -846,11 +882,7 @@ export class SignalProcessingServer {
 
   ingestSamples(samples: CSISample[]): void {
     for (const sample of samples) {
-      this.hardwareSampleQueue.push(sample);
-    }
-
-    if (this.hardwareSampleQueue.length > 1000) {
-      this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
+      this.ingestSample(sample);
     }
   }
 

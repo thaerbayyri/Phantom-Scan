@@ -40,6 +40,7 @@ export default function Dashboard() {
     radialTarget,
     targetIdentity,
     vitalSigns,
+    poseFrame,
   } = useWebSocket();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -109,7 +110,7 @@ export default function Dashboard() {
       <div className="flex flex-1 overflow-hidden relative">
         {/* Full-screen 3D Background */}
         <div className="absolute inset-0 z-0">
-          <PointCloud3D points={pointCloud} radialTarget={radialTarget} />
+          <PointCloud3D points={pointCloud} radialTarget={radialTarget} poseFrame={poseFrame} />
         </div>
 
         {/* Floating Widgets Container */}

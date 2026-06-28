@@ -3,16 +3,17 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Box } from "lucide-react";
-import type { PointCloudPoint, RadialTarget } from "@shared/schema";
+import type { PointCloudPoint, RadialTarget, PoseFrame } from "@shared/schema";
 import { RadialScene } from "./RadialScene";
 
 interface PointCloud3DProps {
   points: PointCloudPoint[];
   radialTarget?: RadialTarget | null;
+  poseFrame?: PoseFrame | null;
   className?: string;
 }
 
-export function PointCloud3D({ points, radialTarget, className = "" }: PointCloud3DProps) {
+export function PointCloud3D({ points, radialTarget, poseFrame, className = "" }: PointCloud3DProps) {
   // Fallback demo points if empty
   const renderPoints = useMemo(() => {
     if (points.length === 0) {
@@ -31,7 +32,7 @@ export function PointCloud3D({ points, radialTarget, className = "" }: PointClou
     <div className={`relative w-full h-full ${className}`}>
       <Canvas camera={{ position: [0, 8, 6], fov: 50 }}>
         <color attach="background" args={["#000810"]} />
-        <RadialScene radialTarget={radialTarget ?? null} points={renderPoints} />
+        <RadialScene radialTarget={radialTarget ?? null} points={renderPoints} poseFrame={poseFrame ?? null} />
         <OrbitControls
           makeDefault
           maxPolarAngle={Math.PI / 2.1}

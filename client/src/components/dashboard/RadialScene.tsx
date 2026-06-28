@@ -2,7 +2,7 @@ import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
-import type { RadialTarget, PointCloudPoint } from "@shared/schema";
+import type { RadialTarget, PointCloudPoint, PoseFrame } from "@shared/schema";
 import { DirectionalNode } from "./DirectionalNode";
 import { HumanMesh } from "./HumanMesh";
 import { MachineStatic } from "./MachineStatic";
@@ -225,9 +225,10 @@ function AmbientPoints({ points }: { points: PointCloudPoint[] }) {
 interface RadialSceneProps {
     radialTarget: RadialTarget | null;
     points: PointCloudPoint[];
+    poseFrame: PoseFrame | null;
 }
 
-export function RadialScene({ radialTarget, points }: RadialSceneProps) {
+export function RadialScene({ radialTarget, points, poseFrame }: RadialSceneProps) {
     const label = radialTarget?.label ?? "unknown";
     const wallDistance = radialTarget?.wallDistance ?? 5.0;
 
@@ -248,7 +249,7 @@ export function RadialScene({ radialTarget, points }: RadialSceneProps) {
             {/* Conditional entity based on classification */}
             {radialTarget && (
                 label === "human" ? (
-                    <HumanMesh target={radialTarget} />
+                    <HumanMesh target={radialTarget} poseFrame={poseFrame} />
                 ) : label === "mechanical" ? (
                     <MachineStatic target={radialTarget} />
                 ) : (

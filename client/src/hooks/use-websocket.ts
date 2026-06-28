@@ -14,6 +14,7 @@ import type {
   RadialTarget,
   TargetIdentity,
   VitalSigns,
+  PoseFrame,
 } from "@shared/schema";
 
 interface WSState {
@@ -31,6 +32,7 @@ interface WSState {
   radialTarget: RadialTarget | null;
   targetIdentity: TargetIdentity | null;
   vitalSigns: VitalSigns | null;
+  poseFrame: PoseFrame | null;
   isConnected: boolean;
   error: string | null;
 }
@@ -91,6 +93,7 @@ export function useWebSocket() {
     radialTarget: null,
     targetIdentity: null,
     vitalSigns: null,
+    poseFrame: null,
     isConnected: false,
     error: null,
   });
@@ -286,6 +289,13 @@ export function useWebSocket() {
         setState((prev) => ({
           ...prev,
           vitalSigns: message.data as VitalSigns,
+        }));
+        break;
+
+      case "poseFrame":
+        setState((prev) => ({
+          ...prev,
+          poseFrame: message.data as PoseFrame,
         }));
         break;
 

@@ -10,16 +10,23 @@ const HEADER_SIZE = 20;
 
 export function startUDPServer() {
     const server = dgram.createSocket("udp4");
+    const pyForwardSocket = dgram.createSocket("udp4");
 
     server.on("error", (err) => {
         console.error(`[UDP] Server error:\n${err.stack}`);
         server.close();
+        pyForwardSocket.close();
     });
 
     let packetCount = 0;
     let lastLogTime = Date.now();
 
     server.on("message", (msg, rinfo) => {
+        // Forward raw packet to local python AI server on port 5006
+        pyForwardSocket.send(msg, 5006, "127.0.0.1", (err) => {
+            // Ignore errors if the Python script is not running yet
+        });
+
         if (msg.length < HEADER_SIZE) return;
 
         // Parse ADR-018 Header
@@ -28,7 +35,7 @@ export function startUDPServer() {
             return; // Not a valid CSI packet
         }
 
-        // const nodeId = msg.readUInt8(4);
+        const nodeId = msg.readUInt8(4);
         const numAntennas = msg.readUInt8(5);
         const numSubcarriers = msg.readUInt16LE(6);
         // const frequencyMHz = msg.readUInt32LE(8);
@@ -98,7 +105,8 @@ export function startUDPServer() {
             timestamp: Date.now(),
             h1: bestH1,
             h2: bestH2,
-            rssi: rssi
+            rssi: rssi,
+            nodeId: nodeId
         };
 
         signalServer.ingestSample(sample);
