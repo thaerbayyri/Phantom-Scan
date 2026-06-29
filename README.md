@@ -1,34 +1,59 @@
 # Phantom Scan
+
 <p align="center">
-  <img src="client/public/wifi.png" alt="Phantom Scan - WiFi CSI Tracking" width="100%">
+  <img src="client/public/wifi.png" alt="Phantom Scan dashboard and WiFi CSI sensing" width="100%">
 </p>
-Phantom Scan is a ground-based WiFi CSI sensing system built for a two-node ESP32-S3 setup plus a laptop host. The project combines ESP32 firmware, a live dashboard, Python ingest/replay/DSP runtime work, JSONL recording, and deterministic sensing pipelines.
 
-This repository is being stabilized around these boundaries:
+## Through-Wall WiFi CSI Sensing for Two ESP32-S3 Nodes
 
-- exactly two expected ESP32-S3 CSI nodes
-- ground-based sensing only
-- no drone logic
-- no GPS, IMU, MAVLink, or flight-control dependencies
-- correctness, observability, replayability, and testing first
+**Phantom Scan** is a ground-based WiFi CSI sensing system built around:
 
-## What Exists Today
+- two ESP32-S3 CSI nodes
+- a laptop host
+- deterministic DSP
+- JSONL recording and replay
+- a live React dashboard
+- a Python runtime path that is becoming the Milestone 1 authority
 
-There are two important runtime tracks in this repo.
+This repo is being stabilized for a **realistic two-node ESP32-S3 deployment**. It does **not** target drones, GPS, IMU, MAVLink, or flight-control systems.
+
+[![Node.js 18+](https://img.shields.io/badge/node-18%2B-green.svg)](https://nodejs.org/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
+[![ESP-IDF](https://img.shields.io/badge/firmware-ESP32--S3-orange.svg)](https://www.espressif.com/)
+[![Recording](https://img.shields.io/badge/recording-JSONL-purple.svg)](#recording-and-replay)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+> | Focus | Current Direction |
+> |------|-------------------|
+> | **Hardware** | Exactly **2 ESP32-S3 nodes** |
+> | **Live UI** | Express + WebSocket + React dashboard |
+> | **Milestone-1 authority** | Python runtime package in `phantom/` |
+> | **Recording** | **JSONL only** |
+> | **Fallback behavior** | stay up with one node; fused outputs require both |
+> | **Priority** | correctness, observability, replayability, testing |
+
+---
+
+## Current Runtime State
+
+There are two important runtime tracks in this repository.
 
 ### 1. Current live dashboard path
 
-This is the active UI/runtime path used for live dashboard work today.
+The active live dashboard path today is:
 
-- Express owns auth and audit
-- Express + WebSocket drive the live dashboard
-- UDP CSI packets are ingested by the Node host path
-- React renders the live dashboard
-- target rendering is gated by truthful `targetState`
+- Express for auth and audit
+- UDP ingest in the Node host path
+- WebSocket publishing to the dashboard
+- React rendering for the operator UI
+
+This path is still the **temporary truth source for live dashboard behavior** while the Python milestone runtime continues to take over authority.
 
 ### 2. Milestone 1 Python authority path
 
-This is the target authoritative runtime shape for Milestone 1.
+The target authoritative runtime shape for Milestone 1 is the Python package in:
 
 - `phantom.protocol`
 - `phantom.ingest`
@@ -37,7 +62,9 @@ This is the target authoritative runtime shape for Milestone 1.
 - `phantom.runtime`
 - `phantom.api`
 
-The Python path is the intended authority for ingest, recording, replay, DSP, and runtime API, but the current Node live path is still the temporary truth source for dashboard/live bug fixing until the migration is complete.
+That path is intended to become the canonical runtime for ingest, replay, DSP, recording, and runtime API.
+
+---
 
 ## System Design
 
@@ -52,12 +79,13 @@ Location:
 Responsibilities:
 
 - capture CSI on ESP32-S3
-- queue CSI data outside the callback hot path
-- stamp frames with device time
-- attach `node_id` and sequence numbers
-- send CSI frames and heartbeat/status packets over UDP
+- keep callback work minimal
+- queue data off the callback path
+- stamp CSI with device timestamps
+- emit node ID, sequence number, heartbeat/status packets
+- send UDP frames to the host
 
-Important implementation files:
+Important files:
 
 - `firmware/esp32-csi-node/main/main.c`
 - `firmware/esp32-csi-node/main/csi_collector.c`
@@ -82,21 +110,20 @@ Milestone 1 Python path:
 Responsibilities:
 
 - receive UDP packets
-- validate packet structure and schema version
-- preserve device timestamp and host receive timestamp
-- track packet loss and out-of-order frames
-- buffer by node
-- expose degraded vs fused runtime state
-- write and replay JSONL sessions
+- validate schema/version/packet shape
+- preserve both device and host timestamps
+- detect packet loss and out-of-order frames
+- maintain per-node state
+- write replayable JSONL sessions
 
 ### Layer C: Deterministic DSP
 
-Current and transitional DSP logic exists across:
+Relevant areas:
 
 - `phantom/dsp.py`
 - `scripts/csi_filter_pipeline.py`
 
-Expected deterministic stages:
+Required deterministic stages:
 
 - amplitude extraction
 - phase unwrap
@@ -113,15 +140,15 @@ Relevant areas:
 - `scripts/ai_inference.py`
 - `ai model and densepose/`
 
-Status:
+Rules:
 
 - optional only
-- not authoritative for Milestone 1
-- system must continue in DSP-only mode when model files are missing or incompatible
+- disabled/isolated by default in the milestone path
+- system must continue in DSP-only mode when models are missing or incompatible
 
 ### Layer E: API / UI / monitoring
 
-Current dashboard/API path:
+Relevant areas:
 
 - `server/`
 - `client/`
@@ -130,27 +157,40 @@ Responsibilities:
 
 - operator login
 - audit logging
-- live status and health
-- history and report views
 - live dashboard rendering
+- history/report/activity views
+- dashboard state publishing
+
+---
 
 ## Architecture Summary
 
-High-level live flow:
+### Live path
 
-1. ESP32-S3 nodes capture CSI and emit UDP packets.
-2. Host UDP ingest receives CSI and heartbeat frames.
-3. Runtime normalizes timestamps, packet metadata, and node state.
-4. DSP computes per-node and fused metrics.
-5. WebSocket publishes live state to the React dashboard.
-6. JSONL recording preserves the same session stream for replay.
+```text
+ESP32-S3 node 1 ----\
+                     \         UDP ingest       targetState / metrics
+ESP32-S3 node 2 -------> Host runtime -------------------------------> React dashboard
+                           |         \
+                           |          \-> JSONL session recording
+                           |
+                           \-> deterministic DSP / degraded or fused outputs
+```
 
-High-level replay flow:
+### Replay path
 
-1. JSONL session is loaded.
-2. The same parser/runtime semantics are applied.
-3. Derived outputs are recomputed through the same logic.
-4. Replay publishes dashboard-compatible state.
+```text
+JSONL session -> parser -> runtime semantics -> deterministic DSP -> dashboard-compatible outputs
+```
+
+### Degraded mode rules
+
+- system stays up when one node is missing
+- per-node ingest and DSP continue
+- fused outputs are withheld unless both nodes are valid and aligned
+- dashboard must not invent active targets when truthful state is absent
+
+---
 
 ## Repository Structure
 
@@ -159,25 +199,25 @@ Top-level structure:
 ```text
 phantom scan/
 ├── client/                      React dashboard
-├── server/                      Express app, auth, audit, UDP bridge, WS
+├── server/                      Express app, auth, audit, UDP + WS live path
 ├── phantom/                     Python runtime package
 ├── firmware/esp32-csi-node/     ESP32-S3 firmware project
-├── scripts/                     Provisioning, replay, capture, utilities
-├── shared/                      Shared TypeScript schemas
-├── tests/                       Python protocol/runtime tests
+├── scripts/                     capture, replay, provisioning, utilities
+├── shared/                      shared TypeScript schemas
+├── tests/                       Python test suite
 ├── docs/                        ADRs and supporting docs
-├── data/                        operator seed, sessions, runtime data
+├── data/                        sessions, operator seed, runtime state
 ├── recordings/                  capture artifacts
 ├── BOOTSTRAP.md                 quick command reference
 ├── AUDIT.md                     repo disposition
 ├── SETUP_AUDIT.md               setup/dependency audit
 ├── MILESTONE1_FIX_PLAN.md       stabilization plan
-├── TARGET_RENDER_AUDIT.md       target-state render audit
-├── TARGET_TEST_PLAN.md          target regression plan
-└── TARGET_VERIFICATION_REPORT.md verification notes
+├── TARGET_RENDER_AUDIT.md       target render audit
+├── TARGET_TEST_PLAN.md          regression/test plan
+└── TARGET_VERIFICATION_REPORT.md final verification notes
 ```
 
-### `client/`
+### Client
 
 Important areas:
 
@@ -191,11 +231,10 @@ Important areas:
 Purpose:
 
 - operator-facing dashboard
-- auth-driven route protection
-- live target and metric rendering
-- report/history/activity surfaces
+- target/metric rendering
+- report/history/activity routes
 
-### `server/`
+### Server
 
 Important areas:
 
@@ -209,13 +248,13 @@ Important areas:
 
 Purpose:
 
-- Express application
-- operator auth and session handling
-- audit logging
-- UDP ingest for live dashboard path
-- WebSocket live publishing
+- Express host
+- auth and audit authority
+- temporary live truth source for dashboard runtime
+- UDP ingest bridge
+- WebSocket dashboard publishing
 
-### `phantom/`
+### Python runtime
 
 Files:
 
@@ -229,112 +268,56 @@ Files:
 
 Purpose:
 
-- canonical Python milestone runtime package
-- protocol and recording contracts
-- replay and deterministic DSP baseline
+- canonical Milestone 1 runtime shape
+- ingest, replay, DSP, recording, API
 
-### `firmware/esp32-csi-node/`
+### Firmware
 
 Important contents:
 
-- `main/`
-- `provision.py`
-- `nvs_node1.csv`
-- `nvs_node1.bin`
-- `nvs_node2.csv`
-- `nvs_node2.bin`
-- `sdkconfig`
-- `sdkconfig.defaults`
+- `firmware/esp32-csi-node/main/`
+- `firmware/esp32-csi-node/provision.py`
+- `firmware/esp32-csi-node/nvs_node1.csv`
+- `firmware/esp32-csi-node/nvs_node1.bin`
+- `firmware/esp32-csi-node/nvs_node2.csv`
+- `firmware/esp32-csi-node/nvs_node2.bin`
 
-Important firmware source files:
+### Tests
 
-- `main/main.c`
-- `main/csi_collector.c`
-- `main/stream_sender.c`
-- `main/edge_processing.c`
-- `main/nvs_config.c`
-
-### `scripts/`
-
-Important utilities include:
-
-- `scripts/record-csi-udp.py`
-- `scripts/replay_to_dashboard.py`
-- `scripts/csi_capture.py`
-- `scripts/csi_filter_pipeline.py`
-- `scripts/generate-operator-seed.ts`
-- `scripts/synth-csi-udp.py`
-- `scripts/csi-udp-relay.py`
-
-### `tests/`
-
-Current Python test set includes:
+Important tests include:
 
 - `tests/test_udp_ad018.py`
 - `tests/test_phantom_runtime.py`
 - `tests/test_csi_pipeline.py`
 - `tests/test_esp_capture_e2e.py`
-- `tests/test_reporting.py`
-- `tests/test_occupancy.py`
+- `server/lib/udp-server.test.ts`
+- `server/lib/target-state.test.ts`
+- `server/auth/service.test.ts`
 
-Node-focused tests currently live under:
-
-- `server/**/*.test.ts`
-
-## Current Runtime Behavior
-
-### Dashboard behavior
-
-Current dashboard expectations:
-
-- login required
-- target rendering is state-driven
-- no placeholder/demo target rendering in normal live mode
-- degraded single-node mode remains visible
-- fused outputs require both nodes
-- stopping a scan does not auto-download a PDF
-- reports/history remain explicit operator actions
-
-### Target-state rules
-
-The dashboard consumes a `targetState` contract with semantics like:
-
-- `none`
-- `stale`
-- `idle`
-- `moving`
-- `degraded`
-
-Critical rules:
-
-- if `target_visible` is false, no target mesh should render
-- if `position_confident` is false, no confidently placed human target should render
-- degraded visible targets may still render as lower-confidence abstract markers
+---
 
 ## Two-Node ESP32-S3 Baseline
 
 Milestone 1 assumes exactly two nodes.
 
-Expected node behavior:
+Required behavior:
 
 - unique `node_id`
-- per-frame sequence number
-- device timestamp on outbound packets
+- sequence number per frame
+- device timestamp carried by firmware
+- host receive timestamp preserved by host
 - heartbeat/status packets
-- queue and overflow counters
-- reconnect behavior after WiFi loss
-
-Expected host behavior:
-
-- independent per-node state
 - packet loss detection
 - out-of-order detection
-- degraded mode when one node is stale or missing
+- per-node buffers
+- degraded mode with one node
 - fused outputs only when both nodes are valid and aligned
 
-## Recording Format
+---
 
-Milestone 1 recording format is JSONL only.
+## Recording and Replay
+
+Milestone 1 recording format is **JSONL only**.
 
 Expected record types:
 
@@ -344,16 +327,36 @@ Expected record types:
 - `derived_frame`
 - `session_footer`
 
-Required recording properties:
+Recording expectations:
 
-- device timestamp preserved when valid
-- host receive timestamp preserved for audit/fallback
-- schema versioning
-- replayable through the same runtime semantics as live mode
+- preserve authoritative device timestamp when valid
+- always preserve host receive timestamp for audit/fallback
+- replay through the same parser/runtime semantics used in live mode
+
+---
+
+## Dashboard Behavior
+
+Current dashboard expectations:
+
+- login required
+- no placeholder live targets in the default runtime
+- target rendering must follow truthful `targetState`
+- single-node live mode is degraded, not fake fused localization
+- stopping a scan must not auto-download a PDF
+- reports/history remain explicit operator actions
+
+Important target-state rules:
+
+- if `target_visible` is false, no target mesh renders
+- if `position_confident` is false, no confidently placed human target renders
+- degraded visible targets may still render as abstract markers
+
+---
 
 ## Setup
 
-## 1. Node / dashboard setup
+## 1. Node dashboard setup
 
 Requirements:
 
@@ -384,9 +387,7 @@ Open:
 
 Requirements:
 
-- Python 3.13 recommended in this repo state
-
-Install environment and run tests/runtime as appropriate for your machine.
+- Python 3.13 recommended in the current repo state
 
 Main commands:
 
@@ -406,7 +407,7 @@ Requirements:
 
 - ESP-IDF shell
 - ESP32-S3 hardware
-- serial access to the nodes
+- serial access
 
 Project directory:
 
@@ -424,27 +425,28 @@ Flash:
 idf.py -p COM5 flash monitor
 ```
 
-## 4. Node provisioning
+## 4. Provisioning notes
 
 Provisioning helper:
 
 - `firmware/esp32-csi-node/provision.py`
 
-Local NVS artifacts currently present:
+Current NVS artifacts:
 
 - `nvs_node1.csv`
 - `nvs_node1.bin`
 - `nvs_node2.csv`
 - `nvs_node2.bin`
 
-If `idf.py fullclean` fails because `managed_components/` hashes changed:
+Managed component cleanup note:
 
-- move intentional component changes into `components/`, or
-- delete the affected managed component folders and let ESP-IDF restore them
+- if `idf.py fullclean` fails because `managed_components/` hashes changed, either move intentional edits into `components/` or delete the affected managed component folders and let ESP-IDF restore them
+
+---
 
 ## Run Guide
 
-### Run the live dashboard path
+### Run the current live dashboard path
 
 ```bash
 npm run dev
@@ -453,11 +455,11 @@ npm run dev
 Then:
 
 1. open `http://localhost:5000`
-2. log in with the local operator account
+2. log in with the operator account
 3. start the scan
-4. ensure ESP32 nodes are sending UDP packets to the host
+4. ensure the ESP32 nodes are sending UDP traffic to the host
 
-### Run the Python runtime directly
+### Run the Python milestone runtime
 
 ```bash
 python -m phantom.runtime live
@@ -469,18 +471,22 @@ python -m phantom.runtime live
 python -m phantom.runtime replay --input <session.jsonl>
 ```
 
-## Current Local Login
+---
+
+## Default Local Login
 
 Current local development seed:
 
 - Username: `thaer`
 - Password: `thaer`
 
-This is a local dev convenience and not a production credential policy.
+This is a local development convenience, not a production credential policy.
+
+---
 
 ## Testing
 
-### Node checks
+### Node / dashboard checks
 
 ```bash
 npm run check
@@ -496,15 +502,19 @@ python -m pytest
 
 ### Firmware
 
-Firmware commands are documented, but actual verification depends on ESP-IDF availability and attached hardware.
+Firmware commands are documented here, but actual verification depends on ESP-IDF availability and attached hardware.
+
+---
 
 ## Important Notes
 
 - `dist/` and `node_modules/` are generated artifacts, not authoritative source/config
 - the old dashboard diagnostic virtual terminal path has been removed
 - report download is no longer automatically triggered on scan stop
-- current live dashboard debugging still uses the Node path as the temporary live truth source
+- the Node live path is still the temporary truth source for current dashboard debugging
 - the Python package remains the Milestone 1 authority target
+
+---
 
 ## Useful Documents
 
@@ -516,6 +526,8 @@ Firmware commands are documented, but actual verification depends on ESP-IDF ava
 - [TARGET_TEST_PLAN.md](./TARGET_TEST_PLAN.md)
 - [TARGET_VERIFICATION_REPORT.md](./TARGET_VERIFICATION_REPORT.md)
 
+---
+
 ## Verification Snapshot
 
 Verified in local development during stabilization work:
@@ -525,7 +537,9 @@ Verified in local development during stabilization work:
 - `npm run build`
 - `python -m pytest`
 
-Firmware build commands are documented here, but firmware verification depends on an ESP-IDF shell and hardware access.
+Firmware build commands are documented here, but firmware verification depends on ESP-IDF shell access and hardware.
+
+---
 
 ## License
 
