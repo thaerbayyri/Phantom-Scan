@@ -1,5 +1,7 @@
 # Phantom Scan
-
+<p align="center">
+  <img src="client/public/wifi.png" alt="Phantom Scan - WiFi CSI Tracking" width="100%">
+</p>
 Phantom Scan is a ground-based WiFi CSI sensing system built for a two-node ESP32-S3 setup plus a laptop host. The project combines ESP32 firmware, a live dashboard, Python ingest/replay/DSP runtime work, JSONL recording, and deterministic sensing pipelines.
 
 This repository is being stabilized around these boundaries:
