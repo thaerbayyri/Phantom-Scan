@@ -30,12 +30,12 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
   }, [frame]);
 
   return (
-    <Card className={`flex flex-col ${className}`}>
-      <CardHeader className="flex flex-row items-center gap-2 pb-2">
+    <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>
+      <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
         <Radio className="h-4 w-4 text-chart-1" />
         <CardTitle className="text-sm">AoA Spectrum (MUSIC)</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 p-2">
+      <CardContent className="flex-1 px-2 pb-2 pt-0">
         <Plot
           data={[
             {
@@ -66,9 +66,9 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
             autosize: true,
             paper_bgcolor: "rgba(0,0,0,0)",
             plot_bgcolor: "rgba(0,0,0,0)",
-            margin: { l: 50, r: 20, t: 10, b: 40 },
+            margin: { l: 40, r: 12, t: 8, b: 28 },
             xaxis: {
-              title: "Angle (°)",
+              title: "Angle (deg)",
               range: [-60, 60],
               gridcolor: "rgba(128,128,128,0.2)",
               zerolinecolor: "rgba(128,128,128,0.4)",
@@ -86,6 +86,7 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
           }}
           config={{
             displaylogo: false,
+            displayModeBar: false,
             modeBarButtonsToRemove: ["toImage", "sendDataToCloud"],
             responsive: true,
           }}

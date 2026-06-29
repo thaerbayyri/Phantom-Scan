@@ -188,6 +188,42 @@ export const radialTargetSchema = z.object({
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 
+export const targetStateSchema = z.object({
+  state: z.enum(["none", "stale", "idle", "moving", "degraded"]),
+  source_mode: z.enum(["live", "replay", "synthetic"]),
+  node_mode: z.enum(["single_node", "fused_two_node"]),
+  target_visible: z.boolean(),
+  position_confident: z.boolean(),
+  position: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+      z: z.number(),
+    })
+    .optional(),
+  bearing_deg: z.number().optional(),
+  range_m: z.number().optional(),
+  motion_score: z.number(),
+  confidence: z.number(),
+  last_update_ms: z.number(),
+  data_age_ms: z.number(),
+  stale: z.boolean(),
+  reason: z.string().optional(),
+});
+export type TargetState = z.infer<typeof targetStateSchema>;
+
+export const targetDebugSchema = z.object({
+  hardware_queue_length: z.number(),
+  last_sample_rx_ms: z.number().nullable(),
+  last_processed_sample_ms: z.number().nullable(),
+  last_truthful_target_update_ms: z.number().nullable(),
+  target_reason: z.string().optional(),
+  radial_target_present: z.boolean(),
+  tracked_target_present: z.boolean(),
+  hold_state: z.enum(["startup", "live", "stale_hold", "cleared"]),
+});
+export type TargetDebug = z.infer<typeof targetDebugSchema>;
+
 // 3D Pose Keypoint
 export const poseKeypointSchema = z.object({
   name: z.string(),
@@ -223,6 +259,8 @@ export const wsMessageTypeSchema = z.enum([
   "reportReady",
   "vitalSigns",
   "poseFrame",
+  "targetState",
+  "targetDebug",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
@@ -240,6 +278,8 @@ export const streamFrameSchema = z.object({
     vitalSignsSchema,
     z.string(),
     poseFrameSchema,
+    targetStateSchema,
+    targetDebugSchema,
   ]),
 });
 export type StreamFrame = z.infer<typeof streamFrameSchema>;
@@ -253,6 +293,27 @@ export const signalTraceSchema = z.object({
   dynamicMagnitude: z.array(z.number()),
 });
 export type SignalTrace = z.infer<typeof signalTraceSchema>;
+
+export const authSessionSchema = z.object({
+  authenticated: z.boolean(),
+  username: z.string().optional(),
+  session_type: z.literal("session_cookie"),
+  setup_required: z.boolean().optional(),
+});
+export type AuthSession = z.infer<typeof authSessionSchema>;
+
+export const auditRecordSchema = z.object({
+  ts: z.string(),
+  event_type: z.string(),
+  username: z.string().optional(),
+  success: z.boolean(),
+  ip: z.string().optional(),
+  user_agent: z.string().optional(),
+  route: z.string().optional(),
+  session_id: z.string().optional(),
+  details: z.record(z.unknown()).optional(),
+});
+export type AuditRecord = z.infer<typeof auditRecordSchema>;
 
 // Default user table (kept for compatibility)
 import { sql } from "drizzle-orm";

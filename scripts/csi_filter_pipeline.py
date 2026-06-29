@@ -115,7 +115,11 @@ class DWTDenoiser:
     def denoise_array(self, data: np.ndarray) -> np.ndarray:
         """Denoise an entire array using DWT + soft thresholding."""
         if not HAS_PYWT:
-            return data  # Fallback: no filtering
+            # Fallback: simple moving-average smoothing preserves low-frequency content.
+            if len(data) < 3:
+                return data
+            kernel = np.array([0.25, 0.5, 0.25], dtype=float)
+            return np.convolve(data, kernel, mode="same")
 
         if len(data) < self.min_samples:
             return data
@@ -156,12 +160,17 @@ class BackgroundSubtractor:
     Default N=50 frames at 20 FPS = 2.5s averaging window.
     """
 
-    def __init__(self, window_size: int = 50):
+    def __init__(self, window_size: int = 50, alpha: Optional[float] = None):
         self.window_size = window_size
+        self.alpha = alpha
         self.buffer_h1_re: List[float] = []
         self.buffer_h1_im: List[float] = []
         self.buffer_h2_re: List[float] = []
         self.buffer_h2_im: List[float] = []
+        self.ema_h1_re: Optional[float] = None
+        self.ema_h1_im: Optional[float] = None
+        self.ema_h2_re: Optional[float] = None
+        self.ema_h2_im: Optional[float] = None
 
     def process(
         self,
@@ -169,6 +178,25 @@ class BackgroundSubtractor:
         h2_re: float, h2_im: float,
     ) -> Tuple[float, float, float, float]:
         """Returns dynamic (h1_re, h1_im, h2_re, h2_im) after background removal."""
+        if self.alpha is not None:
+            if self.ema_h1_re is None:
+                self.ema_h1_re = h1_re
+                self.ema_h1_im = h1_im
+                self.ema_h2_re = h2_re
+                self.ema_h2_im = h2_im
+                return 0.0, 0.0, 0.0, 0.0
+
+            self.ema_h1_re = (1 - self.alpha) * self.ema_h1_re + self.alpha * h1_re
+            self.ema_h1_im = (1 - self.alpha) * self.ema_h1_im + self.alpha * h1_im
+            self.ema_h2_re = (1 - self.alpha) * self.ema_h2_re + self.alpha * h2_re
+            self.ema_h2_im = (1 - self.alpha) * self.ema_h2_im + self.alpha * h2_im
+            return (
+                h1_re - self.ema_h1_re,
+                h1_im - self.ema_h1_im,
+                h2_re - self.ema_h2_re,
+                h2_im - self.ema_h2_im,
+            )
+
         # Push into buffers
         self.buffer_h1_re.append(h1_re)
         self.buffer_h1_im.append(h1_im)
@@ -205,6 +233,10 @@ class BackgroundSubtractor:
         self.buffer_h1_im.clear()
         self.buffer_h2_re.clear()
         self.buffer_h2_im.clear()
+        self.ema_h1_re = None
+        self.ema_h1_im = None
+        self.ema_h2_re = None
+        self.ema_h2_im = None
 
 
 # ═══════════════════════════════════════════════════════════════════

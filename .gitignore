@@ -28,4 +28,6 @@ build/
 # Local test data, recordings and sessions
 *.csv
 data/sessions/
-recordings/
+data/operator.json
+data/audit/
+recordings/

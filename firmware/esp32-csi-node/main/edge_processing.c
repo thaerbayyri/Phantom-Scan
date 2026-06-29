@@ -28,21 +28,32 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
+#include "nvs_config.h"
 
 static const char *TAG = "edge_proc";
+extern nvs_config_t g_nvs_config;
 
 /* ======================================================================
  * SPSC Ring Buffer (lock-free, single-producer single-consumer)
  * ====================================================================== */
 
 static edge_ring_buf_t s_ring;
+static edge_runtime_stats_t s_runtime_stats;
 
 static inline bool ring_push(const uint8_t *iq, uint16_t len,
                              int8_t rssi, uint8_t channel)
 {
     uint32_t next = (s_ring.head + 1) % EDGE_RING_SLOTS;
     if (next == s_ring.tail) {
+        s_runtime_stats.enqueue_drops++;
         return false;  /* Full — drop frame. */
+    }
+
+    uint32_t occupancy = (s_ring.head >= s_ring.tail)
+        ? (s_ring.head - s_ring.tail)
+        : (EDGE_RING_SLOTS - s_ring.tail + s_ring.head);
+    if (occupancy > s_runtime_stats.queue_high_watermark) {
+        s_runtime_stats.queue_high_watermark = occupancy;
     }
 
     edge_ring_slot_t *slot = &s_ring.slots[s_ring.head];
@@ -421,11 +432,7 @@ static void send_compressed_frame(const uint8_t *iq_data, uint16_t iq_len,
     uint32_t magic = EDGE_COMPRESSED_MAGIC;
     memcpy(&pkt[0], &magic, 4);
 
-#ifdef CONFIG_CSI_NODE_ID
-    pkt[4] = (uint8_t)CONFIG_CSI_NODE_ID;
-#else
-    pkt[4] = 0;
-#endif
+    pkt[4] = g_nvs_config.node_id;
     pkt[5] = channel;
     memcpy(&pkt[6], &iq_len, 2);
     memcpy(&pkt[8], &comp_len, 2);
@@ -543,11 +550,7 @@ static void send_vitals_packet(void)
     memset(&pkt, 0, sizeof(pkt));
 
     pkt.magic = EDGE_VITALS_MAGIC;
-#ifdef CONFIG_CSI_NODE_ID
-    pkt.node_id = (uint8_t)CONFIG_CSI_NODE_ID;
-#else
-    pkt.node_id = 0;
-#endif
+    pkt.node_id = g_nvs_config.node_id;
 
     pkt.flags = 0;
     if (s_presence_detected) pkt.flags |= 0x01;
@@ -698,7 +701,7 @@ static void process_frame(const edge_ring_slot_t *slot)
         s_prev_phase_velocity = velocity;
 
         s_fall_detected = (accel > s_cfg.fall_thresh);
-        if (s_fall_detected) {
+        if (s_fall_detected && ((s_frame_count % 100) == 0)) {
             ESP_LOGW(TAG, "Fall detected! accel=%.4f > thresh=%.4f",
                      accel, s_cfg.fall_thresh);
         }
@@ -763,12 +766,19 @@ static void edge_task(void *arg)
              xPortGetCoreID(), s_cfg.tier);
 
     edge_ring_slot_t slot;
+    uint8_t frames_since_yield = 0;
 
     while (1) {
         if (ring_pop(&slot)) {
             process_frame(&slot);
+            frames_since_yield++;
+            if (frames_since_yield >= 4) {
+                frames_since_yield = 0;
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
         } else {
             /* No frames available — yield briefly. */
+            frames_since_yield = 0;
             vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
@@ -818,6 +828,12 @@ void edge_get_variances(float *out_variances, uint16_t n_subcarriers)
     }
 }
 
+void edge_get_stats(edge_runtime_stats_t *out_stats)
+{
+    if (out_stats == NULL) return;
+    *out_stats = s_runtime_stats;
+}
+
 esp_err_t edge_processing_init(const edge_config_t *cfg)
 {
     if (cfg == NULL) {
@@ -854,6 +870,7 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     s_has_prev_iq = false;
     s_prev_iq_len = 0;
     s_pkt_valid = false;
+    memset(&s_runtime_stats, 0, sizeof(s_runtime_stats));
 
     /* Reset calibration state. */
     s_calibrated = false;

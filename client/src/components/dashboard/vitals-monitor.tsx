@@ -1,31 +1,38 @@
 import { Activity, Wind } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import type { VitalSigns } from "@shared/schema";
+import type { TargetState, VitalSigns } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
 interface VitalsMonitorProps {
     vitals: VitalSigns | null;
+    targetState?: TargetState | null;
 }
 
-export function VitalsMonitor({ vitals }: VitalsMonitorProps) {
+export function VitalsMonitor({ vitals, targetState }: VitalsMonitorProps) {
     // Graceful fallback for missing vitals
     const hr = vitals?.heartRateBpm ?? 0;
     const rr = vitals?.respirationRateRpm ?? 0;
     const reliable = vitals?.vitalsReliable ?? false;
+    const targetVisible = Boolean(targetState?.target_visible);
 
     return (
-        <Card className="flex flex-col h-full bg-card/50 backdrop-blur-sm border-white/10">
-            <CardHeader className="flex flex-row items-center gap-2 pb-2">
+        <Card className="flex h-full min-w-0 flex-col border-white/10 bg-card/50 backdrop-blur-sm">
+            <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-5 pb-3 pt-5">
                 <Activity className="h-5 w-5 text-rose-500" />
-                <CardTitle className="text-sm font-medium">Vital Signs</CardTitle>
-                {!reliable && hr === 0 && (
+                <CardTitle className="text-base font-medium">Vital Signs</CardTitle>
+                {!targetVisible && (
+                    <span className="text-xs text-muted-foreground ml-auto bg-muted px-2 py-0.5 rounded">
+                        NO TARGET
+                    </span>
+                )}
+                {targetVisible && !reliable && hr === 0 && (
                     <span className="text-xs text-muted-foreground ml-auto bg-muted px-2 py-0.5 rounded">
                         CALIBRATING
                     </span>
                 )}
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
+            <CardContent className="flex flex-col gap-4 px-5 pb-5 pt-1">
                 {/* Heart Rate Section */}
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center justify-between">

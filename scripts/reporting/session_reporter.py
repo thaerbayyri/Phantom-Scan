@@ -257,7 +257,7 @@ class SessionReporter:
             if event.get("label") and hasattr(event["label"], "value"):
                 event["label"] = event["label"].value
 
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
         return filepath
 
@@ -530,7 +530,7 @@ class SessionReporter:
         lines.append("")
         lines.append("=" * 60)
 
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
         return filepath
 

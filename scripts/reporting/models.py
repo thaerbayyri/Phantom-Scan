@@ -6,7 +6,52 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, Field
+
+try:
+    from pydantic import BaseModel, Field
+except ImportError:
+    class _FieldSpec:
+        def __init__(self, default=None, default_factory=None):
+            self.default = default
+            self.default_factory = default_factory
+
+        def resolve(self):
+            if self.default_factory is not None:
+                return self.default_factory()
+            return self.default
+
+    def Field(default=None, default_factory=None, **_kwargs):
+        if default_factory is not None:
+            return _FieldSpec(default=default, default_factory=default_factory)
+        return default
+
+    class BaseModel:
+        def __init__(self, **data):
+            annotations = {}
+            for cls in reversed(self.__class__.mro()):
+                annotations.update(getattr(cls, "__annotations__", {}))
+            for name in annotations:
+                if name in data:
+                    value = data[name]
+                else:
+                    default = getattr(self.__class__, name, None)
+                    value = default.resolve() if isinstance(default, _FieldSpec) else default
+                setattr(self, name, value)
+
+        def model_dump(self):
+            result = {}
+            annotations = {}
+            for cls in reversed(self.__class__.mro()):
+                annotations.update(getattr(cls, "__annotations__", {}))
+            for name in annotations:
+                value = getattr(self, name)
+                if isinstance(value, BaseModel):
+                    result[name] = value.model_dump()
+                elif isinstance(value, list):
+                    result[name] = [item.model_dump() if isinstance(item, BaseModel) else item for item in value]
+                else:
+                    result[name] = value
+            return result
 
 
 # ─── Enums ───────────────────────────────────────────────────────────

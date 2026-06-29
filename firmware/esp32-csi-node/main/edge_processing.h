@@ -58,6 +58,11 @@ typedef struct {
     volatile uint32_t tail;  /**< Written by consumer (Core 1). */
 } edge_ring_buf_t;
 
+typedef struct {
+    uint32_t enqueue_drops;
+    uint32_t queue_high_watermark;
+} edge_runtime_stats_t;
+
 /* ---- Biquad IIR filter state ---- */
 typedef struct {
     float b0, b1, b2;  /**< Numerator coefficients. */
@@ -170,5 +175,6 @@ void edge_get_phase_history(const float **out_buf, uint16_t *out_len,
  * @param n_subcarriers  Number of subcarriers to fill.
  */
 void edge_get_variances(float *out_variances, uint16_t n_subcarriers);
+void edge_get_stats(edge_runtime_stats_t *out_stats);
 
 #endif /* EDGE_PROCESSING_H */

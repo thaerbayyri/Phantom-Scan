@@ -13,9 +13,11 @@
 
 /** ADR-018 magic number. */
 #define CSI_MAGIC 0xC5110001
+#define CSI_HEARTBEAT_MAGIC 0xC51100A1
+#define CSI_SCHEMA_VERSION 1
 
 /** ADR-018 header size in bytes. */
-#define CSI_HEADER_SIZE 20
+#define CSI_HEADER_SIZE 32
 
 /** Maximum frame buffer size (header + 4 antennas * 256 subcarriers * 2 bytes). */
 #define CSI_MAX_FRAME_SIZE (CSI_HEADER_SIZE + 4 * 256 * 2)
@@ -38,6 +40,23 @@ void csi_collector_init(void);
  * @return Number of bytes written, or 0 on error.
  */
 size_t csi_serialize_frame(const wifi_csi_info_t *info, uint8_t *buf, size_t buf_len);
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint8_t  schema_version;
+    uint8_t  node_id;
+    uint8_t  wifi_connected;
+    uint8_t  reserved0;
+    uint32_t seq;
+    uint32_t device_ts_ms;
+    uint32_t callback_drops;
+    uint32_t queue_high_watermark;
+    uint32_t send_failures;
+    uint32_t reconnect_count;
+    uint64_t firmware_build_id;
+} csi_heartbeat_pkt_t;
+
+_Static_assert(sizeof(csi_heartbeat_pkt_t) == 40, "heartbeat packet must be 40 bytes");
 
 /**
  * Configure the channel-hop table for multi-band sensing (ADR-029).
@@ -81,5 +100,6 @@ void csi_collector_start_hop_timer(void);
  *       null-data frame as a placeholder.
  */
 esp_err_t csi_inject_ndp_frame(void);
+void csi_collector_start_heartbeat_task(void);
 
 #endif /* CSI_COLLECTOR_H */

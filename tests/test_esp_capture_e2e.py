@@ -18,6 +18,7 @@ import math
 import time
 import struct
 import socket
+import http.cookiejar
 
 import pytest
 import numpy as np
@@ -289,6 +290,8 @@ class TestADR018FrameIntegrity:
 
 class TestServerIngestion:
     SERVER_URL = "http://localhost:5000"
+    USERNAME = os.environ.get("PHANTOM_TEST_USERNAME", "thaer")
+    PASSWORD = os.environ.get("PHANTOM_TEST_PASSWORD", "thaer")
 
     def _server_available(self):
         """Check if the dev server is running."""
@@ -298,6 +301,26 @@ class TestServerIngestion:
             return resp.status == 200
         except Exception:
             return False
+
+    def _auth_opener(self):
+        import urllib.request
+        import json
+
+        jar = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        req = urllib.request.Request(
+            f"{self.SERVER_URL}/api/auth/login",
+            data=json.dumps({
+                "username": self.USERNAME,
+                "password": self.PASSWORD,
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with opener.open(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        assert data["authenticated"] is True
+        return opener
 
     def test_health_endpoint(self):
         """Server health endpoint should respond."""
@@ -318,6 +341,7 @@ class TestServerIngestion:
 
         import urllib.request
         import json
+        opener = self._auth_opener()
         sample = {
             "timestamp": time.time() * 1000,
             "h1": {"re": 0.87, "im": 0.58},
@@ -330,7 +354,7 @@ class TestServerIngestion:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        resp = urllib.request.urlopen(req, timeout=5)
+        resp = opener.open(req, timeout=5)
         data = json.loads(resp.read())
         assert data["success"] is True
 
@@ -348,6 +372,7 @@ class TestServerIngestion:
 
         import urllib.request
         import json
+        opener = self._auth_opener()
         batch = {
             "samples": [
                 {
@@ -366,7 +391,7 @@ class TestServerIngestion:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        resp = urllib.request.urlopen(req, timeout=5)
+        resp = opener.open(req, timeout=5)
         data = json.loads(resp.read())
         assert data["success"] is True
         assert data["samplesIngested"] == len(samples)
@@ -378,7 +403,8 @@ class TestServerIngestion:
 
         import urllib.request
         import json
-        resp = urllib.request.urlopen(f"{self.SERVER_URL}/api/csi/queue", timeout=2)
+        opener = self._auth_opener()
+        resp = opener.open(f"{self.SERVER_URL}/api/csi/queue", timeout=2)
         data = json.loads(resp.read())
         assert "queueLength" in data
         assert "status" in data
@@ -390,7 +416,8 @@ class TestServerIngestion:
 
         import urllib.request
         import json
-        resp = urllib.request.urlopen(f"{self.SERVER_URL}/api/status", timeout=2)
+        opener = self._auth_opener()
+        resp = opener.open(f"{self.SERVER_URL}/api/status", timeout=2)
         data = json.loads(resp.read())
         assert "connected" in data or "isProcessing" in data
 

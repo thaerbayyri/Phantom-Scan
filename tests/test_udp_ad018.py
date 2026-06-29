@@ -1,69 +1,96 @@
-import socket
 import struct
-import time
-import random
 
-# ADR-018 Frame Format
-# [0..3]   Magic: 0xC5110001 (LE)
-# [4]      Node ID
-# [5]      Number of antennas
-# [6..7]   Number of subcarriers (LE u16)
-# [8..11]  Frequency MHz (LE u32)
-# [12..15] Sequence number (LE u32)
-# [16]     RSSI (i8)
-# [17]     Noise floor (i8)
-# [18..19] Reserved
-# [20..]   I/Q data (raw bytes)
+from phantom.protocol import (
+    CSI_HEADER_SIZE,
+    CSI_MAGIC,
+    HEARTBEAT_MAGIC,
+    SCHEMA_VERSION,
+    CsiFrameV1,
+    HeartbeatV1,
+    InvalidPacket,
+    parse_udp_packet,
+)
 
-UDP_IP = "127.0.0.1"
-UDP_PORT = 5005
 
-print(f"UDP target IP: {UDP_IP}")
-print(f"UDP target port: {UDP_PORT}")
+def build_csi_frame(
+    *,
+    node_id: int = 1,
+    seq: int = 7,
+    n_antennas: int = 1,
+    n_subcarriers: int = 4,
+    freq_mhz: int = 2412,
+    rssi_dbm: int = -55,
+    noise_dbm: int = -90,
+    channel: int = 1,
+    device_ts_us: int = 123456789,
+    device_ts_ms: int = 123456,
+) -> bytes:
+    iq = bytes([1, 2, 3, 4, 5, 6, 7, 8])
+    return struct.pack(
+        "<IBBBHIIbbBQI",
+        CSI_MAGIC,
+        SCHEMA_VERSION,
+        node_id,
+        n_antennas,
+        n_subcarriers,
+        freq_mhz,
+        seq,
+        rssi_dbm,
+        noise_dbm,
+        channel,
+        device_ts_us,
+        device_ts_ms,
+    ) + iq
 
-sock = socket.socket(socket.AF_INET, socket.socket.SOCK_DGRAM)
 
-num_antennas = 1
-num_subcarriers = 10  # Sending 10 just to test parsing
+def build_heartbeat(
+    *,
+    node_id: int = 1,
+    seq: int = 11,
+    device_ts_ms: int = 987654,
+) -> bytes:
+    return struct.pack(
+        "<IBBBBIIIIIQI",
+        HEARTBEAT_MAGIC,
+        SCHEMA_VERSION,
+        node_id,
+        1,
+        0,
+        seq,
+        device_ts_ms,
+        2,
+        8,
+        3,
+        1,
+        42,
+    )
 
-def create_mock_frame(sequence):
-    magic = 0xC5110001
-    node_id = 1
-    freq_mhz = 2412
-    rssi = -55
-    noise = -90
-    
-    # Pack Header (20 bytes)
-    # < I B B H I I b b x x
-    # I = 4, B = 1, B = 1, H = 2, I = 4, I = 4, b = 1, b = 1, x = 1, x = 1 (Total 20)
-    header = struct.pack('<IBBHIIbbxx', 
-                         magic, 
-                         node_id, 
-                         num_antennas, 
-                         num_subcarriers, 
-                         freq_mhz, 
-                         sequence, 
-                         rssi, 
-                         noise)
-    
-    # Mock IQ data 
-    # 1 antenna * 10 subcarriers * 2 bytes = 20 bytes
-    iq_data = bytearray()
-    for _ in range(num_subcarriers):
-        # Generate some synthetic movement
-        re = int(random.uniform(-50, 50))
-        im = int(random.uniform(-50, 50))
-        iq_data.extend(struct.pack('<bb', re, im))
-        
-    return header + iq_data
 
-print("Starting UDP transmission...")
-seq = 0
-try:
-    while True:
-        frame = create_mock_frame(seq)
-        sock.sendto(frame, (UDP_IP, UDP_PORT))
-        seq += 1
-        time.sleep(0.05) # ~20 FPS
-except KeyboardInterrupt:
-    print("\nStopped.")
+def test_parse_valid_csi_frame():
+    parsed = parse_udp_packet(build_csi_frame(), ("127.0.0.1", 5005), 999)
+    assert isinstance(parsed, CsiFrameV1)
+    assert parsed.node_id == 1
+    assert parsed.seq == 7
+    assert parsed.device_ts_valid is True
+    assert parsed.host_rx_ns == 999
+    assert len(parsed.iq_bytes) == 8
+
+
+def test_parse_valid_heartbeat():
+    parsed = parse_udp_packet(build_heartbeat(), ("127.0.0.1", 5005), 111)
+    assert isinstance(parsed, HeartbeatV1)
+    assert parsed.node_id == 1
+    assert parsed.seq == 11
+    assert parsed.callback_drops == 2
+
+
+def test_reject_bad_magic():
+    parsed = parse_udp_packet(b"\x00\x00\x00\x00", ("127.0.0.1", 5005), 222)
+    assert isinstance(parsed, InvalidPacket)
+    assert "unknown_magic" in parsed.reason
+
+
+def test_reject_truncated_csi():
+    parsed = parse_udp_packet(build_csi_frame()[: CSI_HEADER_SIZE - 1], ("127.0.0.1", 5005), 333)
+    assert isinstance(parsed, InvalidPacket)
+    assert parsed.reason == "truncated_csi_header"

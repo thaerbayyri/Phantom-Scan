@@ -14,20 +14,27 @@
 #include "csi_collector.h"
 #include "stream_sender.h"
 #include "edge_processing.h"
+#include "nvs_config.h"
 
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "csi_collector";
+extern nvs_config_t g_nvs_config;
+extern volatile uint32_t g_wifi_reconnect_count;
+extern volatile bool g_wifi_connected;
 
 static uint32_t s_sequence = 0;
 static uint32_t s_cb_count = 0;
 static uint32_t s_send_ok = 0;
 static uint32_t s_send_fail = 0;
 static uint32_t s_rate_skip = 0;
+static uint32_t s_cb_drop = 0;
 
 /**
  * Minimum interval between UDP sends in microseconds.
@@ -60,15 +67,18 @@ static esp_timer_handle_t s_hop_timer = NULL;
  *
  * Layout:
  *   [0..3]   Magic: 0xC5110001 (LE)
- *   [4]      Node ID
- *   [5]      Number of antennas (rx_ctrl.rx_ant + 1 if available, else 1)
- *   [6..7]   Number of subcarriers (LE u16) = len / (2 * n_antennas)
- *   [8..11]  Frequency MHz (LE u32) — derived from channel
- *   [12..15] Sequence number (LE u32)
- *   [16]     RSSI (i8)
- *   [17]     Noise floor (i8)
- *   [18..19] Reserved
- *   [20..]   I/Q data (raw bytes from ESP-IDF callback)
+ *   [4]      Schema version
+ *   [5]      Node ID
+ *   [6]      Number of antennas
+ *   [7..8]   Number of subcarriers (LE u16)
+ *   [9..12]  Frequency MHz (LE u32) — derived from channel
+ *   [13..16] Sequence number (LE u32)
+ *   [17]     RSSI (i8)
+ *   [18]     Noise floor (i8)
+ *   [19]     WiFi channel
+ *   [20..27] Device timestamp us (LE u64)
+ *   [28..31] Device timestamp ms (LE u32)
+ *   [32..]   I/Q data (raw bytes from ESP-IDF callback)
  */
 size_t csi_serialize_frame(const wifi_csi_info_t *info, uint8_t *buf, size_t buf_len)
 {
@@ -103,31 +113,38 @@ size_t csi_serialize_frame(const wifi_csi_info_t *info, uint8_t *buf, size_t buf
     uint32_t magic = CSI_MAGIC;
     memcpy(&buf[0], &magic, 4);
 
+    /* Schema version */
+    buf[4] = (uint8_t)CSI_SCHEMA_VERSION;
+
     /* Node ID */
-    buf[4] = (uint8_t)CONFIG_CSI_NODE_ID;
+    buf[5] = (uint8_t)g_nvs_config.node_id;
 
     /* Number of antennas */
-    buf[5] = n_antennas;
+    buf[6] = n_antennas;
 
     /* Number of subcarriers (LE u16) */
-    memcpy(&buf[6], &n_subcarriers, 2);
+    memcpy(&buf[7], &n_subcarriers, 2);
 
     /* Frequency MHz (LE u32) */
-    memcpy(&buf[8], &freq_mhz, 4);
+    memcpy(&buf[9], &freq_mhz, 4);
 
     /* Sequence number (LE u32) */
     uint32_t seq = s_sequence++;
-    memcpy(&buf[12], &seq, 4);
+    memcpy(&buf[13], &seq, 4);
 
     /* RSSI (i8) */
-    buf[16] = (uint8_t)(int8_t)info->rx_ctrl.rssi;
+    buf[17] = (uint8_t)(int8_t)info->rx_ctrl.rssi;
 
     /* Noise floor (i8) */
-    buf[17] = (uint8_t)(int8_t)info->rx_ctrl.noise_floor;
+    buf[18] = (uint8_t)(int8_t)info->rx_ctrl.noise_floor;
 
-    /* Reserved */
-    buf[18] = 0;
-    buf[19] = 0;
+    /* Channel */
+    buf[19] = channel;
+
+    uint64_t device_ts_us = (uint64_t)esp_timer_get_time();
+    uint32_t device_ts_ms = (uint32_t)(device_ts_us / 1000ULL);
+    memcpy(&buf[20], &device_ts_us, sizeof(device_ts_us));
+    memcpy(&buf[28], &device_ts_ms, sizeof(device_ts_ms));
 
     /* I/Q data */
     memcpy(&buf[CSI_HEADER_SIZE], info->buf, iq_len);
@@ -143,8 +160,8 @@ static void wifi_csi_callback(void *ctx, wifi_csi_info_t *info)
     (void)ctx;
     s_cb_count++;
 
-    if (s_cb_count <= 3 || (s_cb_count % 100) == 0) {
-        ESP_LOGI(TAG, "CSI cb #%lu: len=%d rssi=%d ch=%d",
+    if (s_cb_count <= 3 || (s_cb_count % 250) == 0) {
+        ESP_LOGD(TAG, "CSI cb #%lu: len=%d rssi=%d ch=%d",
                  (unsigned long)s_cb_count, info->len,
                  info->rx_ctrl.rssi, info->rx_ctrl.channel);
     }
@@ -175,8 +192,10 @@ static void wifi_csi_callback(void *ctx, wifi_csi_info_t *info)
 
     /* ADR-039: Enqueue raw I/Q into edge processing ring buffer. */
     if (info->buf && info->len > 0) {
-        edge_enqueue_csi((const uint8_t *)info->buf, (uint16_t)info->len,
-                         (int8_t)info->rx_ctrl.rssi, info->rx_ctrl.channel);
+        if (!edge_enqueue_csi((const uint8_t *)info->buf, (uint16_t)info->len,
+                              (int8_t)info->rx_ctrl.rssi, info->rx_ctrl.channel)) {
+            s_cb_drop++;
+        }
     }
 }
 
@@ -221,7 +240,7 @@ void csi_collector_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_csi(true));
 
     ESP_LOGI(TAG, "CSI collection initialized (node_id=%d, channel=%d)",
-             CONFIG_CSI_NODE_ID, CONFIG_CSI_WIFI_CHANNEL);
+             g_nvs_config.node_id, CONFIG_CSI_WIFI_CHANNEL);
 }
 
 /* ---- ADR-029: Channel hopping ---- */
@@ -365,4 +384,45 @@ esp_err_t csi_inject_ndp_frame(void)
     }
 
     return err;
+}
+
+static void csi_heartbeat_task(void *arg)
+{
+    (void)arg;
+    while (1) {
+        csi_heartbeat_pkt_t pkt;
+        memset(&pkt, 0, sizeof(pkt));
+        pkt.magic = CSI_HEARTBEAT_MAGIC;
+        pkt.schema_version = CSI_SCHEMA_VERSION;
+        pkt.node_id = g_nvs_config.node_id;
+        pkt.wifi_connected = g_wifi_connected ? 1 : 0;
+        pkt.seq = s_sequence;
+        pkt.device_ts_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+
+        edge_runtime_stats_t edge_stats;
+        memset(&edge_stats, 0, sizeof(edge_stats));
+        edge_get_stats(&edge_stats);
+
+        pkt.callback_drops = s_cb_drop + edge_stats.enqueue_drops;
+        pkt.queue_high_watermark = edge_stats.queue_high_watermark;
+        pkt.send_failures = s_send_fail;
+        pkt.reconnect_count = g_wifi_reconnect_count;
+        pkt.firmware_build_id = 1;
+
+        stream_sender_send((const uint8_t *)&pkt, sizeof(pkt));
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void csi_collector_start_heartbeat_task(void)
+{
+    xTaskCreatePinnedToCore(
+        csi_heartbeat_task,
+        "csi_heartbeat",
+        4096,
+        NULL,
+        4,
+        NULL,
+        1
+    );
 }

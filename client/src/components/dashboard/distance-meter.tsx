@@ -1,16 +1,19 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Ruler } from "lucide-react";
+import type { TargetState } from "@shared/schema";
 
 interface DistanceMeterProps {
     distanceCm: number;
     wallDistance: number;
     bearingRad?: number;
+    targetState?: TargetState | null;
     className?: string;
 }
 
-export function DistanceMeter({ distanceCm, wallDistance, bearingRad, className = "" }: DistanceMeterProps) {
+export function DistanceMeter({ distanceCm, wallDistance, bearingRad, targetState, className = "" }: DistanceMeterProps) {
     const distanceM = distanceCm / 100;
     const maxRange = 8; // meters
+    const hasTruthfulDistance = Boolean(targetState?.target_visible);
 
     // Color gradient: green (far) → orange (mid) → red (close)
     const ratio = Math.min(1, distanceM / maxRange);
@@ -24,17 +27,17 @@ export function DistanceMeter({ distanceCm, wallDistance, bearingRad, className 
     const wallRatio = Math.min(1, wallDistance / maxRange);
 
     return (
-        <Card className={`${className}`}>
-            <CardHeader className="flex flex-row items-center gap-2 pb-2">
+        <Card className={`min-w-0 ${className}`}>
+            <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-5 pb-3 pt-5">
                 <Ruler className="h-4 w-4 text-primary" />
-                <CardTitle className="text-sm">Distance Meter</CardTitle>
+                <CardTitle className="text-base">Distance Meter</CardTitle>
                 <span className="ml-auto text-xs font-mono text-muted-foreground">
-                    Wall: {wallDistance.toFixed(1)}m
+                    Wall: {hasTruthfulDistance ? `${wallDistance.toFixed(1)}m` : "--"}
                 </span>
             </CardHeader>
-            <CardContent className="flex flex-col items-center gap-2 py-3">
+            <CardContent className="flex flex-col items-center gap-2 px-5 pb-5 pt-1">
                 {/* SVG Radial Gauge */}
-                <svg viewBox="0 0 200 120" className="w-full max-w-[200px]">
+                <svg viewBox="0 0 200 120" className="w-full max-w-[185px]">
                     {/* Background arc */}
                     <path
                         d="M 20 100 A 80 80 0 0 1 180 100"
@@ -72,16 +75,16 @@ export function DistanceMeter({ distanceCm, wallDistance, bearingRad, className 
                         y="85"
                         textAnchor="middle"
                         className="fill-foreground"
-                        style={{ fontSize: "28px", fontWeight: 700, fontFamily: "monospace" }}
+                        style={{ fontSize: "26px", fontWeight: 700, fontFamily: "monospace" }}
                     >
-                        {distanceCm.toFixed(0)}
+                        {hasTruthfulDistance ? distanceCm.toFixed(0) : "--"}
                     </text>
                     <text
                         x="100"
                         y="102"
                         textAnchor="middle"
                         className="fill-muted-foreground"
-                        style={{ fontSize: "12px", fontFamily: "monospace" }}
+                        style={{ fontSize: "11px", fontFamily: "monospace" }}
                     >
                         cm
                     </text>
@@ -92,9 +95,12 @@ export function DistanceMeter({ distanceCm, wallDistance, bearingRad, className 
                 </svg>
 
                 {/* Distance in meters subtitle */}
-                <div className="text-xs text-muted-foreground font-mono flex items-center justify-center gap-2">
+                <div className="flex items-center justify-center gap-2 text-xs font-mono text-muted-foreground">
                     <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-1 rounded-md border border-white/5">
-                        <span className="text-primary/60">{distanceM.toFixed(2)}m</span>
+                        <span className="text-primary/60">{hasTruthfulDistance ? `${distanceM.toFixed(2)}m` : "--"}</span>
+                        {!hasTruthfulDistance && (
+                            <span className="text-muted-foreground">NO TARGET</span>
+                        )}
                         {bearingRad !== undefined && (
                             <>
                                 <span className="text-white/20">|</span>

@@ -14,28 +14,26 @@ const ALLOWED_TASKS: Record<string, { cmd: string; getArgs: (iface: string) => s
 };
 import { sessionStore } from "./lib/session-store";
 import type { ProcessingConfig, CSISample } from "@shared/schema";
-import { handleSecureTerminalStream } from "./lib/secure-terminal";
 import * as fs from "fs";
 import * as path from "path";
 import { csiSampleSchema, hardwareIngestSchema } from "@shared/schema";
+import type { AuthService } from "./auth/service";
 
 export async function registerRoutes(
   httpServer: Server,
-  app: Express
+  app: Express,
+  auth: AuthService,
 ): Promise<Server> {
-  // Initialize WebSocket server for real-time signal processing
-  signalServer.initialize(httpServer);
-
   // REST API endpoints for configuration and status
-  app.get("/api/status", (req, res) => {
+  app.get("/api/status", auth.requireAuth, (req, res) => {
     res.json(signalServer.getStatus());
   });
 
-  app.get("/api/config", (req, res) => {
+  app.get("/api/config", auth.requireAuth, (req, res) => {
     res.json(signalServer.getConfig());
   });
 
-  app.post("/api/config", (req, res) => {
+  app.post("/api/config", auth.requireAuth, auth.auditProtectedAction("config_posted"), (req, res) => {
     const config = req.body as Partial<ProcessingConfig>;
     // Config updates are handled via WebSocket, but this endpoint exists for REST clients
     res.json({ success: true, message: "Use WebSocket for config updates" });
@@ -47,7 +45,7 @@ export async function registerRoutes(
   });
 
   // ESP32-S3 Remote Configuration (Active & Passive Modes)
-  app.post("/api/esp32/configure", async (req, res) => {
+  app.post("/api/esp32/configure", auth.requireAuth, auth.auditProtectedAction("esp32_configure"), async (req, res) => {
     try {
       const { mode, targetMac, channel, ssid, password } = req.body;
 
@@ -94,7 +92,7 @@ export async function registerRoutes(
   });
 
   // Get list of system network interfaces
-  app.get("/api/v1/system/interfaces", (req, res) => {
+  app.get("/api/v1/system/interfaces", auth.requireAuth, (req, res) => {
     try {
       const interfaces = os.networkInterfaces();
       const names = Object.keys(interfaces);
@@ -105,11 +103,8 @@ export async function registerRoutes(
     }
   });
 
-  // Secure Streaming Diagnostic Terminal
-  app.get("/api/v1/diagnostic/stream", handleSecureTerminalStream);
-
   // Secure System Task Execution Endpoint
-  app.post("/api/v1/system/execute-task", (req, res) => {
+  app.post("/api/v1/system/execute-task", auth.requireAuth, auth.auditProtectedAction("system_task_execute"), (req, res) => {
     try {
       const { task, interfaceName = "wlan0" } = req.body;
 
@@ -167,7 +162,7 @@ export async function registerRoutes(
   });
 
   // Hardware CSI ingestion endpoint - single sample
-  app.post("/api/csi/ingest", (req, res) => {
+  app.post("/api/csi/ingest", auth.requireAuth, (req, res) => {
     try {
       const result = csiSampleSchema.safeParse(req.body);
       if (!result.success) {
@@ -191,7 +186,7 @@ export async function registerRoutes(
   });
 
   // Hardware CSI ingestion endpoint - batch samples
-  app.post("/api/csi/ingest/batch", (req, res) => {
+  app.post("/api/csi/ingest/batch", auth.requireAuth, (req, res) => {
     try {
       const result = hardwareIngestSchema.safeParse(req.body);
       if (!result.success) {
@@ -215,7 +210,7 @@ export async function registerRoutes(
   });
 
   // Get ingestion queue status
-  app.get("/api/csi/queue", (req, res) => {
+  app.get("/api/csi/queue", auth.requireAuth, (req, res) => {
     res.json({
       queueLength: signalServer.getQueueLength(),
       status: signalServer.getStatus(),
@@ -224,7 +219,7 @@ export async function registerRoutes(
   });
 
   // Download last recorded session CSV or report
-  app.get("/api/recording/download", (req, res) => {
+  app.get("/api/recording/download", auth.requireAuth, auth.auditProtectedAction("recording_download"), (req, res) => {
     let filePath = signalServer.getLastRecordingFile();
     if (!filePath) {
       return res.status(404).json({ error: "No recording available" });
@@ -272,7 +267,7 @@ export async function registerRoutes(
   });
 
   // Session report endpoint
-  app.get("/api/report", (req, res) => {
+  app.get("/api/report", auth.requireAuth, (req, res) => {
     try {
       const report = signalServer.getSessionReport();
       res.json(report);
@@ -285,7 +280,7 @@ export async function registerRoutes(
   // ── Session history endpoints ──────────────────────────────────
 
   // List sessions (with optional search/filter)
-  app.get("/api/sessions", (req, res) => {
+  app.get("/api/sessions", auth.requireAuth, (req, res) => {
     try {
       const search = req.query.search as string | undefined;
       const classification = req.query.classification as string | undefined;
@@ -300,7 +295,7 @@ export async function registerRoutes(
   });
 
   // Get single session by ID
-  app.get("/api/sessions/:id", (req, res) => {
+  app.get("/api/sessions/:id", auth.requireAuth, (req, res) => {
     try {
       const session = sessionStore.getById(req.params.id);
       if (!session) {
@@ -314,7 +309,7 @@ export async function registerRoutes(
   });
 
   // Delete a session
-  app.delete("/api/sessions/:id", (req, res) => {
+  app.delete("/api/sessions/:id", auth.requireAuth, auth.auditProtectedAction("session_deleted"), (req, res) => {
     try {
       const deleted = sessionStore.delete(req.params.id);
       if (!deleted) {

@@ -24,17 +24,17 @@ function MetricCard({
   testId: string;
 }) {
   return (
-    <Card className="flex-1">
-      <CardContent className="p-3">
+    <Card className="min-w-0">
+      <CardContent className="p-3.5">
         <div className="flex items-center gap-2">
-          <div className={`p-1.5 rounded-md ${color}`}>
-            <Icon className="h-3 w-3" />
+          <div className={`rounded-md p-2 ${color}`}>
+            <Icon className="h-3.5 w-3.5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs text-muted-foreground truncate">{label}</div>
-            <div className="flex items-baseline gap-1">
+            <div className="truncate text-xs text-muted-foreground">{label}</div>
+            <div className="flex min-w-0 items-baseline gap-1">
               <span
-                className="text-lg font-mono font-semibold"
+                className="truncate text-lg font-mono font-semibold"
                 data-testid={testId}
               >
                 {value}
@@ -75,7 +75,7 @@ export function MetricsPanel({
   const peakAngle = isarFrame ? isarFrame.peakAngle.toFixed(1) : "0.0";
 
   return (
-    <div className={`grid grid-cols-2 gap-2 ${className}`}>
+    <div className={`grid grid-cols-2 gap-2.5 ${className}`}>
       <MetricCard
         icon={Activity}
         label="h1 Magnitude"

@@ -31,6 +31,8 @@
 #include "esp_timer.h"
 
 static const char *TAG = "main";
+volatile uint32_t g_wifi_reconnect_count = 0;
+volatile bool g_wifi_connected = false;
 
 /* ADR-040: WASM timer handle (calls on_timer at configurable interval). */
 static esp_timer_handle_t s_wasm_timer;
@@ -53,9 +55,11 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        g_wifi_connected = false;
         if (s_retry_num < MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
+            g_wifi_reconnect_count++;
             ESP_LOGI(TAG, "Retrying WiFi connection (%d/%d)", s_retry_num, MAX_RETRY);
         } else {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
@@ -64,6 +68,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
+        g_wifi_connected = true;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -104,6 +109,7 @@ static void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     ESP_LOGI(TAG, "WiFi STA initialized, connecting to SSID: %s", g_nvs_config.wifi_ssid);
 
@@ -121,6 +127,8 @@ static void wifi_init_sta(void)
 
 void app_main(void)
 {
+    bool headless_baseline = false;
+
     /* Initialize NVS */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -133,6 +141,10 @@ void app_main(void)
     nvs_config_load(&g_nvs_config);
 
     ESP_LOGI(TAG, "ESP32-S3 CSI Node (ADR-018) — Node ID: %d", g_nvs_config.node_id);
+    headless_baseline = (g_nvs_config.edge_tier == 0);
+    if (headless_baseline) {
+        ESP_LOGI(TAG, "Milestone baseline enabled: raw CSI transport + heartbeat, headless mode");
+    }
 
     /* Initialize WiFi STA */
     wifi_init_sta();
@@ -145,6 +157,7 @@ void app_main(void)
 
     /* Initialize CSI collection */
     csi_collector_init();
+    csi_collector_start_heartbeat_task();
 
     /* ADR-039: Initialize edge processing pipeline. */
     edge_config_t edge_cfg = {
@@ -204,10 +217,14 @@ void app_main(void)
     /* Initialize power management. */
     power_mgmt_init(g_nvs_config.power_duty);
 
-    /* ADR-045: Start AMOLED display task (gracefully skips if no display). */
-    esp_err_t disp_ret = display_task_start();
-    if (disp_ret != ESP_OK) {
-        ESP_LOGW(TAG, "Display init returned: %s", esp_err_to_name(disp_ret));
+    /* Keep the milestone baseline headless unless higher edge tiers are explicitly enabled. */
+    if (!headless_baseline) {
+        esp_err_t disp_ret = display_task_start();
+        if (disp_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Display init returned: %s", esp_err_to_name(disp_ret));
+        }
+    } else {
+        ESP_LOGI(TAG, "Display task skipped in milestone baseline mode");
     }
 
     ESP_LOGI(TAG, "CSI streaming active → %s:%d (edge_tier=%u, OTA=%s, WASM=%s)",

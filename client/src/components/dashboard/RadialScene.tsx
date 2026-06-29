@@ -2,7 +2,7 @@ import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
-import type { RadialTarget, PointCloudPoint, PoseFrame } from "@shared/schema";
+import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState } from "@shared/schema";
 import { DirectionalNode } from "./DirectionalNode";
 import { HumanMesh } from "./HumanMesh";
 import { MachineStatic } from "./MachineStatic";
@@ -226,11 +226,20 @@ interface RadialSceneProps {
     radialTarget: RadialTarget | null;
     points: PointCloudPoint[];
     poseFrame: PoseFrame | null;
+    targetState: TargetState | null;
 }
 
-export function RadialScene({ radialTarget, points, poseFrame }: RadialSceneProps) {
+export function RadialScene({ radialTarget, points, poseFrame, targetState }: RadialSceneProps) {
     const label = radialTarget?.label ?? "unknown";
     const wallDistance = radialTarget?.wallDistance ?? 5.0;
+    const canRenderTarget = Boolean(
+        radialTarget &&
+        targetState?.target_visible &&
+        !targetState.stale &&
+        targetState.state !== "none" &&
+        targetState.state !== "stale"
+    );
+    const canRenderConfidentHuman = Boolean(canRenderTarget && targetState?.position_confident);
 
     return (
         <>
@@ -246,12 +255,14 @@ export function RadialScene({ radialTarget, points, poseFrame }: RadialSceneProp
             {/* Wall plane at detected reflection distance */}
             <WallPlane distance={wallDistance} />
 
-            {/* Conditional entity based on classification — human figure shown for unknown/human */}
-            {radialTarget && (
+            {/* Render only state-authorized target objects. Unknown targets stay abstract. */}
+            {canRenderTarget && radialTarget && (
                 label === "mechanical" ? (
                     <MachineStatic target={radialTarget} />
-                ) : (
+                ) : label === "human" && canRenderConfidentHuman ? (
                     <HumanMesh target={radialTarget} poseFrame={poseFrame} />
+                ) : (
+                    <DirectionalNode target={radialTarget} />
                 )
             )}
         </>

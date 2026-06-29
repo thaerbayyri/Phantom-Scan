@@ -31,12 +31,12 @@ export function DopplerSpectrogram({
     }, [frame]);
 
     return (
-        <Card className={`flex flex-col ${className}`}>
-            <CardHeader className="flex flex-row items-center gap-2 pb-2">
+        <Card className={`flex flex-col overflow-hidden ${className}`}>
+            <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
                 <Activity className="h-4 w-4 text-chart-3" />
                 <CardTitle className="text-sm">Doppler Spectrogram</CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 p-2">
+            <CardContent className="flex-1 px-2 pb-2 pt-0">
                 <Plot
                     data={[
                         {
@@ -53,36 +53,32 @@ export function DopplerSpectrogram({
                             zmax: 0,
                             hovertemplate:
                                 "Time: %{x:.2f}s<br>Doppler: %{y:.1f} Hz<br>Power: %{z:.1f} dB<extra></extra>",
-                            colorbar: {
-                                title: "Power (dB)",
-                                titleside: "right" as const,
-                                thickness: 15,
-                                len: 0.9,
-                            },
+                            showscale: false,
                         },
                     ]}
                     layout={{
                         autosize: true,
                         paper_bgcolor: "rgba(0,0,0,0)",
                         plot_bgcolor: "rgba(0,0,0,0)",
-                        margin: { l: 50, r: 60, t: 10, b: 40 },
+                        margin: { l: 32, r: 10, t: 6, b: 24 },
                         xaxis: {
-                            title: "Time (s)",
+                            title: "Time",
                             gridcolor: "rgba(128,128,128,0.2)",
                             zerolinecolor: "rgba(128,128,128,0.4)",
                         },
                         yaxis: {
-                            title: "Doppler Frequency (Hz)",
+                            title: "Doppler",
                             gridcolor: "rgba(128,128,128,0.2)",
                             zerolinecolor: "rgba(128,128,128,0.4)",
                         },
                         font: {
                             color: "hsl(var(--foreground))",
-                            size: 10,
+                            size: 9,
                         },
                     }}
                     config={{
                         displaylogo: false,
+                        displayModeBar: false,
                         modeBarButtonsToRemove: ["toImage", "sendDataToCloud"],
                         responsive: true,
                     }}

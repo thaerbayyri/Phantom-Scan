@@ -1,0 +1,8 @@
+{
+  "username": "thaer",
+  "password_hash": "replace_with_generated_hex_hash",
+  "password_salt": "replace_with_generated_salt",
+  "hash_scheme": "scrypt",
+  "created_at": "2026-06-29T00:00:00.000Z",
+  "updated_at": "2026-06-29T00:00:00.000Z"
+}

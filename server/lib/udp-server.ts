@@ -6,7 +6,84 @@ const UDP_PORT = parseInt(process.env.UDP_PORT || "5005", 10);
 const UDP_HOST = "0.0.0.0";
 
 const MAGIC_NUMBER_LE = 0xc5110001;
-const HEADER_SIZE = 20;
+const HEARTBEAT_MAGIC_LE = 0xc51100a1;
+const LEGACY_HEADER_SIZE = 20;
+const ADR018_HEADER_SIZE = 32;
+
+type ParsedCsiPacket = {
+    nodeId: number;
+    rssi: number;
+    numAntennas: number;
+    numSubcarriers: number;
+    iqData: Buffer;
+};
+
+export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
+    if (msg.length < 4) {
+        return null;
+    }
+
+    const magic = msg.readUInt32LE(0);
+    if (magic === HEARTBEAT_MAGIC_LE) {
+        return null;
+    }
+    if (magic !== MAGIC_NUMBER_LE) {
+        return null;
+    }
+
+    if (msg.length >= ADR018_HEADER_SIZE) {
+        const schemaVersion = msg.readUInt8(4);
+        if (schemaVersion === 1) {
+            const nodeId = msg.readUInt8(5);
+            const numAntennas = msg.readUInt8(6);
+            const numSubcarriers = msg.readUInt16LE(7);
+            const rssi = msg.readInt8(17);
+            const iqData = msg.subarray(ADR018_HEADER_SIZE);
+            const expectedIqBytes = numAntennas * numSubcarriers * 2;
+
+            if (numAntennas <= 0 || numSubcarriers <= 0) {
+                return null;
+            }
+            if (iqData.length < expectedIqBytes) {
+                return null;
+            }
+
+            return {
+                nodeId,
+                rssi,
+                numAntennas,
+                numSubcarriers,
+                iqData,
+            };
+        }
+    }
+
+    if (msg.length < LEGACY_HEADER_SIZE) {
+        return null;
+    }
+
+    const nodeId = msg.readUInt8(4);
+    const numAntennas = msg.readUInt8(5);
+    const numSubcarriers = msg.readUInt16LE(6);
+    const rssi = msg.readInt8(16);
+    const iqData = msg.subarray(LEGACY_HEADER_SIZE);
+    const expectedIqBytes = numAntennas * numSubcarriers * 2;
+
+    if (numAntennas <= 0 || numSubcarriers <= 0) {
+        return null;
+    }
+    if (iqData.length < expectedIqBytes) {
+        return null;
+    }
+
+    return {
+        nodeId,
+        rssi,
+        numAntennas,
+        numSubcarriers,
+        iqData,
+    };
+}
 
 export function startUDPServer() {
     const server = dgram.createSocket("udp4");
@@ -26,35 +103,10 @@ export function startUDPServer() {
         pyForwardSocket.send(msg, 5006, "127.0.0.1", (err) => {
             // Ignore errors if the Python script is not running yet
         });
-
-        if (msg.length < HEADER_SIZE) return;
-
-        // Parse ADR-018 Header
-        const magic = msg.readUInt32LE(0);
-        if (magic !== MAGIC_NUMBER_LE) {
-            return; // Not a valid CSI packet
-        }
-
-        const nodeId = msg.readUInt8(4);
-        const numAntennas = msg.readUInt8(5);
-        const numSubcarriers = msg.readUInt16LE(6);
-        // const frequencyMHz = msg.readUInt32LE(8);
-        // const sequenceNum = msg.readUInt32LE(12);
-        const rssi = msg.readInt8(16);
-        // const noiseFloor = msg.readInt8(17);
-
-        // The rest of the buffer is the raw I/Q array.
-        // Each subcarrier is 2 bytes (int8 real, int8 imag).
-        const iqData = msg.subarray(HEADER_SIZE);
-
-        // Safety check: ensure we have enough bytes
-        const expectedIqBytes = numAntennas * numSubcarriers * 2;
-        if (iqData.length < expectedIqBytes) {
+        const parsed = parseCsiPacket(msg);
+        if (!parsed) {
             return;
         }
-
-        // We only process if we have at least 1 antenna
-        if (numAntennas === 0 || numSubcarriers === 0) return;
 
         // For Phantom Scan, we expect an array of subcarriers.
         // We'll average across the subcarriers for a single representative complex number per antenna for the core math,
@@ -67,10 +119,10 @@ export function startUDPServer() {
         let bestH1 = { re: 0, im: 0 };
         let bestH2 = { re: 0, im: 0 };
 
-        for (let i = 0; i < numSubcarriers; i++) {
+        for (let i = 0; i < parsed.numSubcarriers; i++) {
             // Antenna 1
-            const p1_re = iqData.readInt8((0 * numSubcarriers + i) * 2);
-            const p1_im = iqData.readInt8((0 * numSubcarriers + i) * 2 + 1);
+            const p1_re = parsed.iqData.readInt8((0 * parsed.numSubcarriers + i) * 2);
+            const p1_im = parsed.iqData.readInt8((0 * parsed.numSubcarriers + i) * 2 + 1);
 
             const power1 = p1_re * p1_re + p1_im * p1_im;
 
@@ -79,9 +131,9 @@ export function startUDPServer() {
             let p2_im = 0;
 
             // If RuView sends 2 antennas (unlikely based on current code, but future proofing)
-            if (numAntennas > 1) {
-                p2_re = iqData.readInt8((1 * numSubcarriers + i) * 2);
-                p2_im = iqData.readInt8((1 * numSubcarriers + i) * 2 + 1);
+            if (parsed.numAntennas > 1) {
+                p2_re = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2);
+                p2_im = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2 + 1);
                 power2 = p2_re * p2_re + p2_im * p2_im;
             }
 
@@ -90,7 +142,7 @@ export function startUDPServer() {
             if (totalPower > maxSubcarrierPower) {
                 maxSubcarrierPower = totalPower;
                 bestH1 = { re: p1_re, im: p1_im };
-                if (numAntennas > 1) {
+                if (parsed.numAntennas > 1) {
                     bestH2 = { re: p2_re, im: p2_im };
                 } else {
                     // Fallback: If only 1 antenna is provided, duplicate it to H2 
@@ -105,8 +157,8 @@ export function startUDPServer() {
             timestamp: Date.now(),
             h1: bestH1,
             h2: bestH2,
-            rssi: rssi,
-            nodeId: nodeId
+            rssi: parsed.rssi,
+            nodeId: parsed.nodeId
         };
 
         signalServer.ingestSample(sample);

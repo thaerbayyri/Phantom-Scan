@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Phantom Scan — ESP32-S3 CSI Capture Script
 
@@ -14,26 +15,10 @@ USAGE:
 
 import argparse
 import csv
-import json
 import os
 import sys
 import time
 from typing import Dict, Any, List, Optional, Tuple
-
-
-try:
-    import requests
-except ImportError:
-    print("ERROR: requests library not found. Install with: pip install requests")
-    sys.exit(1)
-
-try:
-    import serial
-    import serial.tools.list_ports
-except ImportError:
-    print("ERROR: pyserial library not found. Install with: pip install pyserial")
-    sys.exit(1)
-
 
 try:
     import numpy as np
@@ -82,11 +67,29 @@ class CSISample:
         return result
 
 
+def _require_requests():
+    try:
+        import requests  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("requests library not found. Install with: pip install requests") from exc
+    return requests
+
+
+def _require_serial():
+    try:
+        import serial  # type: ignore
+        import serial.tools.list_ports  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("pyserial library not found. Install with: pip install pyserial") from exc
+    return serial
+
+
 # ── Serial port helpers ──────────────────────────────────────────────
 
 
 def list_serial_ports() -> List[Any]:
     """Return list of serial port info objects."""
+    serial = _require_serial()
     return list(serial.tools.list_ports.comports())
 
 
@@ -181,7 +184,7 @@ def parse_csi_line(line: str) -> Optional[CSISample]:
 # ── Network helpers ──────────────────────────────────────────────────
 
 
-def check_server(url: str, session: requests.Session) -> bool:
+def check_server(url: str, session) -> bool:
     try:
         r = session.get(f"{url}/api/health", timeout=5)
         return r.status_code == 200
@@ -189,7 +192,7 @@ def check_server(url: str, session: requests.Session) -> bool:
         return False
 
 
-def check_processing_status(url: str, session: requests.Session) -> bool:
+def check_processing_status(url: str, session) -> bool:
     try:
         r = session.get(f"{url}/api/status", timeout=2)
         if r.status_code == 200:
@@ -198,7 +201,7 @@ def check_processing_status(url: str, session: requests.Session) -> bool:
     except requests.exceptions.RequestException:
         return True
 
-def send_sample(url: str, sample: CSISample, session: requests.Session) -> Tuple[bool, bool]:
+def send_sample(url: str, sample: CSISample, session) -> Tuple[bool, bool]:
     try:
         r = session.post(f"{url}/api/csi/ingest", json=sample.to_dict(), timeout=1)
         if r.status_code == 200:
@@ -210,7 +213,7 @@ def send_sample(url: str, sample: CSISample, session: requests.Session) -> Tuple
         return False, True
 
 
-def send_batch(url: str, samples: List[CSISample], session: requests.Session) -> bool:
+def send_batch(url: str, samples: List[CSISample], session) -> bool:
     try:
         r = session.post(
             f"{url}/api/csi/ingest/batch",
@@ -268,6 +271,8 @@ def main():
     args = parser.parse_args()
 
     # ── Connect to dashboard ──
+    requests = _require_requests()
+    serial = _require_serial()
     session = requests.Session()
     print(f"Connecting to dashboard: {args.server}")
     if not check_server(args.server, session):

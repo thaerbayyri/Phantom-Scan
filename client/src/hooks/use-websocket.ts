@@ -13,6 +13,8 @@ import type {
   TrackedTarget,
   RadialTarget,
   TargetIdentity,
+  TargetDebug,
+  TargetState,
   VitalSigns,
   PoseFrame,
 } from "@shared/schema";
@@ -31,6 +33,8 @@ interface WSState {
   trackedTarget: TrackedTarget | null;
   radialTarget: RadialTarget | null;
   targetIdentity: TargetIdentity | null;
+  targetDebug: TargetDebug | null;
+  targetState: TargetState | null;
   vitalSigns: VitalSigns | null;
   poseFrame: PoseFrame | null;
   isConnected: boolean;
@@ -50,7 +54,7 @@ const defaultConfig: ProcessingConfig = {
 
 const defaultStatus: SystemStatus = {
   connected: false,
-  dataSource: "demo",
+  dataSource: "esp32",
   samplesReceived: 0,
   framesProcessed: 0,
   lastUpdate: Date.now(),
@@ -77,6 +81,41 @@ const defaultRecordingStatus: RecordingStatus = {
   durationMs: 0,
 };
 
+const defaultTargetState: TargetState = {
+  state: "none",
+  source_mode: "live",
+  node_mode: "single_node",
+  target_visible: false,
+  position_confident: false,
+  motion_score: 0,
+  confidence: 0,
+  last_update_ms: Date.now(),
+  data_age_ms: 0,
+  stale: false,
+  reason: "client_idle",
+};
+
+function buildClearedTargetState(reason: string): TargetState {
+  return {
+    ...defaultTargetState,
+    last_update_ms: Date.now(),
+    reason,
+  };
+}
+
+function buildClearedSceneState(reason: string) {
+  return {
+    pointCloud: [] as PointCloudPoint[],
+    trackedTarget: null as TrackedTarget | null,
+    radialTarget: null as RadialTarget | null,
+    targetIdentity: null as TargetIdentity | null,
+    targetDebug: null as TargetDebug | null,
+    targetState: buildClearedTargetState(reason),
+    vitalSigns: null as VitalSigns | null,
+    poseFrame: null as PoseFrame | null,
+  };
+}
+
 export function useWebSocket() {
   const [state, setState] = useState<WSState>({
     status: defaultStatus,
@@ -92,6 +131,8 @@ export function useWebSocket() {
     trackedTarget: null,
     radialTarget: null,
     targetIdentity: null,
+    targetDebug: null,
+    targetState: defaultTargetState,
     vitalSigns: null,
     poseFrame: null,
     isConnected: false,
@@ -123,7 +164,11 @@ export function useWebSocket() {
       };
 
       ws.onclose = () => {
-        setState((prev) => ({ ...prev, isConnected: false }));
+        setState((prev) => ({
+          ...prev,
+          isConnected: false,
+          ...buildClearedSceneState("websocket_closed"),
+        }));
         reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
 
@@ -133,6 +178,7 @@ export function useWebSocket() {
           ...prev,
           error: "Connection error",
           isConnected: false,
+          ...buildClearedSceneState("websocket_error"),
         }));
       };
     } catch (e) {
@@ -141,6 +187,7 @@ export function useWebSocket() {
         ...prev,
         error: "Failed to connect",
         isConnected: false,
+        targetState: buildClearedTargetState("connect_failed"),
       }));
     }
   }, []);
@@ -281,7 +328,21 @@ export function useWebSocket() {
       case "targetIdentity":
         setState((prev) => ({
           ...prev,
-          targetIdentity: message.data as TargetIdentity,
+          targetIdentity: (message.data as TargetIdentity | null) ?? null,
+        }));
+        break;
+
+      case "targetState":
+        setState((prev) => ({
+          ...prev,
+          targetState: message.data as TargetState,
+        }));
+        break;
+
+      case "targetDebug":
+        setState((prev) => ({
+          ...prev,
+          targetDebug: message.data as TargetDebug,
         }));
         break;
 
@@ -300,8 +361,7 @@ export function useWebSocket() {
         break;
 
       case "reportReady":
-        console.log("Report is ready, downloading...");
-        window.open("/api/recording/download?format=pdf", "_blank");
+        console.log("Report is ready and available from history/report views.");
         break;
 
       case "error":
@@ -336,6 +396,7 @@ export function useWebSocket() {
     sendMessage("startProcessing", { customName });
     setState((prev) => ({
       ...prev,
+      ...buildClearedSceneState("scan_started"),
       status: { ...prev.status, isProcessing: true, sessionName: customName },
     }));
   }, [sendMessage]);
@@ -346,6 +407,7 @@ export function useWebSocket() {
     sendMessage("stopProcessing", null);
     setState((prev) => ({
       ...prev,
+      ...buildClearedSceneState("scan_stopped"),
       status: { ...prev.status, isProcessing: false },
     }));
   }, [sendMessage]);
@@ -353,6 +415,11 @@ export function useWebSocket() {
   const setDataSource = useCallback(
     (source: string) => {
       sendMessage("setDataSource", source);
+      setState((prev) => ({
+        ...prev,
+        ...buildClearedSceneState(`source_changed_${source}`),
+        status: { ...prev.status, dataSource: source as SystemStatus["dataSource"] },
+      }));
     },
     [sendMessage]
   );

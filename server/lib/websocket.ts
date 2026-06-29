@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
+import { randomUUID } from "crypto";
 import type {
   ProcessingConfig,
   SystemStatus,
@@ -7,6 +8,12 @@ import type {
   CSISample,
   ChannelEstimate,
   RadialTarget,
+  TargetIdentity,
+  TargetDebug,
+  TargetState,
+  TrackedTarget,
+  VitalSigns,
+  PoseFrame,
 } from "@shared/schema";
 import {
   computeMUSICSpectrum,
@@ -23,14 +30,23 @@ import {
 import { TrackingProcessor } from "./tracking";
 import { magnitude, conj, mul, phase } from "./complex";
 import { VitalsComputer } from "./vitals";
+import {
+  buildTargetState,
+  emptyTargetState,
+  resolveLiveHoldState,
+} from "./target-state";
 import * as fs from "fs";
 import * as path from "path";
 import { sessionStore } from "./session-store";
 import { spawn } from "child_process";
+import type { AuthService } from "../auth/service";
+import { authenticateWebSocketRequest } from "../auth/ws-auth";
+import { auditLogger } from "../audit/logger";
 
 interface WSClient {
   ws: WebSocket;
   id: string;
+  username?: string;
   isAI?: boolean;
 }
 
@@ -53,7 +69,7 @@ export class SignalProcessingServer {
 
   private status: SystemStatus = {
     connected: false,
-    dataSource: "demo",
+    dataSource: "esp32",
     samplesReceived: 0,
     framesProcessed: 0,
     lastUpdate: Date.now(),
@@ -96,6 +112,29 @@ export class SignalProcessingServer {
   private lastRecordingFile?: string;
 
   private currentSessionName: string = "";
+  private currentTrackedTarget: TrackedTarget | null = null;
+  private currentRadialTarget: RadialTarget | null = null;
+  private currentTargetIdentity: TargetIdentity | null = null;
+  private currentVitalSigns: VitalSigns | null = null;
+  private currentPoseFrame: PoseFrame | null = null;
+  private currentTargetState: TargetState = emptyTargetState({
+    dataSource: "esp32",
+    nowMs: Date.now(),
+    reason: "startup_idle",
+  });
+  private currentTargetDebug: TargetDebug = {
+    hardware_queue_length: 0,
+    last_sample_rx_ms: null,
+    last_processed_sample_ms: null,
+    last_truthful_target_update_ms: null,
+    target_reason: "startup_idle",
+    radial_target_present: false,
+    tracked_target_present: false,
+    hold_state: "startup",
+  };
+  private lastSampleRxMs: number | null = null;
+  private lastProcessedSampleMs: number | null = null;
+  private lastTruthfulTargetUpdateMs = 0;
 
   // Radial tracking state
   private prevRadialX = 2;
@@ -118,18 +157,44 @@ export class SignalProcessingServer {
   private reportLastSummaryFrame = 0;
   private reportPeakSpeed = 0;
 
-  initialize(server: Server) {
-    this.wss = new WebSocketServer({ server, path: "/ws" });
+  initialize(server: Server, auth: AuthService) {
+    this.wss = new WebSocketServer({ noServer: true });
 
-    this.wss.on("connection", (ws: WebSocket) => {
-      const clientId = Math.random().toString(36).substring(7);
-      this.clients.set(clientId, { ws, id: clientId });
+    server.on("upgrade", async (request, socket, head) => {
+      if (request.url !== "/ws") {
+        return;
+      }
 
-      console.log(`Client connected: ${clientId}`);
+      try {
+        const authenticated = await authenticateWebSocketRequest(request, auth);
+        if (!authenticated) {
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+
+        this.wss?.handleUpgrade(request, socket, head, (ws) => {
+          this.wss?.emit("connection", ws, request, authenticated.username);
+        });
+      } catch (error) {
+        console.error("[WS] Upgrade authentication failed:", error);
+        socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+        socket.destroy();
+      }
+    });
+
+    this.wss.on("connection", (ws: WebSocket, request, username?: string) => {
+      const clientId = randomUUID();
+      this.clients.set(clientId, { ws, id: clientId, username });
+
+      console.log(`Client connected: ${clientId} (${username ?? "unknown"})`);
 
       // Send initial state
       this.sendToClient(clientId, "status", this.status);
       this.sendToClient(clientId, "config", this.config);
+      this.sendLiveSnapshotToClient(clientId);
+      this.sendToClient(clientId, "targetState", this.currentTargetState);
+      this.sendToClient(clientId, "targetDebug", this.currentTargetDebug);
       this.sendToClient(clientId, "recordingStatus", {
         isRecording: this.isRecording,
         sampleCount: this.recordingBuffer.length,
@@ -166,29 +231,38 @@ export class SignalProcessingServer {
     message: { type: string; data: unknown }
   ) {
     console.log(`[WS] handleMessage from ${clientId}: ${message.type}`);
+    const client = this.clients.get(clientId);
     switch (message.type) {
       case "startProcessing":
         this.currentSessionName = (message.data as any)?.customName || "";
         this.status.sessionName = this.currentSessionName;
         this.startProcessing();
+        void this.auditClientAction(client, "processing_started", {
+          sessionName: this.currentSessionName || undefined,
+          dataSource: this.status.dataSource,
+        });
         break;
       case "stopProcessing":
         this.stopProcessing();
+        void this.auditClientAction(client, "processing_stopped");
         break;
       case "updateConfig":
         this.updateConfig(message.data as Partial<ProcessingConfig>);
+        void this.auditClientAction(client, "config_updated");
         break;
       case "setDataSource":
         this.setDataSource(message.data as DataSource);
+        void this.auditClientAction(client, "data_source_changed", { dataSource: message.data });
         break;
       case "startRecording":
         this.startRecording();
+        void this.auditClientAction(client, "recording_started");
         break;
       case "stopRecording":
         this.stopRecording();
+        void this.auditClientAction(client, "recording_stopped");
         break;
       case "registerAIClient":
-        const client = this.clients.get(clientId);
         if (client) {
           client.isAI = true;
           console.log(`[WS] Registered AI Inference client: ${clientId}`);
@@ -197,20 +271,39 @@ export class SignalProcessingServer {
       case "poseFrame":
         // Only relay AI frames when actively processing — prevents OOM during idle
         if (this.status.isProcessing) {
+          this.currentPoseFrame = (message.data as PoseFrame) ?? null;
           this.broadcast("poseFrame", message.data);
         }
         break;
       case "targetIdentity":
         if (this.status.isProcessing) {
+          this.currentTargetIdentity = (message.data as TargetIdentity) ?? null;
           this.broadcast("targetIdentity", message.data);
         }
         break;
       case "vitalSigns":
         if (this.status.isProcessing) {
+          this.currentVitalSigns = (message.data as VitalSigns) ?? null;
           this.broadcast("vitalSigns", message.data);
         }
         break;
     }
+  }
+
+  private async auditClientAction(client: WSClient | undefined, eventType: string, details?: Record<string, unknown>) {
+    if (!client?.username) {
+      return;
+    }
+
+    await auditLogger.log({
+      event_type: eventType,
+      success: true,
+      username: client.username,
+      details: {
+        protocol: "websocket",
+        ...details,
+      },
+    });
   }
 
   private startProcessing() {
@@ -233,6 +326,8 @@ export class SignalProcessingServer {
     this.trackingProcessor.reset();
     this.sampleBuffer = [];
     this.pointCloudHistory = [];
+    this.lastTruthfulTargetUpdateMs = 0;
+    this.clearTargetArtifacts("processing_started");
 
     // Reset report accumulation
     this.reportStartTime = Date.now();
@@ -306,6 +401,7 @@ export class SignalProcessingServer {
     this.status.isProcessing = false;
     this.status.sessionName = "";
     this.status.lastUpdate = Date.now();
+    this.clearTargetArtifacts("processing_stopped");
 
     this.broadcast("status", this.status);
 
@@ -334,6 +430,8 @@ export class SignalProcessingServer {
     this.dopplerComputer.reset();
     this.trackingProcessor.reset();
     this.vitalsComputer.reset();
+    this.lastTruthfulTargetUpdateMs = 0;
+    this.clearTargetArtifacts(`data_source_${source}`);
 
     this.broadcast("status", this.status);
   }
@@ -378,7 +476,10 @@ export class SignalProcessingServer {
   private triggerReportGeneration(csvPath: string) {
     console.log(`[REPORT] Triggering auto-report generation for: ${csvPath}`);
     const scriptPath = path.resolve("scripts", "reporting", "session_reporter.py");
-    const pythonProc = spawn("python", [scriptPath, csvPath]);
+    const python = this.resolvePythonCommand();
+    const pythonProc = spawn(python.command, [...python.args, scriptPath, csvPath], {
+      shell: false,
+    });
 
     pythonProc.stdout.on('data', (data: Buffer) => {
       console.log(`[REPORT] STDOUT: ${data.toString().trim()}`);
@@ -394,6 +495,22 @@ export class SignalProcessingServer {
         this.broadcast("reportReady", { file: csvPath });
       }
     });
+  }
+
+  private resolvePythonCommand(): { command: string; args: string[] } {
+    if (process.env.PHANTOM_PYTHON) {
+      return { command: process.env.PHANTOM_PYTHON, args: [] };
+    }
+
+    if (process.env.PYTHON) {
+      return { command: process.env.PYTHON, args: [] };
+    }
+
+    if (process.platform === "win32") {
+      return { command: "py", args: ["-3"] };
+    }
+
+    return { command: "python3", args: [] };
   }
 
   private broadcastRecordingStatus() {
@@ -448,10 +565,14 @@ export class SignalProcessingServer {
       const queuedSample = this.hardwareSampleQueue.shift();
       if (queuedSample) {
         sample = queuedSample;
+        this.lastProcessedSampleMs = Date.now();
       } else {
-        // No hardware data yet — fall back to demo so the UI stays alive
-        sample = this.demoGenerator.generateSample();
-        isDemoSample = true;
+        this.handleLiveGap();
+        this.status.lastUpdate = Date.now();
+        if (this.status.framesProcessed % 20 === 0) {
+          this.broadcast("status", this.status);
+        }
+        return;
       }
 
       if (this.hardwareSampleQueue.length > 1000) {
@@ -491,36 +612,9 @@ export class SignalProcessingServer {
     // Broadcast motion status every frame
     this.broadcast("motionStatus", motionResult);
 
-    // If motion gate is ON and no motion detected, broadcast but skip rendering
-    // Still send a minimal radialTarget so the avatar stays visible (idle)
-    if (this.config.motionGateEnabled && !motionResult.motionDetected) {
-      // Emit a basic radialTarget with isMoving=false so avatar goes idle
-      const fallbackTarget: RadialTarget = {
-        x: this.prevRadialX,
-        z: this.prevRadialZ,
-        r: Math.sqrt(this.prevRadialX ** 2 + this.prevRadialZ ** 2) || 2,
-        theta: Math.atan2(this.prevRadialZ, this.prevRadialX),
-        vx: 0,
-        vz: 0,
-        isMoving: false,
-        angle: this.radialAngle,
-        speed: 0,
-        confidence: 0.5,
-        label: "unknown",
-        humanProb: 0.5,
-        distanceCm: 200,
-        wallDistance: 5.0,
-      };
-      this.broadcast("radialTarget", fallbackTarget);
-
-      this.status.framesProcessed++;
-      this.reportFrameCount++; // Ensure report gets frames even in early return
-      this.status.lastUpdate = Date.now();
-      if (this.status.framesProcessed % 20 === 0) {
-        this.broadcast("status", this.status);
-      }
-      return;
-    }
+    // Motion-gate now affects motion classification only.
+    // A stationary but truthful target should remain visible as idle/degraded,
+    // not disappear entirely.
 
     // ── 3. Bypass Nulling (pass-through clutter-removed signal) ──
     const estimate: ChannelEstimate = {
@@ -622,8 +716,10 @@ export class SignalProcessingServer {
       // ── 7. Advanced Tracking (DBSCAN + Kalman) ──
       const trackedTarget = this.trackingProcessor.process(pointCloud);
       if (trackedTarget) {
+        this.currentTrackedTarget = trackedTarget;
         this.broadcast("trackedTarget", trackedTarget);
       } else {
+        this.currentTrackedTarget = null;
         this.broadcast("trackedTarget", null);
       }
 
@@ -684,6 +780,7 @@ export class SignalProcessingServer {
       this.prevRadialZ = radZ;
 
       // Broadcast target identity
+      this.currentTargetIdentity = classification;
       this.broadcast("targetIdentity", classification);
 
       const radialTarget: RadialTarget = {
@@ -703,7 +800,18 @@ export class SignalProcessingServer {
         wallDistance: pdpResult.wallDistance,
       };
 
+      this.currentRadialTarget = radialTarget;
       this.broadcast("radialTarget", radialTarget);
+      this.lastTruthfulTargetUpdateMs = Date.now();
+      this.broadcastTargetState(
+        buildTargetState({
+          dataSource: this.status.dataSource,
+          nowMs: this.lastTruthfulTargetUpdateMs,
+          lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
+          radialTarget,
+          motionStatus: motionResult,
+        }),
+      );
 
       // ── Report data accumulation ──
       this.reportFrameCount++;
@@ -793,6 +901,22 @@ export class SignalProcessingServer {
       currentDistanceCm = pdpResult.distanceCm;
     }
 
+    if (
+      (!this.config.isarEnabled || this.sampleBuffer.length < this.config.arrayLength) &&
+      this.currentTargetState.target_visible
+    ) {
+      this.clearTargetArtifacts("insufficient_window");
+      this.broadcastTargetState(
+        emptyTargetState({
+          dataSource: this.status.dataSource,
+          nowMs: Date.now(),
+          lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
+          motionStatus: motionResult,
+          reason: "insufficient_window",
+        }),
+      );
+    }
+
     // ── Record sample with metadata if recording ──
     if (this.isRecording) {
       // Cap at 5000 samples to prevent unbounded memory growth
@@ -821,6 +945,7 @@ export class SignalProcessingServer {
 
       // Calculate and broadcast vitals
       const vitals = this.vitalsComputer.computeVitals();
+      this.currentVitalSigns = vitals;
       this.broadcast("vitalSigns", vitals);
     }
   }
@@ -842,6 +967,92 @@ export class SignalProcessingServer {
         client.ws.send(message);
       }
     }
+  }
+
+  private sendLiveSnapshotToClient(clientId: string) {
+    this.sendToClient(clientId, "pointCloud", this.pointCloudHistory);
+    this.sendToClient(clientId, "trackedTarget", this.currentTrackedTarget);
+    this.sendToClient(clientId, "radialTarget", this.currentRadialTarget);
+    this.sendToClient(clientId, "targetIdentity", this.currentTargetIdentity);
+    this.sendToClient(clientId, "poseFrame", this.currentPoseFrame);
+    this.sendToClient(clientId, "vitalSigns", this.currentVitalSigns);
+  }
+
+  private handleLiveGap() {
+    const nowMs = Date.now();
+    const holdState = resolveLiveHoldState(this.lastTruthfulTargetUpdateMs || null, nowMs);
+
+    if (this.currentRadialTarget && holdState !== "cleared") {
+      this.broadcastTargetState(
+        buildTargetState({
+          dataSource: this.status.dataSource,
+          nowMs,
+          lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
+          radialTarget: this.currentRadialTarget,
+          motionStatus: undefined,
+          reason: holdState === "stale_hold" ? "stale_hold_gap" : "live_gap_hold",
+        }),
+      );
+      return;
+    }
+
+    if (holdState === "cleared") {
+      this.clearTargetArtifacts("live_gap_cleared");
+      return;
+    }
+
+    this.broadcastTargetState(
+      emptyTargetState({
+        dataSource: this.status.dataSource,
+        nowMs,
+        lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
+        reason: "awaiting_live_samples",
+      }),
+    );
+  }
+
+  private updateTargetDebug() {
+    const nowMs = Date.now();
+    this.currentTargetDebug = {
+      hardware_queue_length: this.hardwareSampleQueue.length,
+      last_sample_rx_ms: this.lastSampleRxMs,
+      last_processed_sample_ms: this.lastProcessedSampleMs,
+      last_truthful_target_update_ms: this.lastTruthfulTargetUpdateMs || null,
+      target_reason: this.currentTargetState.reason,
+      radial_target_present: Boolean(this.currentRadialTarget),
+      tracked_target_present: Boolean(this.currentTrackedTarget),
+      hold_state: resolveLiveHoldState(this.lastTruthfulTargetUpdateMs || null, nowMs),
+    };
+    this.broadcast("targetDebug", this.currentTargetDebug);
+  }
+
+  private clearTargetArtifacts(reason: string) {
+    this.pointCloudHistory = [];
+    this.currentTrackedTarget = null;
+    this.currentRadialTarget = null;
+    this.currentTargetIdentity = null;
+    this.currentVitalSigns = null;
+    this.currentPoseFrame = null;
+    this.broadcast("pointCloud", []);
+    this.broadcast("trackedTarget", null);
+    this.broadcast("radialTarget", null);
+    this.broadcast("targetIdentity", null);
+    this.broadcast("poseFrame", null);
+    this.broadcast("vitalSigns", null);
+    this.currentTargetState = emptyTargetState({
+      dataSource: this.status.dataSource,
+      nowMs: Date.now(),
+      lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
+      reason,
+    });
+    this.broadcast("targetState", this.currentTargetState);
+    this.updateTargetDebug();
+  }
+
+  private broadcastTargetState(targetState: TargetState) {
+    this.currentTargetState = targetState;
+    this.broadcast("targetState", targetState);
+    this.updateTargetDebug();
   }
 
   // ── Public API ─────────────────────────────────────────────────
@@ -880,6 +1091,10 @@ export class SignalProcessingServer {
     }
 
     this.hardwareSampleQueue.push(sample);
+    this.lastSampleRxMs = Date.now();
+    this.status.connected = true;
+    this.status.lastUpdate = this.lastSampleRxMs;
+    this.updateTargetDebug();
 
     const qLen = this.hardwareSampleQueue.length;
     if (qLen === 1 || qLen % 100 === 0) {

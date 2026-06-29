@@ -1,17 +1,19 @@
-import type { TargetIdentity } from "@shared/schema";
+import type { TargetIdentity, TargetState } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Cog } from "lucide-react";
 
 interface TargetIdentityCardProps {
     identity: TargetIdentity | null;
     bearingRad?: number;
+    targetState?: TargetState | null;
     className?: string;
 }
 
-export function TargetIdentityCard({ identity, bearingRad, className = "" }: TargetIdentityCardProps) {
+export function TargetIdentityCard({ identity, bearingRad, targetState, className = "" }: TargetIdentityCardProps) {
     const label = identity?.label ?? "unknown";
     const humanProb = identity?.humanProb ?? 0.5;
     const mechProb = identity?.mechanicalProb ?? 0.5;
+    const renderState = targetState?.state ?? "none";
 
     const isHuman = label === "human";
     const isMech = label === "mechanical";
@@ -29,8 +31,8 @@ export function TargetIdentityCard({ identity, bearingRad, className = "" }: Tar
     };
 
     return (
-        <Card className={`${className}`}>
-            <CardHeader className="flex flex-row items-center gap-2 pb-2">
+        <Card className={`min-w-0 ${className}`}>
+            <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-5 pb-3 pt-5">
                 {isHuman ? (
                     <User className="h-4 w-4 text-cyan-400" />
                 ) : isMech ? (
@@ -38,14 +40,17 @@ export function TargetIdentityCard({ identity, bearingRad, className = "" }: Tar
                 ) : (
                     <User className="h-4 w-4 text-muted-foreground" />
                 )}
-                <CardTitle className="text-sm">Target Identity</CardTitle>
-                <div className="ml-auto flex items-center gap-2">
+                <CardTitle className="min-w-0 text-base">Target Identity</CardTitle>
+                <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+                    <span className="text-xs font-mono text-muted-foreground uppercase">
+                        {renderState}
+                    </span>
                     {bearingRad !== undefined && (
                         <span className="text-xs font-mono bg-primary/20 text-primary px-2 py-0.5 rounded border border-primary/30 animate-pulse">
                             BEARING: {getCardinal(bearingRad)}
                         </span>
                     )}
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isHuman ? "bg-cyan-900/50 text-cyan-300" :
+                    <span className={`max-w-full truncate text-xs font-bold px-2 py-0.5 rounded-full ${isHuman ? "bg-cyan-900/50 text-cyan-300" :
                             isMech ? "bg-amber-900/50 text-amber-300" :
                                 "bg-muted text-muted-foreground"
                         }`}>
@@ -53,7 +58,7 @@ export function TargetIdentityCard({ identity, bearingRad, className = "" }: Tar
                     </span>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 px-5 pb-5">
                 {/* Probability bar */}
                 <div className="relative h-6 rounded-full overflow-hidden bg-muted/50">
                     {/* Human portion (left, cyan) */}
@@ -82,6 +87,11 @@ export function TargetIdentityCard({ identity, bearingRad, className = "" }: Tar
                         <div className="text-right">
                             HF Ratio: {identity.highFreqRatio !== undefined ? identity.highFreqRatio.toFixed(3) : "—"}
                         </div>
+                    </div>
+                )}
+                {!identity && (
+                    <div className="text-[10px] text-muted-foreground font-mono uppercase">
+                        No truthful classification available
                     </div>
                 )}
             </CardContent>

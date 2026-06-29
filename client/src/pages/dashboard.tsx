@@ -5,7 +5,6 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { TopBar } from "@/components/dashboard/top-bar";
 import { HardwareConfig } from "@/components/dashboard/hardware-config";
 import { SystemControlPanel } from "@/components/dashboard/system-control-panel";
-import { VirtualTerminal } from "@/components/dashboard/virtual-terminal";
 import { ControlPanel } from "@/components/dashboard/control-panel";
 import { PointCloud3D } from "@/components/dashboard/point-cloud-3d";
 import { AoAHeatmap } from "@/components/dashboard/aoa-heatmap";
@@ -17,8 +16,12 @@ import { DistanceMeter } from "@/components/dashboard/distance-meter";
 import { VitalsMonitor } from "@/components/dashboard/vitals-monitor";
 import { ResizableWrapper } from "@/components/ui/resizable-wrapper";
 import type { DataSource } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 
 export default function Dashboard() {
+  const { session, logout } = useAuth();
+  const [, setLocation] = useLocation();
   const {
     status,
     channelEstimate,
@@ -36,17 +39,23 @@ export default function Dashboard() {
     setDataSource,
     startRecording,
     stopRecording,
-    trackedTarget,
     radialTarget,
     targetIdentity,
+    targetState,
     vitalSigns,
     poseFrame,
   } = useWebSocket();
 
+  const truthfulTargetVisible = Boolean(targetState?.target_visible && radialTarget);
+  const targetBearing = truthfulTargetVisible ? radialTarget?.theta : undefined;
+  const targetDistanceCm = truthfulTargetVisible && radialTarget ? radialTarget.distanceCm : 0;
+  const wallDistance = truthfulTargetVisible && radialTarget ? radialTarget.wallDistance : 0;
+  const visibleVitals = truthfulTargetVisible ? vitalSigns : null;
+  const visibleIdentity = truthfulTargetVisible ? targetIdentity : null;
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHardwareOpen, setIsHardwareOpen] = useState(false);
   const [isSystemControlOpen, setIsSystemControlOpen] = useState(false);
-  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
@@ -89,13 +98,20 @@ export default function Dashboard() {
     [setDataSource]
   );
 
+  const handleLogout = useCallback(async () => {
+    await logout();
+    setLocation("/login");
+  }, [logout, setLocation]);
+
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex min-h-svh flex-col bg-background">
       <TopBar
         status={status}
+        operatorName={session.username}
         isConnected={isConnected}
         motionStatus={motionStatus}
         recordingStatus={recordingStatus}
+        targetState={targetState}
         onStart={startProcessing}
         onStop={stopProcessing}
         onDataSourceChange={handleDataSourceChange}
@@ -104,51 +120,60 @@ export default function Dashboard() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenHardware={() => setIsHardwareOpen(true)}
         onOpenSystemControl={() => setIsSystemControlOpen(true)}
-        onOpenDiagnostic={() => setIsDiagnosticOpen(true)}
+        onLogout={handleLogout}
       />
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="relative flex flex-1 min-h-0">
         {/* Full-screen 3D Background */}
         <div className="absolute inset-0 z-0">
-          <PointCloud3D points={pointCloud} radialTarget={radialTarget} poseFrame={poseFrame} />
+          <PointCloud3D
+            points={pointCloud}
+            radialTarget={truthfulTargetVisible ? radialTarget : null}
+            poseFrame={truthfulTargetVisible ? poseFrame : null}
+            targetState={targetState}
+          />
         </div>
 
         {/* Floating Widgets Container */}
         {/* pointer-events-none ensures we can click through to the 3D canvas */}
-        <main className="flex-1 p-4 z-10 relative pointer-events-none overflow-hidden">
-          <div className="flex justify-between h-full gap-4">
+        <main className="pointer-events-none relative z-10 flex-1 min-h-0 overflow-auto px-4 py-3">
+          <div className="grid min-h-full w-full grid-cols-1 items-start gap-4 xl:grid-cols-[calc(17rem+10px)_minmax(0,1fr)_21rem] 2xl:grid-cols-[calc(18rem+10px)_minmax(0,1fr)_22rem]">
 
             {/* Left Floating Widgets */}
-            <div className="flex flex-col gap-4 w-80 pointer-events-auto">
-              <AoASpectrum frame={isarFrame} className="h-48 resizable-card bg-card/80 backdrop-blur border-white/10" />
+            <section className="pointer-events-auto flex min-w-0 flex-col gap-3 pt-2 xl:pl-0 xl:max-h-full">
+              <AoASpectrum frame={isarFrame} className="h-[14rem] min-h-[14rem] overflow-hidden border-white/10 bg-card/80 backdrop-blur xl:h-[15rem]" />
               <MetricsPanel
                 channelEstimate={channelEstimate}
                 isarFrame={isarFrame}
               />
-            </div>
+            </section>
+
+            <div className="hidden xl:block" aria-hidden="true" />
 
             {/* Right Floating Widgets */}
-            <div className="flex flex-col gap-3 w-96 pointer-events-auto drop-shadow-xl h-full overflow-y-auto pr-2 pb-4 scrollbar-hidden">
+            <section className="pointer-events-auto flex min-w-0 flex-col gap-3 pt-2 drop-shadow-xl xl:justify-self-end xl:min-h-0 xl:overflow-y-auto xl:pb-3">
               <TargetIdentityCard 
-                identity={targetIdentity ?? null} 
-                bearingRad={radialTarget?.theta}
+                identity={visibleIdentity} 
+                bearingRad={targetBearing}
+                targetState={targetState ?? null}
               />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                 <DistanceMeter
-                  distanceCm={radialTarget?.distanceCm ?? 200}
-                  wallDistance={radialTarget?.wallDistance ?? 5.0}
-                  bearingRad={radialTarget?.theta}
+                  distanceCm={targetDistanceCm}
+                  wallDistance={wallDistance}
+                  bearingRad={targetBearing}
+                  targetState={targetState ?? null}
                 />
-                <VitalsMonitor vitals={vitalSigns} />
+                <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
               </div>
 
-              <ResizableWrapper defaultHeight={150} minHeight={100} maxHeight={300}>
+              <ResizableWrapper defaultHeight={128} minHeight={112} maxHeight={220}>
                 <AoAHeatmap data={heatmap} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
               </ResizableWrapper>
-              <ResizableWrapper defaultHeight={150} minHeight={100} maxHeight={300}>
+              <ResizableWrapper defaultHeight={128} minHeight={112} maxHeight={220}>
                 <DopplerSpectrogram frame={dopplerFrame} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
               </ResizableWrapper>
-            </div>
+            </section>
           </div>
         </main>
 
@@ -177,17 +202,10 @@ export default function Dashboard() {
             <SystemControlPanel />
           </DialogContent>
         </Dialog>
-
-        {/* Diagnostic Terminal Modal */}
-        <Dialog open={isDiagnosticOpen} onOpenChange={setIsDiagnosticOpen}>
-          <DialogContent className="max-w-3xl bg-card border-white/10 p-0 overflow-hidden">
-            <VirtualTerminal />
-          </DialogContent>
-        </Dialog>
       </div>
 
-      <footer className="h-8 border-t bg-card flex items-center justify-center px-4">
-        <div className="text-xs text-muted-foreground">
+      <footer className="border-t bg-card px-4 py-2">
+        <div className="text-center text-xs text-muted-foreground">
           Press <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">Space</kbd> to start/stop
           {" | "}
           <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">R</kbd> to reset

@@ -52,7 +52,7 @@ export function ResizableWrapper({
     return (
         <div
             ref={containerRef}
-            className={`relative ${className}`}
+            className={`relative min-w-0 overflow-hidden ${className}`}
             style={{ height: `${height}px` }}
         >
             {children}
