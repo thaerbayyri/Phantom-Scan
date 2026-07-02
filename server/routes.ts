@@ -46,49 +46,9 @@ export async function registerRoutes(
 
   // ESP32-S3 Remote Configuration (Active & Passive Modes)
   app.post("/api/esp32/configure", auth.requireAuth, auth.auditProtectedAction("esp32_configure"), async (req, res) => {
-    try {
-      const { mode, targetMac, channel, ssid, password } = req.body;
-
-      // Target the local ESP32-S3 IP address
-      const esp32Ip = "http://192.168.4.1/config";
-
-      const payload: any = { mode };
-
-      if (mode === 'active') {
-        if (!ssid || !password) {
-          return res.status(400).json({ error: "Active mode requires ssid and password" });
-        }
-        payload.ssid = ssid;
-        payload.password = password;
-      } else if (mode === 'passive') {
-        if (!targetMac || !channel) {
-          return res.status(400).json({ error: "Passive sniffer mode requires targetMac and channel" });
-        }
-        payload.targetMac = targetMac;
-        payload.channel = channel;
-      } else {
-        return res.status(400).json({ error: "Invalid mode. Must be 'active' or 'passive'" });
-      }
-
-      console.log(`[ESP32 Config] Simulating sending configuration to ${esp32Ip}:`, payload);
-
-      // In a real execution environment:
-      // const response = await fetch(esp32Ip, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(payload)
-      // });
-      // if (!response.ok) throw new Error("ESP32 rejected configuration");
-
-      res.json({
-        success: true,
-        message: `ESP32 successfully configured in ${mode} mode`,
-        appliedConfig: payload
-      });
-    } catch (error) {
-      console.error("ESP32 Configuration error:", error);
-      res.status(500).json({ error: "Failed to configure ESP32" });
-    }
+    res.status(403).json({
+      error: "ESP32 upstream configuration is not exposed from the operator dashboard runtime",
+    });
   });
 
   // Get list of system network interfaces

@@ -4,11 +4,13 @@ import argparse
 from dataclasses import dataclass
 import enum
 import os
+import socket
 import time
 from typing import Any
 
-from .dsp import NodeDspPipeline, cross_node_correlation
-from .ingest import NodeBuffer, UdpPacketSource
+from .ai_status import probe_ai_stack
+from .dsp import NodeDspPipeline, cross_node_correlation, dual_node_on_axis_position
+from .ingest import NodeBuffer, SourcePinningGuard, UdpPacketSource
 from .protocol import CsiFrameV1, HeartbeatV1, InvalidPacket
 from .recording import JsonlSessionWriter, read_jsonl_records
 
@@ -27,6 +29,11 @@ class RuntimeConfig:
     output_dir: str = os.path.join("data", "sessions")
     udp_host: str = "0.0.0.0"
     udp_port: int = 5005
+    ai_model_dir: str = os.path.join("ai model and densepose", "model")
+    synthetic_enabled: bool = False
+    forward_ai_host: str = "127.0.0.1"
+    forward_ai_port: int = 5006
+    forward_ai_enabled: bool = True
 
 
 class PhantomRuntime:
@@ -41,27 +48,62 @@ class PhantomRuntime:
         self.latest_node_metrics: dict[int, dict[str, Any]] = {}
         self.writer: JsonlSessionWriter | None = None
         self.started = False
+        self.ingest_paused = False
         self.replay_mode = False
-        self.ml_status = {"mode": "disabled", "ready": False, "reason": "disabled_by_default"}
+        self.source_guard = SourcePinningGuard()
+        self.ml_status = probe_ai_stack(self.config.ai_model_dir).to_dict()
         self.last_derived: dict[str, Any] | None = None
+        self.forward_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def start_session(self) -> None:
+        self.ingest_paused = False
         if self.started:
             return
+        self._reset_session_state()
         self.writer = JsonlSessionWriter.create(
             output_dir=self.config.output_dir,
             expected_nodes=list(self.config.expected_nodes),
             dsp_config={"sample_rate_hz": 20.0, "pipeline": "deterministic_m1"},
             ml_mode=self.ml_status["mode"],
-            host_info={"udp_host": self.config.udp_host, "udp_port": self.config.udp_port},
+            host_info={
+                "udp_host": self.config.udp_host,
+                "udp_port": self.config.udp_port,
+                "node_source_pinning": True,
+            },
+            firmware_metadata={
+                "ai_status": self.ml_status,
+                "active_adapters": self.ml_status.get("adapters", {}),
+            },
         )
         self.started = True
 
-    def stop_session(self) -> None:
+    def stop_session(self, *, pause_ingest: bool = False, reset_state: bool = False) -> None:
         if self.writer:
-            self.writer.close(summary={"last_mode": self.current_mode().value, "ml_status": self.ml_status})
+            self.writer.close(
+                summary={
+                    "last_mode": self.current_mode().value,
+                    "ml_status": self.ml_status,
+                    "synthetic_enabled": self.config.synthetic_enabled,
+                    "source_pinning_rejections": len(self.source_guard.rejections),
+                }
+            )
         self.writer = None
         self.started = False
+        if pause_ingest:
+            self.ingest_paused = True
+        if reset_state:
+            self._reset_session_state()
+
+    def _reset_session_state(self) -> None:
+        self.node_buffers = {
+            node_id: NodeBuffer(node_id=node_id) for node_id in self.config.expected_nodes
+        }
+        self.node_pipelines = {
+            node_id: NodeDspPipeline() for node_id in self.config.expected_nodes
+        }
+        self.latest_node_metrics = {}
+        self.last_derived = None
+        self.source_guard = SourcePinningGuard()
 
     def current_mode(self) -> RuntimeMode:
         now_ns = time.time_ns()
@@ -75,7 +117,14 @@ class PhantomRuntime:
             return RuntimeMode.REPLAY_FUSED_TWO_NODE if is_replay else RuntimeMode.LIVE_FUSED_TWO_NODE
         return RuntimeMode.REPLAY_DEGRADED_SINGLE_NODE if is_replay else RuntimeMode.LIVE_DEGRADED_SINGLE_NODE
 
-    def ingest_packet(self, packet: CsiFrameV1 | HeartbeatV1 | InvalidPacket) -> dict[str, Any] | None:
+    def ingest_packet(
+        self,
+        packet: CsiFrameV1 | HeartbeatV1 | InvalidPacket,
+        raw_data: bytes | None = None,
+    ) -> dict[str, Any] | None:
+        if self.ingest_paused:
+            return None
+
         if not self.started:
             self.start_session()
 
@@ -84,6 +133,18 @@ class PhantomRuntime:
 
         if packet.node_id not in self.node_buffers:
             return None
+
+        rejection = self.source_guard.check(packet)
+        if rejection is not None:
+            if self.writer:
+                self.writer.write(rejection.to_record())
+            return None
+
+        if raw_data and self.config.forward_ai_enabled:
+            self.forward_socket.sendto(
+                raw_data,
+                (self.config.forward_ai_host, self.config.forward_ai_port),
+            )
 
         self.node_buffers[packet.node_id].add_packet(packet)
         if self.writer:
@@ -126,6 +187,11 @@ class PhantomRuntime:
                     np_array([left_metrics["dynamic_mean"]]),
                     np_array([right_metrics["dynamic_mean"]]),
                 ),
+                "on_axis_position": dual_node_on_axis_position(
+                    float(left_metrics["mean_amplitude"]),
+                    float(right_metrics["mean_amplitude"]),
+                    baseline_m=5.0,
+                ),
                 "timing_alignment_ns": timing_alignment_ns,
                 "source_seqs": {
                     str(left.node_id): left.seq,
@@ -143,12 +209,14 @@ class PhantomRuntime:
             "per_node": per_node,
             "fused": fused,
             "timing_alignment_ns": timing_alignment_ns,
+            "source": "synthetic" if self.config.synthetic_enabled else "live",
+            "synthetic_enabled": self.config.synthetic_enabled,
         }
 
     def live_step(self, packet_source: UdpPacketSource) -> list[dict[str, Any]]:
         outputs: list[dict[str, Any]] = []
-        for packet in packet_source.packets():
-            derived = self.ingest_packet(packet)
+        for packet, raw_data in packet_source.packets_with_raw():
+            derived = self.ingest_packet(packet, raw_data=raw_data)
             if derived:
                 outputs.append(derived)
         return outputs
@@ -222,9 +290,36 @@ class PhantomRuntime:
             "status": "ok",
             "runtime_mode": self.current_mode().value,
             "started": self.started,
+            "ingest_paused": self.ingest_paused,
             "ml_status": self.ml_status,
+            "authority": True,
+            "source": "synthetic" if self.config.synthetic_enabled else "live",
+            "synthetic_enabled": self.config.synthetic_enabled,
+            "source_pinning": {
+                str(node_id): {"ip": source[0], "port": source[1]}
+                for node_id, source in self.source_guard.bindings.items()
+            },
+            "source_pinning_rejections": len(self.source_guard.rejections),
             "nodes": nodes,
             "last_derived": self.last_derived,
+        }
+
+    def sensing_frame(self) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "runtime_mode": self.current_mode().value,
+            "authority": True,
+            "ingest_paused": self.ingest_paused,
+            "source": "synthetic" if self.config.synthetic_enabled else "live",
+            "synthetic_enabled": self.config.synthetic_enabled,
+            "node_mode": "fused_two_node" if "FUSED_TWO_NODE" in self.current_mode().name else "single_node",
+            "source_pinning": {
+                str(node_id): {"ip": source[0], "port": source[1]}
+                for node_id, source in self.source_guard.bindings.items()
+            },
+            "source_pinning_rejections": len(self.source_guard.rejections),
+            "ml_status": self.ml_status,
+            "derived": self.last_derived,
         }
 
 
@@ -243,6 +338,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     live.add_argument("--port", type=int, default=5005)
     live.add_argument("--output-dir", default=os.path.join("data", "sessions"))
     live.add_argument("--duration", type=float, default=0.0)
+    live.add_argument("--api-host", default="127.0.0.1")
+    live.add_argument("--api-port", type=int, default=8789)
+    live.add_argument("--no-api", action="store_true")
+    live.add_argument("--forward-ai-host", default="127.0.0.1")
+    live.add_argument("--forward-ai-port", type=int, default=5006)
+    live.add_argument("--no-forward-ai", action="store_true")
+    live.add_argument("--synthetic", action="store_true", help="Explicitly allow synthetic/demo source tagging.")
+    live.add_argument("--no-synthetic", action="store_true", default=True, help="Default canonical live mode; no synthetic output.")
 
     replay = sub.add_parser("replay", help="Replay JSONL session")
     replay.add_argument("--input", required=True)
@@ -256,10 +359,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     runtime = PhantomRuntime(
-        RuntimeConfig(output_dir=args.output_dir, udp_host=getattr(args, "host", "0.0.0.0"), udp_port=getattr(args, "port", 5005))
+        RuntimeConfig(
+            output_dir=args.output_dir,
+            udp_host=getattr(args, "host", "0.0.0.0"),
+            udp_port=getattr(args, "port", 5005),
+            synthetic_enabled=bool(getattr(args, "synthetic", False)),
+            forward_ai_host=getattr(args, "forward_ai_host", "127.0.0.1"),
+            forward_ai_port=getattr(args, "forward_ai_port", 5006),
+            forward_ai_enabled=not bool(getattr(args, "no_forward_ai", False)),
+        )
     )
 
     if args.command == "live":
+        api = None
+        if not args.no_api:
+            from .api import RuntimeApiServer
+
+            api = RuntimeApiServer(runtime, host=args.api_host, port=args.api_port)
+            api.start()
         source = UdpPacketSource(bind_host=args.host, bind_port=args.port)
         deadline = time.monotonic() + args.duration if args.duration > 0 else None
         try:
@@ -269,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
             pass
         finally:
             source.close()
+            if api:
+                api.stop()
             runtime.stop_session()
         return 0
 

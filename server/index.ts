@@ -66,9 +66,9 @@ app.use((req, res, next) => {
   signalServer.initialize(httpServer, auth);
   await registerRoutes(httpServer, app, auth);
 
-  // Start the UDP Data Ingestion Server for RuView Hardware
   const { startUDPServer } = await import("./lib/udp-server");
-  const udpServer = startUDPServer();
+  startUDPServer();
+  log("local UDP ingest enabled on 5005 for ESP32-S3 live mode", "udp");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -23,21 +23,34 @@ class RuntimeApiServer:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
                 if self.path == "/api/health":
-                    self._json(HTTPStatus.OK, {"status": "ok", "runtime_mode": runtime.current_mode().value})
+                    self._json(
+                        HTTPStatus.OK,
+                        {
+                            "status": "ok",
+                            "authority": True,
+                            "runtime_mode": runtime.current_mode().value,
+                            "source": "synthetic" if runtime.config.synthetic_enabled else "live",
+                            "synthetic_enabled": runtime.config.synthetic_enabled,
+                            "started": runtime.started,
+                        },
+                    )
                     return
                 if self.path == "/api/status":
                     self._json(HTTPStatus.OK, runtime.status())
+                    return
+                if self.path == "/api/sensing/frame":
+                    self._json(HTTPStatus.OK, runtime.sensing_frame())
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
             def do_POST(self) -> None:
                 if self.path == "/api/control/start":
                     runtime.start_session()
-                    self._json(HTTPStatus.OK, {"success": True})
+                    self._json(HTTPStatus.OK, {"success": True, "status": runtime.status()})
                     return
                 if self.path == "/api/control/stop":
-                    runtime.stop_session()
-                    self._json(HTTPStatus.OK, {"success": True})
+                    runtime.stop_session(pause_ingest=True, reset_state=True)
+                    self._json(HTTPStatus.OK, {"success": True, "status": runtime.status()})
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 

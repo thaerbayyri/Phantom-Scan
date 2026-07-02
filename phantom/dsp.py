@@ -122,6 +122,30 @@ def cross_node_correlation(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.corrcoef(left, right)[0, 1])
 
 
+def dual_node_on_axis_position(
+    left_amplitude: float,
+    right_amplitude: float,
+    baseline_m: float = 5.0,
+) -> dict[str, float | str]:
+    total = max(0.0, left_amplitude) + max(0.0, right_amplitude)
+    balance = 0.5 if total <= 1e-12 else max(0.0, right_amplitude) / total
+    x_m = baseline_m * balance
+    return {
+        "x_m": float(x_m),
+        "balance": float(balance),
+        "baseline_m": float(baseline_m),
+        "dimensionality": "1D-on-axis",
+    }
+
+
+def deterministic_human_gate(
+    motion_present: bool,
+    respiration_periodic: bool,
+    cardiac_energy_present: bool = False,
+) -> bool:
+    return bool(motion_present and respiration_periodic and (cardiac_energy_present or respiration_periodic))
+
+
 @dataclass(slots=True)
 class NodeDspPipeline:
     clutter_alpha: float = 0.05

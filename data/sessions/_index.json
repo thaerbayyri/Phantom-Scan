@@ -1,5 +1,57 @@
 [
   {
+    "id": "000000037 - 2026-07-01",
+    "name": "case001",
+    "startTime": 1782940508604,
+    "endTime": 1782940559050,
+    "durationS": 50.4,
+    "totalFrames": 1591,
+    "targetClassification": "human",
+    "classificationConfidence": 0.982,
+    "avgDistanceCm": 222.9,
+    "avgSpeedMs": 0.106,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000036 - 2026-07-01",
+    "name": "case001",
+    "startTime": 1782940508604,
+    "endTime": 1782940554512,
+    "durationS": 45.9,
+    "totalFrames": 1591,
+    "targetClassification": "human",
+    "classificationConfidence": 0.982,
+    "avgDistanceCm": 222.9,
+    "avgSpeedMs": 0.106,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000035 - 2026-07-01",
+    "name": "test",
+    "startTime": 1782936581779,
+    "endTime": 1782937157119,
+    "durationS": 575.3,
+    "totalFrames": 20249,
+    "targetClassification": "human",
+    "classificationConfidence": 0.878,
+    "avgDistanceCm": 312.5,
+    "avgSpeedMs": 0.086,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000034 - 2026-07-01",
+    "name": "StopScanDemoCase",
+    "startTime": 1782934273405,
+    "endTime": 1782934275010,
+    "durationS": 1.6,
+    "totalFrames": 31,
+    "targetClassification": "unknown",
+    "classificationConfidence": 0,
+    "avgDistanceCm": 615.1,
+    "avgSpeedMs": 0.764,
+    "dataSource": "demo"
+  },
+  {
     "id": "000000033 - 2026-06-29",
     "startTime": 1782774258190,
     "endTime": 1782774259439,

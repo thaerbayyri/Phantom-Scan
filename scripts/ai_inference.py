@@ -433,10 +433,11 @@ def fuse_and_emit():
     coords = np.mean([r["coords"] for r in results], axis=0)
     keypoints = _coords_to_keypoints(coords)
 
-    # Identity: present if any node is present; human dominates mechanical.
+    # Identity is advisory only. The deterministic runtime owns human/non-human verdicts.
     present_any = any(r["present"] for r in results)
     labels = [r["label"] for r in results if r["present"]]
-    label = "human" if "human" in labels else ("mechanical" if labels else "unknown")
+    advisory_label = "human" if "human" in labels else ("mechanical" if labels else "unknown")
+    label = "unknown"
     motion = max(r["motion_raw"] for r in results)
     pp = [r["presence_prob"] for r in results if r["presence_prob"] is not None]
     presence_prob = max(pp) if pp else (1.0 if present_any else 0.0)
@@ -450,7 +451,7 @@ def fuse_and_emit():
     vitals_reliable = len(rel) > 0
 
     human_prob = float(F.sigmoid(torch.tensor(motion * 20.0)).item())
-    if label == "human":
+    if advisory_label == "human":
         human_prob = max(human_prob, presence_prob)
 
     if not (ws_connected and ws is not None):
@@ -468,6 +469,7 @@ def fuse_and_emit():
                 "mechanicalProb": 1.0 - human_prob,
                 "periodicity": periodicity,
                 "presenceProb": presence_prob,
+                "advisoryLabel": advisory_label,
             },
         }))
         ws.send(json.dumps({
@@ -480,7 +482,7 @@ def fuse_and_emit():
         }))
         nodes_str = "+".join(str(r["node_id"]) for r in results)
         pp_str = f"{presence_prob:.2f}" if pp else "n/a"
-        print(f"[AI] Fused nodes={nodes_str} label={label} "
+        print(f"[AI] Fused nodes={nodes_str} advisory_label={advisory_label} "
               f"presence={pp_str} motion={motion:.4f} "
               f"resp={breathing:.1f} hr={heart:.0f} rel={vitals_reliable}")
     except Exception as e:
@@ -683,7 +685,8 @@ def run_synthetic_feed():
 
 if __name__ == "__main__":
     threading.Thread(target=run_ws_client, daemon=True).start()
-    threading.Thread(target=run_synthetic_feed, daemon=True).start()
+    if os.environ.get("PHANTOM_AI_SYNTHETIC", "").lower() in {"1", "true", "yes"}:
+        threading.Thread(target=run_synthetic_feed, daemon=True).start()
     try:
         run_udp_receiver()
     except KeyboardInterrupt:

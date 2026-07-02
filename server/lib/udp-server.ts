@@ -11,12 +11,83 @@ const LEGACY_HEADER_SIZE = 20;
 const ADR018_HEADER_SIZE = 32;
 
 type ParsedCsiPacket = {
+    schemaVersion?: number;
     nodeId: number;
+    seq?: number;
+    freqMhz?: number;
+    noiseDbm?: number;
+    channel?: number;
+    deviceTsUs?: bigint;
+    deviceTsMs?: number;
     rssi: number;
     numAntennas: number;
     numSubcarriers: number;
     iqData: Buffer;
 };
+
+export class SourcePinningGuard {
+    private bindings = new Map<number, { address: string; port: number }>();
+    private rejectionCount = 0;
+    private securityEvents: Array<{
+        record_type: "security_event";
+        event_type: "node_source_mismatch";
+        node_id: number;
+        expected_source: { ip: string; port: number };
+        actual_source: { ip: string; port: number };
+        packet_kind: "csi_frame";
+    }> = [];
+
+    check(nodeId: number, source: { address: string; port: number }): boolean {
+        const existing = this.bindings.get(nodeId);
+        if (!existing) {
+            this.bindings.set(nodeId, { address: source.address, port: source.port });
+            return true;
+        }
+
+        if (existing.address === source.address && existing.port === source.port) {
+            return true;
+        }
+
+        this.rejectionCount++;
+        const event = {
+            record_type: "security_event" as const,
+            event_type: "node_source_mismatch" as const,
+            node_id: nodeId,
+            expected_source: { ip: existing.address, port: existing.port },
+            actual_source: { ip: source.address, port: source.port },
+            packet_kind: "csi_frame" as const,
+        };
+        this.securityEvents.push(event);
+        console.warn(
+            `[UDP][SEC] ${JSON.stringify(event)}`
+        );
+        return false;
+    }
+
+    getBindings(): Record<string, { address: string; port: number }> {
+        return Object.fromEntries(
+            Array.from(this.bindings.entries()).map(([nodeId, source]) => [
+                String(nodeId),
+                source,
+            ])
+        );
+    }
+
+    getRejectionCount(): number {
+        return this.rejectionCount;
+    }
+
+    getSecurityEvents(): Array<{
+        record_type: "security_event";
+        event_type: "node_source_mismatch";
+        node_id: number;
+        expected_source: { ip: string; port: number };
+        actual_source: { ip: string; port: number };
+        packet_kind: "csi_frame";
+    }> {
+        return [...this.securityEvents];
+    }
+}
 
 export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
     if (msg.length < 4) {
@@ -37,7 +108,13 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
             const nodeId = msg.readUInt8(5);
             const numAntennas = msg.readUInt8(6);
             const numSubcarriers = msg.readUInt16LE(7);
+            const freqMhz = msg.readUInt32LE(9);
+            const seq = msg.readUInt32LE(13);
             const rssi = msg.readInt8(17);
+            const noiseDbm = msg.readInt8(18);
+            const channel = msg.readUInt8(19);
+            const deviceTsUs = msg.readBigUInt64LE(20);
+            const deviceTsMs = msg.readUInt32LE(28);
             const iqData = msg.subarray(ADR018_HEADER_SIZE);
             const expectedIqBytes = numAntennas * numSubcarriers * 2;
 
@@ -49,7 +126,14 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
             }
 
             return {
+                schemaVersion,
                 nodeId,
+                seq,
+                freqMhz,
+                noiseDbm,
+                channel,
+                deviceTsUs,
+                deviceTsMs,
                 rssi,
                 numAntennas,
                 numSubcarriers,
@@ -86,11 +170,24 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
 }
 
 export function startUDPServer() {
+    // Singleton ingest: do NOT set reuseAddr. On Windows SO_REUSEADDR lets a
+    // stale/second listener silently share :5005 with non-deterministic delivery,
+    // which would steal ESP32 frames. We want a hard EADDRINUSE instead so the
+    // operator sees the clash (handled below) rather than losing packets quietly.
     const server = dgram.createSocket("udp4");
     const pyForwardSocket = dgram.createSocket("udp4");
+    const sourceGuard = new SourcePinningGuard();
 
-    server.on("error", (err) => {
-        console.error(`[UDP] Server error:\n${err.stack}`);
+    server.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+            console.error(
+                `[UDP] Cannot bind UDP :${UDP_PORT} — the port is already in use. ` +
+                `Another ESP32 ingest (e.g. a Python 'phantom.runtime live' authority) is likely ` +
+                `holding it. Stop that process, or run the dashboard alone so it owns :${UDP_PORT}.`,
+            );
+        } else {
+            console.error(`[UDP] Server error:\n${err.stack}`);
+        }
         server.close();
         pyForwardSocket.close();
     });
@@ -99,14 +196,18 @@ export function startUDPServer() {
     let lastLogTime = Date.now();
 
     server.on("message", (msg, rinfo) => {
-        // Forward raw packet to local python AI server on port 5006
-        pyForwardSocket.send(msg, 5006, "127.0.0.1", (err) => {
-            // Ignore errors if the Python script is not running yet
-        });
         const parsed = parseCsiPacket(msg);
         if (!parsed) {
             return;
         }
+        if (!sourceGuard.check(parsed.nodeId, rinfo)) {
+            return;
+        }
+
+        // Forward only accepted raw packets to the local Python AI sidecar.
+        pyForwardSocket.send(msg, 5006, "127.0.0.1", () => {
+            // Ignore errors if the Python script is not running yet.
+        });
 
         // For Phantom Scan, we expect an array of subcarriers.
         // We'll average across the subcarriers for a single representative complex number per antenna for the core math,

@@ -14,7 +14,14 @@ import type {
   TrackedTarget,
   VitalSigns,
   PoseFrame,
+  SensorNode,
 } from "@shared/schema";
+import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
+import {
+  fuseTwoNodeTarget,
+  computeNodeMotion,
+  type FusedTarget,
+} from "./node-fusion";
 import {
   computeMUSICSpectrum,
   findSpectrumPeak,
@@ -75,6 +82,8 @@ export class SignalProcessingServer {
     lastUpdate: Date.now(),
     isProcessing: false,
     sessionName: "",
+    synthetic_enabled: false,
+    source: "live",
   };
 
   // Processing engines
@@ -98,6 +107,15 @@ export class SignalProcessingServer {
     timestamp: number;
   }[] = [];
   private hardwareSampleQueue: CSISample[] = [];
+  private hardwareNodeLastSeenMs: Map<number, number> = new Map();
+  private nextHardwareQueueIndex = 0;
+
+  // Two-node fusion (RuView balance) state
+  private nodeAmpWindow: Map<number, { t: number; amp: number }[]> = new Map();
+  private nodeLastRssi: Map<number, number> = new Map();
+  private prevBalance: number | null = null;
+  private prevBalanceMs = 0;
+  private lastNodeFpsLogMs = 0;
 
   // Recording state
   private isRecording = false;
@@ -326,6 +344,7 @@ export class SignalProcessingServer {
     this.trackingProcessor.reset();
     this.sampleBuffer = [];
     this.pointCloudHistory = [];
+    this.nextHardwareQueueIndex = 0;
     this.lastTruthfulTargetUpdateMs = 0;
     this.clearTargetArtifacts("processing_started");
 
@@ -353,6 +372,13 @@ export class SignalProcessingServer {
     });
 
     this.broadcast("status", this.status);
+
+    // Session header: log the active anchor geometry so replays/reports are
+    // interpretable (same discipline as adapter logging).
+    console.log(
+      `[NODES] anchors N1=(${NODE_ANCHORS[1].x},${NODE_ANCHORS[1].z}) ` +
+        `N2=(${NODE_ANCHORS[2].x},${NODE_ANCHORS[2].z}) sep=${NODE_SEPARATION_M}m`,
+    );
 
     // Process at ~20 FPS
     this.processingInterval = setInterval(() => {
@@ -409,7 +435,6 @@ export class SignalProcessingServer {
 
     console.log("[WS] Processing stopped, isProcessing=false broadcast sent");
   }
-
   private updateConfig(updates: Partial<ProcessingConfig>) {
     this.config = { ...this.config, ...updates };
     if (updates.clutterWindowSize !== undefined) {
@@ -421,10 +446,15 @@ export class SignalProcessingServer {
 
   private setDataSource(source: DataSource) {
     this.status.dataSource = source;
+    this.status.source = source === "demo" ? "synthetic" : "live";
+    this.status.synthetic_enabled = source === "demo";
+    this.status.lastUpdate = Date.now();
 
     // Clear buffers when switching modes
     this.sampleBuffer = [];
     this.hardwareSampleQueue = [];
+    this.hardwareNodeLastSeenMs.clear();
+    this.nextHardwareQueueIndex = 0;
     this.backgroundSubtractor.reset();
     this.motionGate.reset();
     this.dopplerComputer.reset();
@@ -558,11 +588,8 @@ export class SignalProcessingServer {
     let isDemoSample = false;
 
     // Get sample based on data source
-    if (
-      this.status.dataSource === "hardware" ||
-      this.status.dataSource === "esp32"
-    ) {
-      const queuedSample = this.hardwareSampleQueue.shift();
+    if (this.status.dataSource === "esp32") {
+      const queuedSample = this.dequeueHardwareSample();
       if (queuedSample) {
         sample = queuedSample;
         this.lastProcessedSampleMs = Date.now();
@@ -577,6 +604,10 @@ export class SignalProcessingServer {
 
       if (this.hardwareSampleQueue.length > 1000) {
         this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
+        this.nextHardwareQueueIndex = Math.min(
+          this.nextHardwareQueueIndex,
+          this.hardwareSampleQueue.length - 1
+        );
       }
     } else {
       sample = this.demoGenerator.generateSample();
@@ -766,6 +797,24 @@ export class SignalProcessingServer {
         speed = Math.sqrt(targetVx * targetVx + targetVz * targetVz);
       }
 
+      // ── 9b. Two-node fusion (RuView balance) — replaces the single-node guess ──
+      // In fused_two_node mode the target is placed on the N1–N2 line by the
+      // cross-node motion ratio. `r`/`theta` become display-only; `distanceCm`
+      // stays physically meaningful (range to the nearest node).
+      const nodeMode = this.resolveLiveNodeMode();
+      const fused = nodeMode === "fused_two_node" ? this.computeFusedTarget() : null;
+      let fusedBalance: number | undefined;
+      let fusedDistanceCm = pdpResult.distanceCm;
+      let fusedConfidence: number | undefined;
+      if (fused) {
+        radX = fused.x;
+        radZ = fused.z;
+        speed = this.updateBalanceSpeed(fused.balance); // m/s along the axis
+        fusedBalance = fused.balance;
+        fusedDistanceCm = fused.distToNearestNodeM * 100;
+        fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
+      }
+
       const isMoving = motionResult.motionDetected && speed > 0.05;
 
       // Direction of travel (smooth)
@@ -786,32 +835,43 @@ export class SignalProcessingServer {
       const radialTarget: RadialTarget = {
         x: radX,
         z: radZ,
-        r,
-        theta: thetaRad,
+        // r/theta are display-only in fused mode; kept consistent with x/z.
+        r: fused ? Math.hypot(radX, radZ) : r,
+        theta: fused ? Math.atan2(-radX, radZ) : thetaRad,
         vx: targetVx,
         vz: targetVz,
         isMoving,
         angle: this.radialAngle,
         speed,
-        confidence: trackedTarget ? trackedTarget.confidence : 0.8,
+        confidence: fused ? fusedConfidence! : trackedTarget ? trackedTarget.confidence : 0.8,
         label: classification.label,
         humanProb: classification.humanProb,
-        distanceCm: pdpResult.distanceCm,
+        distanceCm: fusedDistanceCm,
         wallDistance: pdpResult.wallDistance,
+        balance: fusedBalance,
       };
 
-      this.currentRadialTarget = radialTarget;
-      this.broadcast("radialTarget", radialTarget);
-      this.lastTruthfulTargetUpdateMs = Date.now();
-      this.broadcastTargetState(
-        buildTargetState({
-          dataSource: this.status.dataSource,
-          nowMs: this.lastTruthfulTargetUpdateMs,
-          lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
-          radialTarget,
-          motionStatus: motionResult,
-        }),
-      );
+      if (nodeMode === "fused_two_node" && !fused) {
+        // Two nodes active but sub-threshold motion → emit NO target (no ghost
+        // at the midpoint). This is the empty-room negative-control gate.
+        if (this.currentTargetState.target_visible) {
+          this.clearTargetArtifacts("fused_below_motion_threshold");
+        }
+      } else {
+        this.currentRadialTarget = radialTarget;
+        this.broadcast("radialTarget", radialTarget);
+        this.lastTruthfulTargetUpdateMs = Date.now();
+        this.broadcastTargetState(
+          buildTargetState({
+            dataSource: this.status.dataSource,
+            nowMs: this.lastTruthfulTargetUpdateMs,
+            lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
+            nodeMode,
+            radialTarget,
+            motionStatus: motionResult,
+          }),
+        );
+      }
 
       // ── Report data accumulation ──
       this.reportFrameCount++;
@@ -911,6 +971,7 @@ export class SignalProcessingServer {
           dataSource: this.status.dataSource,
           nowMs: Date.now(),
           lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
+          nodeMode: this.resolveLiveNodeMode(),
           motionStatus: motionResult,
           reason: "insufficient_window",
         }),
@@ -939,6 +1000,11 @@ export class SignalProcessingServer {
     this.reportFrameCount++;
     this.status.framesProcessed++;
     this.status.lastUpdate = Date.now();
+
+    if (this.status.framesProcessed % 10 === 0) {
+      // ~2 Hz node-marker refresh (positions + per-node motion glow).
+      this.broadcastNodes();
+    }
 
     if (this.status.framesProcessed % 20 === 0) {
       this.broadcast("status", this.status);
@@ -976,6 +1042,7 @@ export class SignalProcessingServer {
     this.sendToClient(clientId, "targetIdentity", this.currentTargetIdentity);
     this.sendToClient(clientId, "poseFrame", this.currentPoseFrame);
     this.sendToClient(clientId, "vitalSigns", this.currentVitalSigns);
+    this.sendToClient(clientId, "nodes", this.buildSensorNodes());
   }
 
   private handleLiveGap() {
@@ -988,6 +1055,7 @@ export class SignalProcessingServer {
           dataSource: this.status.dataSource,
           nowMs,
           lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
+          nodeMode: this.resolveLiveNodeMode(),
           radialTarget: this.currentRadialTarget,
           motionStatus: undefined,
           reason: holdState === "stale_hold" ? "stale_hold_gap" : "live_gap_hold",
@@ -1006,6 +1074,7 @@ export class SignalProcessingServer {
         dataSource: this.status.dataSource,
         nowMs,
         lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
+        nodeMode: this.resolveLiveNodeMode(),
         reason: "awaiting_live_samples",
       }),
     );
@@ -1043,6 +1112,7 @@ export class SignalProcessingServer {
       dataSource: this.status.dataSource,
       nowMs: Date.now(),
       lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
+      nodeMode: this.resolveLiveNodeMode(),
       reason,
     });
     this.broadcast("targetState", this.currentTargetState);
@@ -1053,6 +1123,139 @@ export class SignalProcessingServer {
     this.currentTargetState = targetState;
     this.broadcast("targetState", targetState);
     this.updateTargetDebug();
+  }
+
+  private activeHardwareNodeIds(nowMs = Date.now()): number[] {
+    const active: number[] = [];
+    for (const [nodeId, lastSeenMs] of Array.from(this.hardwareNodeLastSeenMs.entries())) {
+      if (nowMs - lastSeenMs <= 1500) {
+        active.push(nodeId);
+      }
+    }
+    return active.sort((a, b) => a - b);
+  }
+
+  private resolveLiveNodeMode(): TargetState["node_mode"] {
+    if (this.status.dataSource === "esp32") {
+      return this.activeHardwareNodeIds().length >= 2
+        ? "fused_two_node"
+        : "single_node";
+    }
+    return this.status.dataSource === "demo" ? "fused_two_node" : "single_node";
+  }
+
+  // ── Two-node fusion (RuView balance) ───────────────────────────────
+  private recordNodeAmplitude(sample: CSISample): void {
+    const nodeId = sample.nodeId ?? 1;
+    if (nodeId !== 1 && nodeId !== 2) return; // only the two anchored nodes
+    const t = sample.timestamp ?? Date.now();
+    let win = this.nodeAmpWindow.get(nodeId);
+    if (!win) {
+      win = [];
+      this.nodeAmpWindow.set(nodeId, win);
+    }
+    win.push({ t, amp: magnitude(sample.h1) });
+    const cutoff = t - 3000; // fixed 3 s window by timestamp (yield-independent)
+    while (win.length && win[0].t < cutoff) win.shift();
+    this.nodeLastRssi.set(nodeId, sample.rssi ?? -100);
+  }
+
+  private nodeMotionFor(nodeId: number) {
+    const win = this.nodeAmpWindow.get(nodeId) ?? [];
+    return computeNodeMotion(win.map((s) => s.amp));
+  }
+
+  private computeFusedTarget(): (FusedTarget & { maxMotion: number }) | null {
+    const m1 = this.nodeMotionFor(1);
+    const m2 = this.nodeMotionFor(2);
+    const fused = fuseTwoNodeTarget({
+      r1: m1.absStd,
+      r2: m2.absStd,
+      motion1: m1.motion,
+      motion2: m2.motion,
+      anchors: { 1: NODE_ANCHORS[1], 2: NODE_ANCHORS[2] },
+    });
+    if (!fused) return null;
+    return { ...fused, maxMotion: Math.max(m1.motion, m2.motion) };
+  }
+
+  private updateBalanceSpeed(balance: number): number {
+    const now = Date.now();
+    let speed = 0;
+    if (this.prevBalance !== null && this.prevBalanceMs > 0) {
+      const dt = (now - this.prevBalanceMs) / 1000;
+      if (dt > 0) {
+        // m/s along the N1–N2 axis (balance ∈ [0,1] × separation in meters).
+        speed = Math.abs((balance - this.prevBalance) * NODE_SEPARATION_M) / dt;
+      }
+    }
+    this.prevBalance = balance;
+    this.prevBalanceMs = now;
+    return speed;
+  }
+
+  private buildSensorNodes(): SensorNode[] {
+    const synthetic = this.status.synthetic_enabled;
+    const active = new Set(this.activeHardwareNodeIds());
+    const nodes: SensorNode[] = [];
+    for (const key of [1, 2] as const) {
+      const anchor = NODE_ANCHORS[key];
+      const motion = synthetic
+        ? Math.abs(Math.sin(Date.now() / 700 + key)) // demo-only synthetic activity
+        : this.nodeMotionFor(key).motion;
+      nodes.push({
+        node_id: key,
+        x: anchor.x,
+        z: anchor.z,
+        motion,
+        active: synthetic ? true : active.has(key),
+        rssi: this.nodeLastRssi.get(key) ?? -100,
+        source: synthetic ? "synthetic" : "live",
+      });
+    }
+    return nodes;
+  }
+
+  private broadcastNodes(): void {
+    this.broadcast("nodes", this.buildSensorNodes());
+
+    // fps sanity: warn (≤ every 10 s) if an active node isn't near the ~40 fps
+    // the 3 s window assumes. Ties to the firmware self-ping lineage question.
+    const now = Date.now();
+    if (!this.status.synthetic_enabled && now - this.lastNodeFpsLogMs > 10000) {
+      for (const key of [1, 2] as const) {
+        const win = this.nodeAmpWindow.get(key);
+        if (win && win.length > 5) {
+          const spanS = Math.max(0.001, (win[win.length - 1].t - win[0].t) / 1000);
+          const fps = win.length / spanS;
+          if (fps < 20) {
+            console.warn(
+              `[NODES] node ${key} ~${fps.toFixed(0)} fps (<20) — 3 s window assumes ~40 fps; check firmware self-ping yield`,
+            );
+          }
+        }
+      }
+      this.lastNodeFpsLogMs = now;
+    }
+  }
+
+  private dequeueHardwareSample(): CSISample | undefined {
+    if (this.hardwareSampleQueue.length === 0) {
+      this.nextHardwareQueueIndex = 0;
+      return undefined;
+    }
+
+    if (this.nextHardwareQueueIndex >= this.hardwareSampleQueue.length) {
+      this.nextHardwareQueueIndex = 0;
+    }
+
+    const [sample] = this.hardwareSampleQueue.splice(this.nextHardwareQueueIndex, 1);
+    const currentNodeId = sample?.nodeId ?? 1;
+    const nextDifferentIndex = this.hardwareSampleQueue.findIndex(
+      (queued) => (queued.nodeId ?? 1) !== currentNodeId
+    );
+    this.nextHardwareQueueIndex = nextDifferentIndex >= 0 ? nextDifferentIndex : 0;
+    return sample;
   }
 
   // ── Public API ─────────────────────────────────────────────────
@@ -1084,13 +1287,9 @@ export class SignalProcessingServer {
     // Forward raw sample to the AI inference client
     this.broadcastToAI("rawSample", sample);
 
-    // Only allow primary node (Node 1 or undefined) to enter the legacy single-node processing pipeline
-    const primaryNodeId = 1;
-    if (sample.nodeId !== undefined && sample.nodeId !== primaryNodeId) {
-      return; // Skip standard processing for secondary nodes to prevent graph corruption
-    }
-
     this.hardwareSampleQueue.push(sample);
+    this.hardwareNodeLastSeenMs.set(sample.nodeId ?? 1, Date.now());
+    this.recordNodeAmplitude(sample);
     this.lastSampleRxMs = Date.now();
     this.status.connected = true;
     this.status.lastUpdate = this.lastSampleRxMs;

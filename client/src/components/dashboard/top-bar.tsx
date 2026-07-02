@@ -1,4 +1,4 @@
-import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, Cpu, Terminal, LogOut, Shield, ScrollText } from "lucide-react";
+import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, LogOut, Shield, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,8 +24,6 @@ interface TopBarProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onOpenSettings: () => void;
-  onOpenHardware: () => void;
-  onOpenSystemControl: () => void;
   onLogout: () => void;
 }
 
@@ -42,8 +40,6 @@ export function TopBar({
   onStartRecording,
   onStopRecording,
   onOpenSettings,
-  onOpenHardware,
-  onOpenSystemControl,
   onLogout,
 }: TopBarProps) {
   const liveModeBadge = status.dataSource === "esp32" && status.isProcessing ? (
@@ -215,32 +211,6 @@ export function TopBar({
             onStart={onStart}
             onStop={onStop}
           />
-
-          {/* Hardware Config */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenHardware}
-            title="Hardware Node Config"
-            data-testid="btn-hardware"
-            className="gap-1.5"
-          >
-            <Cpu className="h-4 w-4" />
-            <span className="hidden xl:inline">antena conf</span>
-          </Button>
-
-          {/* System Control Panel */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenSystemControl}
-            title="System Control Shell"
-            data-testid="btn-system-control"
-            className="gap-1.5"
-          >
-            <Terminal className="h-4 w-4" />
-            <span className="hidden xl:inline">Terminal</span>
-          </Button>
 
           {/* Open Settings Sheet */}
           <Button

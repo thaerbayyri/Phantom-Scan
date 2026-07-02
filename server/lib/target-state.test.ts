@@ -33,9 +33,8 @@ const radialTarget: RadialTarget = {
   wallDistance: 4.6,
 };
 
-test("resolveSourceMode maps file replay and demo synthetic", () => {
+test("resolveSourceMode maps demo synthetic and esp32 live", () => {
   assert.equal(resolveSourceMode("demo"), "synthetic");
-  assert.equal(resolveSourceMode("file"), "replay");
   assert.equal(resolveSourceMode("esp32"), "live");
 });
 
@@ -68,6 +67,22 @@ test("buildTargetState marks single-node live targets as degraded", () => {
   assert.equal(state.node_mode, "single_node");
   assert.equal(state.source_mode, "live");
   assert.equal(state.range_m, radialTarget.r);
+});
+
+test("buildTargetState honors fused two-node live mode", () => {
+  const state = buildTargetState({
+    dataSource: "esp32",
+    nowMs: 2_000,
+    lastTruthfulUpdateMs: 2_000,
+    nodeMode: "fused_two_node",
+    radialTarget,
+    motionStatus: movingMotion,
+  });
+
+  assert.equal(state.state, "moving");
+  assert.equal(state.target_visible, true);
+  assert.equal(state.node_mode, "fused_two_node");
+  assert.equal(state.source_mode, "live");
 });
 
 test("buildTargetState keeps demo targets synthetic and moving", () => {

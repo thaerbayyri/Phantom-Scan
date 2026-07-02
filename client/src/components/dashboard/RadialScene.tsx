@@ -2,7 +2,7 @@ import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
-import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState } from "@shared/schema";
+import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState, SensorNode } from "@shared/schema";
 import { DirectionalNode } from "./DirectionalNode";
 import { HumanMesh } from "./HumanMesh";
 import { MachineStatic } from "./MachineStatic";
@@ -55,16 +55,16 @@ function PolarGrid() {
 
             {/* Cardinal Markers (Labels on floor grid) */}
             <Billboard position={[0, 6.5, 0.15]} follow={true}>
-                <Text fontSize={0.7} color="#00ffff" font="monospace" anchorX="center" anchorY="middle">N</Text>
+                <Text fontSize={0.7} color="#00ffff" anchorX="center" anchorY="middle">N</Text>
             </Billboard>
             <Billboard position={[0, -6.5, 0.15]} follow={true}>
-                <Text fontSize={0.6} color="#00cccc" font="monospace" anchorX="center" anchorY="middle">S</Text>
+                <Text fontSize={0.6} color="#00cccc" anchorX="center" anchorY="middle">S</Text>
             </Billboard>
             <Billboard position={[6.5, 0, 0.15]} follow={true}>
-                <Text fontSize={0.6} color="#00cccc" font="monospace" anchorX="center" anchorY="middle">E</Text>
+                <Text fontSize={0.6} color="#00cccc" anchorX="center" anchorY="middle">E</Text>
             </Billboard>
             <Billboard position={[-6.5, 0, 0.15]} follow={true}>
-                <Text fontSize={0.6} color="#00cccc" font="monospace" anchorX="center" anchorY="middle">W</Text>
+                <Text fontSize={0.6} color="#00cccc" anchorX="center" anchorY="middle">W</Text>
             </Billboard>
         </group>
     );
@@ -74,38 +74,57 @@ function PolarGrid() {
 //  ESP32 Beacon — glowing node at origin
 // ═══════════════════════════════════════════════════════════════════
 
-function ESPBeacon() {
-    const pulseRef = useRef<THREE.Mesh>(null);
+// Distinct colors per node so N1/N2 are visually separable.
+const NODE_COLORS: Record<number, string> = { 1: "#00ffcc", 2: "#ff7ac6" };
+
+function ESPBeacon({
+    position = [0, 0.15, 0],
+    color = "#00ffcc",
+    motion = 0,
+    label,
+}: {
+    position?: [number, number, number];
+    color?: string;
+    motion?: number;
+    label?: string;
+}) {
+    const coreRef = useRef<THREE.Mesh>(null);
 
     useFrame((state) => {
-        if (pulseRef.current) {
+        if (coreRef.current) {
             const t = state.clock.elapsedTime;
-            const pulse = 1 + Math.sin(t * 2) * 0.15;
-            pulseRef.current.scale.setScalar(pulse);
+            // Pulse harder as the node sees more motion (activity glow).
+            const pulse = 1 + Math.sin(t * 2) * (0.15 + motion * 0.4);
+            coreRef.current.scale.setScalar(pulse);
         }
     });
 
     return (
-        <group position={[0, 0.15, 0]}>
-            <mesh>
+        <group position={position}>
+            <mesh ref={coreRef}>
                 <sphereGeometry args={[0.12, 32, 32]} />
-                <meshStandardMaterial color="#00ffcc" emissive="#00ffcc" emissiveIntensity={2} roughness={0.1} metalness={0.8} />
+                <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5 + motion * 2.5} roughness={0.1} metalness={0.8} />
             </mesh>
             <mesh>
                 <sphereGeometry args={[0.2, 32, 32]} />
-                <meshBasicMaterial color="#00ffcc" transparent opacity={0.15} />
+                <meshBasicMaterial color={color} transparent opacity={0.15} />
             </mesh>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.15, 0]}>
                 <ringGeometry args={[0.15, 0.25, 32]} />
-                <meshBasicMaterial color="#00ffcc" transparent opacity={0.4} side={THREE.DoubleSide} />
+                <meshBasicMaterial color={color} transparent opacity={0.4} side={THREE.DoubleSide} />
             </mesh>
-            <SignalRipple />
-            <pointLight color="#00ffcc" intensity={1.5} distance={8} decay={2} />
+            <SignalRipple color={color} />
+            <pointLight color={color} intensity={1.5 + motion * 2} distance={8} decay={2} />
+            {label && (
+                <Billboard position={[0, 0.55, 0]} follow={true}>
+                    <Text fontSize={0.32} color={color} anchorX="center" anchorY="middle">{label}</Text>
+                </Billboard>
+            )}
         </group>
     );
 }
 
-function SignalRipple() {
+function SignalRipple({ color = "#00ffcc" }: { color?: string }) {
     const ring1Ref = useRef<THREE.Mesh>(null);
     const ring2Ref = useRef<THREE.Mesh>(null);
     const ring3Ref = useRef<THREE.Mesh>(null);
@@ -125,10 +144,27 @@ function SignalRipple() {
 
     return (
         <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.14, 0]}>
-            <mesh ref={ring1Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color="#00ffcc" transparent opacity={0.3} side={THREE.DoubleSide} /></mesh>
-            <mesh ref={ring2Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color="#00ffcc" transparent opacity={0.2} side={THREE.DoubleSide} /></mesh>
-            <mesh ref={ring3Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color="#00ffcc" transparent opacity={0.1} side={THREE.DoubleSide} /></mesh>
+            <mesh ref={ring1Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color={color} transparent opacity={0.3} side={THREE.DoubleSide} /></mesh>
+            <mesh ref={ring2Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color={color} transparent opacity={0.2} side={THREE.DoubleSide} /></mesh>
+            <mesh ref={ring3Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color={color} transparent opacity={0.1} side={THREE.DoubleSide} /></mesh>
         </group>
+    );
+}
+
+// Faint line between the two node anchors — the axis the target slides along.
+function NodeAxis({ a, b }: { a: SensorNode; b: SensorNode }) {
+    const geometry = useMemo(
+        () =>
+            new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(a.x, 0.02, a.z),
+                new THREE.Vector3(b.x, 0.02, b.z),
+            ]),
+        [a.x, a.z, b.x, b.z],
+    );
+    return (
+        <lineSegments geometry={geometry}>
+            <lineBasicMaterial color="#00ffaa" transparent opacity={0.35} />
+        </lineSegments>
     );
 }
 
@@ -227,9 +263,10 @@ interface RadialSceneProps {
     points: PointCloudPoint[];
     poseFrame: PoseFrame | null;
     targetState: TargetState | null;
+    nodes?: SensorNode[];
 }
 
-export function RadialScene({ radialTarget, points, poseFrame, targetState }: RadialSceneProps) {
+export function RadialScene({ radialTarget, points, poseFrame, targetState, nodes = [] }: RadialSceneProps) {
     const label = radialTarget?.label ?? "unknown";
     const wallDistance = radialTarget?.wallDistance ?? 5.0;
     const canRenderTarget = Boolean(
@@ -248,7 +285,24 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState }: Ra
             <fog attach="fog" args={["#000810", 8, 18]} />
 
             <PolarGrid />
-            <ESPBeacon />
+            {/* Node beacons: one per ESP32-S3 anchor (fallback to single origin
+                beacon when no node data has arrived yet). */}
+            {nodes.length > 0 ? (
+                <>
+                    {nodes.map((n) => (
+                        <ESPBeacon
+                            key={n.node_id}
+                            position={[n.x, 0.15, n.z]}
+                            color={NODE_COLORS[n.node_id] ?? "#00ffcc"}
+                            motion={n.active ? n.motion : 0}
+                            label={`N${n.node_id}`}
+                        />
+                    ))}
+                    {nodes.length >= 2 && <NodeAxis a={nodes[0]} b={nodes[1]} />}
+                </>
+            ) : (
+                <ESPBeacon />
+            )}
             <FloorPlane />
             <AmbientPoints points={points} />
 

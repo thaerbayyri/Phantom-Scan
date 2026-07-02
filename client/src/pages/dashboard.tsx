@@ -1,10 +1,7 @@
 import { useEffect, useCallback, useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { TopBar } from "@/components/dashboard/top-bar";
-import { HardwareConfig } from "@/components/dashboard/hardware-config";
-import { SystemControlPanel } from "@/components/dashboard/system-control-panel";
 import { ControlPanel } from "@/components/dashboard/control-panel";
 import { PointCloud3D } from "@/components/dashboard/point-cloud-3d";
 import { AoAHeatmap } from "@/components/dashboard/aoa-heatmap";
@@ -44,6 +41,7 @@ export default function Dashboard() {
     targetState,
     vitalSigns,
     poseFrame,
+    nodes,
   } = useWebSocket();
 
   const truthfulTargetVisible = Boolean(targetState?.target_visible && radialTarget);
@@ -54,8 +52,6 @@ export default function Dashboard() {
   const visibleIdentity = truthfulTargetVisible ? targetIdentity : null;
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isHardwareOpen, setIsHardwareOpen] = useState(false);
-  const [isSystemControlOpen, setIsSystemControlOpen] = useState(false);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
@@ -118,8 +114,6 @@ export default function Dashboard() {
         onStartRecording={startRecording}
         onStopRecording={stopRecording}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenHardware={() => setIsHardwareOpen(true)}
-        onOpenSystemControl={() => setIsSystemControlOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -131,6 +125,7 @@ export default function Dashboard() {
             radialTarget={truthfulTargetVisible ? radialTarget : null}
             poseFrame={truthfulTargetVisible ? poseFrame : null}
             targetState={targetState}
+            nodes={nodes}
           />
         </div>
 
@@ -182,26 +177,15 @@ export default function Dashboard() {
           <SheetContent side="left" className="w-[400px] overflow-y-auto border-r border-white/10 bg-background/95 backdrop-blur-md px-0">
             <SheetHeader className="px-4">
               <SheetTitle className="text-left font-bold text-xl">Signal Processing Settings</SheetTitle>
+              <SheetDescription className="text-left">
+                Adjust the live operator processing controls and visualization settings for ESP32-S3 and demo scans.
+              </SheetDescription>
             </SheetHeader>
             <div className="pb-12 space-y-2">
               <ControlPanel config={config} onConfigChange={updateConfig} />
             </div>
           </SheetContent>
         </Sheet>
-
-        {/* Hardware Config Modal */}
-        <Dialog open={isHardwareOpen} onOpenChange={setIsHardwareOpen}>
-          <DialogContent className="max-w-2xl bg-card border-white/10 p-0 overflow-hidden">
-            <HardwareConfig />
-          </DialogContent>
-        </Dialog>
-
-        {/* System Control Shell Modal */}
-        <Dialog open={isSystemControlOpen} onOpenChange={setIsSystemControlOpen}>
-          <DialogContent className="max-w-3xl bg-card border-white/10 p-0 overflow-hidden">
-            <SystemControlPanel />
-          </DialogContent>
-        </Dialog>
       </div>
 
       <footer className="border-t bg-card px-4 py-2">

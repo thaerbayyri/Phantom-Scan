@@ -117,7 +117,7 @@ export const processingConfigSchema = z.object({
 export type ProcessingConfig = z.infer<typeof processingConfigSchema>;
 
 // Data source configuration
-export const dataSourceSchema = z.enum(["demo", "file", "usrp", "esp32", "hardware"]);
+export const dataSourceSchema = z.enum(["demo", "esp32"]);
 export type DataSource = z.infer<typeof dataSourceSchema>;
 
 // Hardware ingestion sample (for REST API)
@@ -139,6 +139,9 @@ export const systemStatusSchema = z.object({
   lastUpdate: z.number(),
   isProcessing: z.boolean(),
   sessionName: z.string().optional(),
+  authority: z.boolean().optional(),
+  synthetic_enabled: z.boolean().optional(),
+  source: z.enum(["live", "replay", "synthetic"]).optional(),
 });
 export type SystemStatus = z.infer<typeof systemStatusSchema>;
 
@@ -185,6 +188,9 @@ export const radialTargetSchema = z.object({
   humanProb: z.number().default(0.5),
   distanceCm: z.number().default(200),   // Distance in centimeters
   wallDistance: z.number().default(5.0), // First wall reflection distance (m)
+  // Two-node fusion: 0 → at node 1, 0.5 → midpoint, 1 → at node 2 (RuView balance).
+  // Present only in fused_two_node mode; x/z are placed on the N1–N2 line from it.
+  balance: z.number().optional(),
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 
@@ -211,6 +217,28 @@ export const targetStateSchema = z.object({
   reason: z.string().optional(),
 });
 export type TargetState = z.infer<typeof targetStateSchema>;
+
+// ── Two-node ESP32-S3 geometry (RuView-style anchors) ──────────────────
+// Fixed node anchor positions in radar/world meters (origin at center, +Z = north).
+// 3 m apart on the E–W axis, centered — the target's balance-fused position slides
+// along the line between them. Single source of truth for server + client.
+export const NODE_ANCHORS: Record<number, { x: number; z: number }> = {
+  1: { x: -1.5, z: 0 },
+  2: { x: 1.5, z: 0 },
+};
+export const NODE_SEPARATION_M = 3;
+
+// A sensor node marker broadcast to the UI: anchor position + live activity.
+export const sensorNodeSchema = z.object({
+  node_id: z.number(),
+  x: z.number(),
+  z: z.number(),
+  motion: z.number(),            // 0..1 saturated, DISPLAY ONLY (glow intensity)
+  active: z.boolean(),           // seen within the live freshness window
+  rssi: z.number(),              // last RSSI seen for this node (dBm)
+  source: z.enum(["live", "synthetic"]),
+});
+export type SensorNode = z.infer<typeof sensorNodeSchema>;
 
 export const targetDebugSchema = z.object({
   hardware_queue_length: z.number(),

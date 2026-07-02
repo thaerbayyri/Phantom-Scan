@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from scripts.csi_filter_pipeline import CSIFilterPipeline
 from scripts.csi_capture import CSISample, parse_csi_line
+from phantom.protocol import CsiFrameV1, parse_udp_packet
 
 RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), "..", "recordings")
 
@@ -228,13 +229,36 @@ class TestPipelineWithRecordings:
 
 class TestADR018FrameIntegrity:
     MAGIC_CSI = 0xC5110001
-    HEADER_FMT = '<IBBHIIbbxx'
+    HEADER_FMT = "<IBBBHIIbbBQI"
 
-    def _build_frame(self, node_id=1, n_ant=1, n_sub=64, freq=2412, seq=0, rssi=-45, noise=-90):
+    def _build_frame(
+        self,
+        node_id=1,
+        n_ant=1,
+        n_sub=64,
+        freq=2412,
+        seq=0,
+        rssi=-45,
+        noise=-90,
+        channel=1,
+        device_ts_us=123456789,
+        device_ts_ms=123456,
+    ):
         """Build a valid ADR-018 frame from parameters."""
         header = struct.pack(
             self.HEADER_FMT,
-            self.MAGIC_CSI, node_id, n_ant, n_sub, freq, seq, rssi, noise
+            self.MAGIC_CSI,
+            1,
+            node_id,
+            n_ant,
+            n_sub,
+            freq,
+            seq,
+            rssi,
+            noise,
+            channel,
+            device_ts_us,
+            device_ts_ms,
         )
         # IQ data: n_ant * n_sub * 2 bytes (I + Q as signed bytes)
         iq_data = bytearray()
@@ -247,41 +271,45 @@ class TestADR018FrameIntegrity:
     def test_frame_header_integrity(self):
         """Frame header should preserve all fields through pack/unpack."""
         frame = self._build_frame(node_id=3, n_sub=32, freq=5240, seq=1234, rssi=-62, noise=-85)
-        hdr = struct.unpack(self.HEADER_FMT, frame[:20])
+        hdr = struct.unpack(self.HEADER_FMT, frame[:32])
         assert hdr[0] == self.MAGIC_CSI
-        assert hdr[1] == 3   # node_id
-        assert hdr[2] == 1   # n_ant
-        assert hdr[3] == 32  # n_sub
-        assert hdr[4] == 5240  # freq
-        assert hdr[5] == 1234  # seq
-        assert hdr[6] == -62   # rssi
-        assert hdr[7] == -85   # noise
+        assert hdr[1] == 1      # schema version
+        assert hdr[2] == 3      # node_id
+        assert hdr[3] == 1      # n_ant
+        assert hdr[4] == 32     # n_sub
+        assert hdr[5] == 5240   # freq
+        assert hdr[6] == 1234   # seq
+        assert hdr[7] == -62    # rssi
+        assert hdr[8] == -85    # noise
+        assert hdr[9] == 1      # channel
+        assert hdr[10] == 123456789
+        assert hdr[11] == 123456
 
     def test_frame_iq_data_length(self):
         """IQ payload length should match n_ant * n_sub * 2."""
         for n_sub in [10, 32, 52, 64, 128]:
             frame = self._build_frame(n_sub=n_sub)
-            iq_len = len(frame) - 20
+            iq_len = len(frame) - 32
             assert iq_len == 1 * n_sub * 2, f"n_sub={n_sub}: expected {n_sub * 2}B, got {iq_len}B"
 
     def test_frame_iq_values_in_range(self):
         """IQ values should be valid signed bytes (-128 to 127)."""
         frame = self._build_frame(n_sub=64)
-        iq_data = frame[20:]
+        iq_data = frame[32:]
         for i in range(0, len(iq_data), 2):
             re = struct.unpack('<b', iq_data[i:i+1])[0]
             im = struct.unpack('<b', iq_data[i+1:i+2])[0]
             assert -128 <= re <= 127
             assert -128 <= im <= 127
 
-    def test_channel_derivation(self):
-        """Channel number should be correctly derivable from frequency."""
-        test_cases = [
-            (2412, 1), (2437, 6), (2462, 11), (2484, 15),
-        ]
-        for freq, expected_ch in test_cases:
-            ch = (freq - 2412) // 5 + 1
-            assert ch == expected_ch, f"freq={freq}: expected ch={expected_ch}, got ch={ch}"
+    def test_current_parser_accepts_current_adr018_layout(self):
+        """The Python authority parser should accept the current 32-byte CSI frame layout."""
+        parsed = parse_udp_packet(self._build_frame(node_id=2, n_sub=8, seq=17), ("127.0.0.1", 5005), 999)
+        assert isinstance(parsed, CsiFrameV1)
+        assert parsed.node_id == 2
+        assert parsed.seq == 17
+        assert parsed.n_subcarriers == 8
+        assert parsed.device_ts_valid is True
 
 
 # ═══════════════════════════════════════════════════════════════════

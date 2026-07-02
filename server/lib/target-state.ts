@@ -11,6 +11,7 @@ export interface BuildTargetStateInput {
   dataSource: DataSource;
   nowMs: number;
   lastTruthfulUpdateMs?: number;
+  nodeMode?: NodeMode;
   radialTarget?: RadialTarget | null;
   motionStatus?: MotionStatus | null;
   reason?: string;
@@ -21,9 +22,6 @@ export type LiveHoldState = "startup" | "live" | "stale_hold" | "cleared";
 export function resolveSourceMode(dataSource: DataSource): SourceMode {
   if (dataSource === "demo") {
     return "synthetic";
-  }
-  if (dataSource === "file") {
-    return "replay";
   }
   return "live";
 }
@@ -37,7 +35,7 @@ export function resolveNodeMode(sourceMode: SourceMode): NodeMode {
 
 export function emptyTargetState(input: BuildTargetStateInput): TargetState {
   const sourceMode = resolveSourceMode(input.dataSource);
-  const nodeMode = resolveNodeMode(sourceMode);
+  const nodeMode = input.nodeMode ?? resolveNodeMode(sourceMode);
   const lastUpdate = input.lastTruthfulUpdateMs ?? input.nowMs;
   const dataAge = Math.max(0, input.nowMs - lastUpdate);
   const stale = dataAge >= LIVE_TARGET_STALE_TIMEOUT_MS;
@@ -64,7 +62,7 @@ export function buildTargetState(input: BuildTargetStateInput): TargetState {
   }
 
   const sourceMode = resolveSourceMode(input.dataSource);
-  const nodeMode = resolveNodeMode(sourceMode);
+  const nodeMode = input.nodeMode ?? resolveNodeMode(sourceMode);
   const lastUpdate = input.lastTruthfulUpdateMs ?? input.nowMs;
   const dataAge = Math.max(0, input.nowMs - lastUpdate);
   const stale = dataAge >= LIVE_TARGET_STALE_TIMEOUT_MS;

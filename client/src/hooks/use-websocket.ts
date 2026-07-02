@@ -17,6 +17,7 @@ import type {
   TargetState,
   VitalSigns,
   PoseFrame,
+  SensorNode,
 } from "@shared/schema";
 
 interface WSState {
@@ -37,6 +38,7 @@ interface WSState {
   targetState: TargetState | null;
   vitalSigns: VitalSigns | null;
   poseFrame: PoseFrame | null;
+  nodes: SensorNode[];
   isConnected: boolean;
   error: string | null;
 }
@@ -59,6 +61,8 @@ const defaultStatus: SystemStatus = {
   framesProcessed: 0,
   lastUpdate: Date.now(),
   isProcessing: false,
+  synthetic_enabled: false,
+  source: "live",
 };
 
 const defaultSignalTrace: SignalTrace = {
@@ -135,6 +139,7 @@ export function useWebSocket() {
     targetState: defaultTargetState,
     vitalSigns: null,
     poseFrame: null,
+    nodes: [],
     isConnected: false,
     error: null,
   });
@@ -360,6 +365,13 @@ export function useWebSocket() {
         }));
         break;
 
+      case "nodes":
+        setState((prev) => ({
+          ...prev,
+          nodes: (message.data as SensorNode[]) ?? [],
+        }));
+        break;
+
       case "reportReady":
         console.log("Report is ready and available from history/report views.");
         break;
@@ -418,7 +430,12 @@ export function useWebSocket() {
       setState((prev) => ({
         ...prev,
         ...buildClearedSceneState(`source_changed_${source}`),
-        status: { ...prev.status, dataSource: source as SystemStatus["dataSource"] },
+        status: {
+          ...prev.status,
+          dataSource: source as SystemStatus["dataSource"],
+          source: source === "demo" ? "synthetic" : "live",
+          synthetic_enabled: source === "demo",
+        },
       }));
     },
     [sendMessage]

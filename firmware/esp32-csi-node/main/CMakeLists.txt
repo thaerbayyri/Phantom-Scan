@@ -5,7 +5,17 @@ set(SRCS
     "display_task.c"
 )
 
-set(REQUIRES "")
+set(REQUIRES
+    esp_event
+    esp_http_server
+    esp_netif
+    esp_pm
+    esp_timer
+    esp_wifi
+    lwip
+    mbedtls
+    nvs_flash
+)
 
 # ADR-045: AMOLED display support (compile-time optional)
 if(CONFIG_DISPLAY_ENABLE)
@@ -16,5 +26,6 @@ endif()
 idf_component_register(
     SRCS ${SRCS}
     INCLUDE_DIRS "."
+    PRIV_REQUIRES app_update
     REQUIRES ${REQUIRES}
 )

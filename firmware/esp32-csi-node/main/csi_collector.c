@@ -20,8 +20,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_timer.h"
+#include "ping/ping_sock.h"
+#include "lwip/ip_addr.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "csi_collector";
@@ -35,6 +38,7 @@ static uint32_t s_send_ok = 0;
 static uint32_t s_send_fail = 0;
 static uint32_t s_rate_skip = 0;
 static uint32_t s_cb_drop = 0;
+static esp_ping_handle_t s_self_ping = NULL;
 
 /**
  * Minimum interval between UDP sends in microseconds.
@@ -44,6 +48,72 @@ static uint32_t s_cb_drop = 0;
  */
 #define CSI_MIN_SEND_INTERVAL_US  (20 * 1000)
 static int64_t s_last_send_us = 0;
+
+static void csi_ping_cb_noop(esp_ping_handle_t hdl, void *args)
+{
+    (void)hdl;
+    (void)args;
+}
+
+static void csi_start_self_ping(void)
+{
+    if (s_self_ping != NULL) {
+        return;
+    }
+
+    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta_netif == NULL) {
+        ESP_LOGW(TAG, "self-ping skipped: station netif unavailable");
+        return;
+    }
+
+    esp_netif_ip_info_t ip_info;
+    esp_err_t err = esp_netif_get_ip_info(sta_netif, &ip_info);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "self-ping skipped: ip info unavailable (%s)", esp_err_to_name(err));
+        return;
+    }
+
+    if (ip_info.gw.addr == 0) {
+        ESP_LOGW(TAG, "self-ping skipped: gateway not assigned yet");
+        return;
+    }
+
+    ip_addr_t target_addr;
+    memset(&target_addr, 0, sizeof(target_addr));
+    target_addr.type = IPADDR_TYPE_V4;
+    target_addr.u_addr.ip4.addr = ip_info.gw.addr;
+
+    esp_ping_config_t ping_config = ESP_PING_DEFAULT_CONFIG();
+    ping_config.target_addr = target_addr;
+    ping_config.count = ESP_PING_COUNT_INFINITE;
+    ping_config.interval_ms = 20;
+    ping_config.data_size = 1;
+
+    esp_ping_callbacks_t callbacks = {
+        .cb_args = NULL,
+        .on_ping_success = csi_ping_cb_noop,
+        .on_ping_timeout = csi_ping_cb_noop,
+        .on_ping_end = csi_ping_cb_noop,
+    };
+
+    err = esp_ping_new_session(&ping_config, &callbacks, &s_self_ping);
+    if (err != ESP_OK) {
+        s_self_ping = NULL;
+        ESP_LOGW(TAG, "self-ping session create failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    err = esp_ping_start(s_self_ping);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "self-ping start failed: %s", esp_err_to_name(err));
+        esp_ping_delete_session(s_self_ping);
+        s_self_ping = NULL;
+        return;
+    }
+
+    ESP_LOGI(TAG, "self-ping started -> " IPSTR " @50Hz (CSI OFDM source)", IP2STR(&ip_info.gw));
+}
 
 /* ---- ADR-029: Channel-hop state ---- */
 
@@ -161,7 +231,7 @@ static void wifi_csi_callback(void *ctx, wifi_csi_info_t *info)
     s_cb_count++;
 
     if (s_cb_count <= 3 || (s_cb_count % 250) == 0) {
-        ESP_LOGD(TAG, "CSI cb #%lu: len=%d rssi=%d ch=%d",
+        ESP_LOGI(TAG, "CSI cb #%lu: len=%d rssi=%d ch=%d",
                  (unsigned long)s_cb_count, info->len,
                  info->rx_ctrl.rssi, info->rx_ctrl.channel);
     }
@@ -223,7 +293,7 @@ void csi_collector_init(void)
     };
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filt));
 
-    ESP_LOGI(TAG, "Promiscuous mode enabled for CSI capture");
+    ESP_LOGI(TAG, "CSI filter upgraded to MGMT+DATA");
 
     wifi_csi_config_t csi_config = {
         .lltf_en = true,
@@ -238,6 +308,7 @@ void csi_collector_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_csi_config(&csi_config));
     ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(wifi_csi_callback, NULL));
     ESP_ERROR_CHECK(esp_wifi_set_csi(true));
+    csi_start_self_ping();
 
     ESP_LOGI(TAG, "CSI collection initialized (node_id=%d, channel=%d)",
              g_nvs_config.node_id, CONFIG_CSI_WIFI_CHANNEL);
@@ -389,6 +460,8 @@ esp_err_t csi_inject_ndp_frame(void)
 static void csi_heartbeat_task(void *arg)
 {
     (void)arg;
+    uint32_t last_send_ok = 0;
+    uint32_t last_cb_count = 0;
     while (1) {
         csi_heartbeat_pkt_t pkt;
         memset(&pkt, 0, sizeof(pkt));
@@ -410,6 +483,17 @@ static void csi_heartbeat_task(void *arg)
         pkt.firmware_build_id = 1;
 
         stream_sender_send((const uint8_t *)&pkt, sizeof(pkt));
+        ESP_LOGI(
+            TAG,
+            "medium tick: yield=%lupps csi_cb=%lu send_fail=%lu rate_skip=%lu cb_drop=%lu",
+            (unsigned long)(s_send_ok - last_send_ok),
+            (unsigned long)(s_cb_count - last_cb_count),
+            (unsigned long)s_send_fail,
+            (unsigned long)s_rate_skip,
+            (unsigned long)(s_cb_drop + edge_stats.enqueue_drops)
+        );
+        last_send_ok = s_send_ok;
+        last_cb_count = s_cb_count;
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

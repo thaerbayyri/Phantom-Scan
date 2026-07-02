@@ -1,4 +1,5 @@
 import struct
+from pathlib import Path
 
 from phantom.protocol import (
     CSI_HEADER_SIZE,
@@ -10,6 +11,13 @@ from phantom.protocol import (
     InvalidPacket,
     parse_udp_packet,
 )
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def load_fixture(name: str) -> bytes:
+    return bytes.fromhex((FIXTURES / name).read_text(encoding="utf-8").strip())
 
 
 def build_csi_frame(
@@ -76,12 +84,37 @@ def test_parse_valid_csi_frame():
     assert len(parsed.iq_bytes) == 8
 
 
+def test_parse_committed_adr018_fixture_field_parity():
+    parsed = parse_udp_packet(load_fixture("adr018_frame.hex"), ("127.0.0.1", 5005), 999)
+    assert isinstance(parsed, CsiFrameV1)
+    assert parsed.schema_version == 1
+    assert parsed.node_id == 2
+    assert parsed.n_antennas == 1
+    assert parsed.n_subcarriers == 4
+    assert parsed.freq_mhz == 2412
+    assert parsed.seq == 17
+    assert parsed.rssi_dbm == -55
+    assert parsed.noise_dbm == -90
+    assert parsed.channel == 1
+    assert parsed.device_ts_us == 123456789
+    assert parsed.device_ts_ms == 123456
+    assert parsed.iq_bytes == bytes([1, 2, 3, 4, 5, 6, 7, 8])
+
+
 def test_parse_valid_heartbeat():
     parsed = parse_udp_packet(build_heartbeat(), ("127.0.0.1", 5005), 111)
     assert isinstance(parsed, HeartbeatV1)
     assert parsed.node_id == 1
     assert parsed.seq == 11
     assert parsed.callback_drops == 2
+
+
+def test_parse_committed_heartbeat_fixture_is_not_csi():
+    parsed = parse_udp_packet(load_fixture("heartbeat_frame.hex"), ("127.0.0.1", 5005), 111)
+    assert isinstance(parsed, HeartbeatV1)
+    assert not isinstance(parsed, CsiFrameV1)
+    assert parsed.node_id == 2
+    assert parsed.seq == 18
 
 
 def test_reject_bad_magic():
