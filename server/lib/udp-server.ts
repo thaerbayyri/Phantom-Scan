@@ -220,12 +220,22 @@ export function startUDPServer() {
         let bestH1 = { re: 0, im: 0 };
         let bestH2 = { re: 0, im: 0 };
 
+        // Per-subcarrier amplitudes (antenna 0), capped at 64 like RuView's
+        // bridge. The two-node balance fusion needs the full vector: the
+        // best-subcarrier scalar below jumps index frame-to-frame, so its
+        // temporal std is selection noise, not human motion.
+        const ampCount = Math.min(parsed.numSubcarriers, 64);
+        const amplitudes = new Array<number>(ampCount);
+
         for (let i = 0; i < parsed.numSubcarriers; i++) {
             // Antenna 1
             const p1_re = parsed.iqData.readInt8((0 * parsed.numSubcarriers + i) * 2);
             const p1_im = parsed.iqData.readInt8((0 * parsed.numSubcarriers + i) * 2 + 1);
 
             const power1 = p1_re * p1_re + p1_im * p1_im;
+            if (i < ampCount) {
+                amplitudes[i] = Math.sqrt(power1);
+            }
 
             let power2 = 0;
             let p2_re = 0;
@@ -259,7 +269,8 @@ export function startUDPServer() {
             h1: bestH1,
             h2: bestH2,
             rssi: parsed.rssi,
-            nodeId: parsed.nodeId
+            nodeId: parsed.nodeId,
+            amplitudes,
         };
 
         signalServer.ingestSample(sample);

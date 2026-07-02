@@ -77,16 +77,26 @@ function PolarGrid() {
 // Distinct colors per node so N1/N2 are visually separable.
 const NODE_COLORS: Record<number, string> = { 1: "#00ffcc", 2: "#ff7ac6" };
 
+const TREND_STYLE: Record<string, { glyph: string; color: string }> = {
+    approaching: { glyph: "▼", color: "#4ade80" }, // green: target closing in
+    receding: { glyph: "▲", color: "#fbbf24" },    // amber: target moving away
+    stable: { glyph: "•", color: "#64748b" },      // dim: idle / below deadband
+};
+
 function ESPBeacon({
     position = [0, 0.15, 0],
     color = "#00ffcc",
     motion = 0,
     label,
+    distanceM,
+    trend = "stable",
 }: {
     position?: [number, number, number];
     color?: string;
     motion?: number;
     label?: string;
+    distanceM?: number;
+    trend?: "approaching" | "receding" | "stable";
 }) {
     const coreRef = useRef<THREE.Mesh>(null);
 
@@ -116,8 +126,21 @@ function ESPBeacon({
             <SignalRipple color={color} />
             <pointLight color={color} intensity={1.5 + motion * 2} distance={8} decay={2} />
             {label && (
-                <Billboard position={[0, 0.55, 0]} follow={true}>
-                    <Text fontSize={0.32} color={color} anchorX="center" anchorY="middle">{label}</Text>
+                <Billboard position={[0, 0.62, 0]} follow={true}>
+                    <Text fontSize={0.32} color={color} anchorX="center" anchorY="middle">
+                        {distanceM !== undefined ? `${label} · ${distanceM.toFixed(1)} m` : label}
+                    </Text>
+                    {distanceM !== undefined && (
+                        <Text
+                            position={[0, -0.34, 0]}
+                            fontSize={0.22}
+                            color={TREND_STYLE[trend].color}
+                            anchorX="center"
+                            anchorY="middle"
+                        >
+                            {`${TREND_STYLE[trend].glyph} ${trend}`}
+                        </Text>
+                    )}
                 </Billboard>
             )}
         </group>
@@ -148,6 +171,34 @@ function SignalRipple({ color = "#00ffcc" }: { color?: string }) {
             <mesh ref={ring2Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color={color} transparent opacity={0.2} side={THREE.DoubleSide} /></mesh>
             <mesh ref={ring3Ref}><ringGeometry args={[0.9, 1.0, 64]} /><meshBasicMaterial color={color} transparent opacity={0.1} side={THREE.DoubleSide} /></mesh>
         </group>
+    );
+}
+
+// Faint connector lines from the target to each node so the two per-node
+// distances are visually legible as segments.
+function TargetLinks({ target, nodes }: { target: RadialTarget; nodes: SensorNode[] }) {
+    const geometries = useMemo(
+        () =>
+            nodes.map((n) =>
+                new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(target.x, 0.25, target.z),
+                    new THREE.Vector3(n.x, 0.15, n.z),
+                ]),
+            ),
+        [target.x, target.z, nodes],
+    );
+    return (
+        <>
+            {geometries.map((g, i) => (
+                <lineSegments key={nodes[i].node_id} geometry={g}>
+                    <lineBasicMaterial
+                        color={NODE_COLORS[nodes[i].node_id] ?? "#00ffcc"}
+                        transparent
+                        opacity={0.25}
+                    />
+                </lineSegments>
+            ))}
+        </>
     );
 }
 
@@ -278,6 +329,17 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState, node
     );
     const canRenderConfidentHuman = Boolean(canRenderTarget && targetState?.position_confident);
 
+    // Fused mode: point the travel arrow along the axis toward the node the
+    // target is approaching (per-node trend), instead of the single-node angle.
+    const approachedNode =
+        radialTarget?.balance !== undefined
+            ? nodes.find((n) => n.trend === "approaching")
+            : undefined;
+    const fusedArrowTarget =
+        radialTarget && approachedNode
+            ? { ...radialTarget, angle: approachedNode.x >= radialTarget.x ? 0 : Math.PI }
+            : null;
+
     return (
         <>
             <ambientLight intensity={0.3} />
@@ -296,9 +358,14 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState, node
                             color={NODE_COLORS[n.node_id] ?? "#00ffcc"}
                             motion={n.active ? n.motion : 0}
                             label={`N${n.node_id}`}
+                            distanceM={canRenderTarget ? n.distanceM : undefined}
+                            trend={n.trend}
                         />
                     ))}
                     {nodes.length >= 2 && <NodeAxis a={nodes[0]} b={nodes[1]} />}
+                    {canRenderTarget && radialTarget && (
+                        <TargetLinks target={radialTarget} nodes={nodes} />
+                    )}
                 </>
             ) : (
                 <ESPBeacon />
@@ -316,7 +383,7 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState, node
                 ) : label === "human" && canRenderConfidentHuman ? (
                     <HumanMesh target={radialTarget} poseFrame={poseFrame} />
                 ) : (
-                    <DirectionalNode target={radialTarget} />
+                    <DirectionalNode target={fusedArrowTarget ?? radialTarget} />
                 )
             )}
         </>

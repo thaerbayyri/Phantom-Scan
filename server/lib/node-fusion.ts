@@ -40,6 +40,43 @@ export const DEFAULT_MOTION_THRESHOLD = Number.parseFloat(
   process.env.PHANTOM_MOTION_THRESHOLD ?? "0.12",
 );
 
+/**
+ * Deadband for the approach/recede trend, in m/s along the N1–N2 axis.
+ *
+ * PLACEHOLDER (~0.05 m/s) — calibrate against real data, not settled. At the
+ * ~3–7 fps historically measured on this firmware path, balance updates are
+ * ~150–330 ms apart and balance itself is noisy over its 3 s window, so the
+ * instantaneous velocity estimate is jumpy. This deadband is coupled to the
+ * same window/fps assumptions as PHANTOM_MOTION_THRESHOLD — retune together.
+ * Override at runtime via PHANTOM_TREND_DEADBAND_MPS.
+ */
+export const TREND_DEADBAND_MPS = Number.parseFloat(
+  process.env.PHANTOM_TREND_DEADBAND_MPS ?? "0.05",
+);
+
+export type NodeTrend = "approaching" | "receding" | "stable";
+
+/**
+ * Per-node approach/recede trend from the signed axis velocity.
+ *
+ * `axisVelMps` > 0 means balance rising = target moving toward node 2.
+ * Inside the deadband the PREVIOUS trends are kept (hysteresis) so the label
+ * doesn't flicker between frames; pass `{ 1: "stable", 2: "stable" }` when no
+ * live target exists.
+ */
+export function computeNodeTrends(
+  axisVelMps: number,
+  prev: { 1: NodeTrend; 2: NodeTrend },
+  deadbandMps: number = TREND_DEADBAND_MPS,
+): { 1: NodeTrend; 2: NodeTrend } {
+  if (!Number.isFinite(axisVelMps) || Math.abs(axisVelMps) < deadbandMps) {
+    return prev;
+  }
+  return axisVelMps > 0
+    ? { 1: "receding", 2: "approaching" } // balance rising -> toward N2
+    : { 1: "approaching", 2: "receding" };
+}
+
 const EPS = 1e-6;
 
 export interface NodeMotion {
@@ -75,6 +112,57 @@ export function computeNodeMotion(amps: number[]): NodeMotion {
   const base = mean || 1.0;
   const motion = Math.min(1.0, (absStd / base) * MOTION_SATURATION_SCALE);
   return { mean, absStd, motion };
+}
+
+/**
+ * RuView-faithful per-node motion energy from a window of per-subcarrier
+ * amplitude FRAMES (each frame = amplitude vector for one received packet).
+ *
+ * Mirrors `ruview-dashboard-bridge.py` compute_update():
+ *   k         = min frame length (subcarrier count)
+ *   sub_std_j = temporal pstdev of subcarrier j across the window
+ *   absStd    = mean(sub_std)          — raw, unsaturated → balance
+ *   base      = mean frame amplitude   — normalizer
+ *   motion    = min(1, absStd/base·4)  — display/threshold only
+ *
+ * This is what makes balance track a moving person: per-subcarrier temporal
+ * variation is human-induced perturbation, whereas a single "best subcarrier"
+ * scalar changes selection index frame-to-frame and its std is mostly noise.
+ */
+export function computeNodeMotionFromMatrix(frames: number[][]): NodeMotion {
+  const usable = frames.filter((f) => f.length > 0);
+  if (usable.length < 2) {
+    return { mean: 0, absStd: 0, motion: 0 };
+  }
+  const k = Math.min(...usable.map((f) => f.length));
+  if (k === 0) {
+    return { mean: 0, absStd: 0, motion: 0 };
+  }
+
+  let stdSum = 0;
+  for (let j = 0; j < k; j++) {
+    let m = 0;
+    for (const f of usable) m += f[j];
+    m /= usable.length;
+    let acc = 0;
+    for (const f of usable) {
+      const d = f[j] - m;
+      acc += d * d;
+    }
+    stdSum += Math.sqrt(acc / usable.length);
+  }
+  const absStd = stdSum / k;
+
+  let base = 0;
+  for (const f of usable) {
+    let s = 0;
+    for (let j = 0; j < k; j++) s += f[j];
+    base += s / k;
+  }
+  base = base / usable.length || 1.0;
+
+  const motion = Math.min(1.0, (absStd / base) * MOTION_SATURATION_SCALE);
+  return { mean: base, absStd, motion };
 }
 
 export interface FuseInput {

@@ -19,8 +19,10 @@ import type {
 import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
 import {
   fuseTwoNodeTarget,
-  computeNodeMotion,
+  computeNodeMotionFromMatrix,
+  computeNodeTrends,
   type FusedTarget,
+  type NodeTrend,
 } from "./node-fusion";
 import {
   computeMUSICSpectrum,
@@ -110,12 +112,24 @@ export class SignalProcessingServer {
   private hardwareNodeLastSeenMs: Map<number, number> = new Map();
   private nextHardwareQueueIndex = 0;
 
-  // Two-node fusion (RuView balance) state
-  private nodeAmpWindow: Map<number, { t: number; amp: number }[]> = new Map();
+  // Two-node fusion (RuView balance) state. Each window entry is one packet's
+  // per-subcarrier amplitude frame (falls back to a 1-element frame from the
+  // scalar h1 when the packet carried no vector).
+  private nodeAmpWindow: Map<number, { t: number; amps: number[] }[]> = new Map();
   private nodeLastRssi: Map<number, number> = new Map();
   private prevBalance: number | null = null;
   private prevBalanceMs = 0;
   private lastNodeFpsLogMs = 0;
+  // Single per-tick fused snapshot: BOTH the radialTarget broadcast (x) and
+  // buildSensorNodes (distanceM/trend) read this same value so the target dot
+  // and the node distance labels can never disagree within a tick.
+  private fusedSnapshot: {
+    balance: number;
+    x: number;
+    velMps: number; // signed: >0 toward N2
+    trends: { 1: NodeTrend; 2: NodeTrend };
+    atMs: number;
+  } | null = null;
 
   // Recording state
   private isRecording = false;
@@ -809,7 +823,9 @@ export class SignalProcessingServer {
       if (fused) {
         radX = fused.x;
         radZ = fused.z;
-        speed = this.updateBalanceSpeed(fused.balance); // m/s along the axis
+        // Snapshot is the single source both broadcasts read this tick.
+        const velMps = this.updateFusedSnapshot(fused.balance, fused.x);
+        speed = Math.abs(velMps); // m/s along the axis
         fusedBalance = fused.balance;
         fusedDistanceCm = fused.distToNearestNodeM * 100;
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
@@ -854,6 +870,7 @@ export class SignalProcessingServer {
       if (nodeMode === "fused_two_node" && !fused) {
         // Two nodes active but sub-threshold motion → emit NO target (no ghost
         // at the midpoint). This is the empty-room negative-control gate.
+        this.clearFusedSnapshot(); // idle: node labels drop distance/trend too
         if (this.currentTargetState.target_visible) {
           this.clearTargetArtifacts("fused_below_motion_threshold");
         }
@@ -1096,6 +1113,7 @@ export class SignalProcessingServer {
   }
 
   private clearTargetArtifacts(reason: string) {
+    this.clearFusedSnapshot();
     this.pointCloudHistory = [];
     this.currentTrackedTarget = null;
     this.currentRadialTarget = null;
@@ -1154,7 +1172,13 @@ export class SignalProcessingServer {
       win = [];
       this.nodeAmpWindow.set(nodeId, win);
     }
-    win.push({ t, amp: magnitude(sample.h1) });
+    // Prefer the full per-subcarrier vector (RuView method); fall back to a
+    // 1-element frame from the scalar h1 for legacy/synthetic senders.
+    const amps =
+      sample.amplitudes && sample.amplitudes.length > 0
+        ? sample.amplitudes
+        : [magnitude(sample.h1)];
+    win.push({ t, amps });
     const cutoff = t - 3000; // fixed 3 s window by timestamp (yield-independent)
     while (win.length && win[0].t < cutoff) win.shift();
     this.nodeLastRssi.set(nodeId, sample.rssi ?? -100);
@@ -1162,7 +1186,7 @@ export class SignalProcessingServer {
 
   private nodeMotionFor(nodeId: number) {
     const win = this.nodeAmpWindow.get(nodeId) ?? [];
-    return computeNodeMotion(win.map((s) => s.amp));
+    return computeNodeMotionFromMatrix(win.map((s) => s.amps));
   }
 
   private computeFusedTarget(): (FusedTarget & { maxMotion: number }) | null {
@@ -1179,24 +1203,50 @@ export class SignalProcessingServer {
     return { ...fused, maxMotion: Math.max(m1.motion, m2.motion) };
   }
 
-  private updateBalanceSpeed(balance: number): number {
+  /**
+   * Update the per-tick fused snapshot from a fresh balance sample.
+   * Returns the signed axis velocity (m/s, >0 toward N2). Both broadcasts
+   * (radialTarget and nodes) must read `this.fusedSnapshot`, never recompute.
+   */
+  private updateFusedSnapshot(balance: number, x: number): number {
     const now = Date.now();
-    let speed = 0;
+    let velMps = 0;
     if (this.prevBalance !== null && this.prevBalanceMs > 0) {
       const dt = (now - this.prevBalanceMs) / 1000;
       if (dt > 0) {
-        // m/s along the N1–N2 axis (balance ∈ [0,1] × separation in meters).
-        speed = Math.abs((balance - this.prevBalance) * NODE_SEPARATION_M) / dt;
+        // Signed m/s along the N1–N2 axis (balance ∈ [0,1] × separation).
+        velMps = ((balance - this.prevBalance) * NODE_SEPARATION_M) / dt;
       }
     }
     this.prevBalance = balance;
     this.prevBalanceMs = now;
-    return speed;
+
+    const prevTrends = this.fusedSnapshot?.trends ?? { 1: "stable" as NodeTrend, 2: "stable" as NodeTrend };
+    this.fusedSnapshot = {
+      balance,
+      x,
+      velMps,
+      trends: computeNodeTrends(velMps, prevTrends),
+      atMs: now,
+    };
+    return velMps;
+  }
+
+  private clearFusedSnapshot(): void {
+    this.fusedSnapshot = null;
+    this.prevBalance = null;
+    this.prevBalanceMs = 0;
   }
 
   private buildSensorNodes(): SensorNode[] {
     const synthetic = this.status.synthetic_enabled;
     const active = new Set(this.activeHardwareNodeIds());
+    // Read the SAME per-tick snapshot the radialTarget broadcast used; a stale
+    // snapshot (no fused update within the live window) drops the readout.
+    const snap =
+      this.fusedSnapshot && Date.now() - this.fusedSnapshot.atMs <= 1500
+        ? this.fusedSnapshot
+        : null;
     const nodes: SensorNode[] = [];
     for (const key of [1, 2] as const) {
       const anchor = NODE_ANCHORS[key];
@@ -1211,6 +1261,9 @@ export class SignalProcessingServer {
         active: synthetic ? true : active.has(key),
         rssi: this.nodeLastRssi.get(key) ?? -100,
         source: synthetic ? "synthetic" : "live",
+        // Along-axis distance from the fused target to THIS node.
+        distanceM: snap ? Math.abs(snap.x - anchor.x) : undefined,
+        trend: snap ? snap.trends[key] : "stable",
       });
     }
     return nodes;

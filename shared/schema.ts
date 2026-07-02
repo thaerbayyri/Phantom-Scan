@@ -15,6 +15,11 @@ export const csiSampleSchema = z.object({
   rssi: z.number().optional(),
   subcarrierIndex: z.number().optional(),
   nodeId: z.number().optional(),
+  // Per-subcarrier amplitudes (antenna 0) for this frame. Feeds the RuView-style
+  // per-subcarrier temporal-std motion energy that drives two-node balance —
+  // the scalar h1 alone (max-power subcarrier, index jumps per frame) is too
+  // noisy to localize with.
+  amplitudes: z.array(z.number()).optional(),
 });
 export type CSISample = z.infer<typeof csiSampleSchema>;
 
@@ -237,6 +242,13 @@ export const sensorNodeSchema = z.object({
   active: z.boolean(),           // seen within the live freshness window
   rssi: z.number(),              // last RSSI seen for this node (dBm)
   source: z.enum(["live", "synthetic"]),
+  // Along-axis distance from the fused target to THIS node (meters). Only set
+  // while a live fused target exists. Honest limit: assumes the person is on
+  // the N1–N2 line; an off-axis person reads a wrong on-line distance.
+  distanceM: z.number().optional(),
+  // Is the fused target moving toward or away from THIS node (sign of
+  // d(balance)/dt with a deadband)? "stable" when idle or below deadband.
+  trend: z.enum(["approaching", "receding", "stable"]).default("stable"),
 });
 export type SensorNode = z.infer<typeof sensorNodeSchema>;
 

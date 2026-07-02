@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   fuseTwoNodeTarget,
   computeNodeMotion,
+  computeNodeMotionFromMatrix,
+  computeNodeTrends,
   MOTION_SATURATION_SCALE,
+  type NodeTrend,
 } from "./node-fusion";
 
 const ANCHORS = { 1: { x: -1.5, z: 0 }, 2: { x: 1.5, z: 0 } } as const;
@@ -63,10 +66,94 @@ test("distToNearestNodeM is ~half the separation at the midpoint", () => {
   assert.ok(Math.abs(t!.distToNearestNodeM - 1.5) < 1e-9);
 });
 
+test("matrix motion: identical frames => zero motion (static room)", () => {
+  const m = computeNodeMotionFromMatrix([
+    [10, 20, 15],
+    [10, 20, 15],
+    [10, 20, 15],
+  ]);
+  assert.equal(m.absStd, 0);
+  assert.equal(m.motion, 0);
+});
+
+test("matrix motion detects per-subcarrier oscillation the best-subcarrier scalar misses", () => {
+  // Alternating [10,20] / [20,10]: the max-power scalar is 20 in EVERY frame
+  // (std 0 — sees nothing), but each subcarrier oscillates strongly.
+  const frames = [
+    [10, 20],
+    [20, 10],
+    [10, 20],
+    [20, 10],
+  ];
+  const matrix = computeNodeMotionFromMatrix(frames);
+  const scalar = computeNodeMotion(frames.map((f) => Math.max(...f)));
+  assert.equal(scalar.motion, 0, "scalar path blind to this motion");
+  assert.ok(matrix.absStd > 4, `matrix absStd ${matrix.absStd}`);
+  assert.ok(matrix.motion > 0.5, `matrix motion ${matrix.motion}`);
+});
+
+test("balance tracks the node with stronger per-subcarrier perturbation", () => {
+  // Node 1: strongly oscillating subcarriers; node 2: nearly static.
+  const perturbed = computeNodeMotionFromMatrix([
+    [10, 30, 20],
+    [30, 10, 25],
+    [12, 28, 18],
+    [28, 12, 26],
+  ]);
+  const still = computeNodeMotionFromMatrix([
+    [15, 15, 15],
+    [15.2, 14.9, 15.1],
+    [14.9, 15.1, 15],
+    [15.1, 15, 14.9],
+  ]);
+  const t = fuseTwoNodeTarget({
+    r1: perturbed.absStd,
+    r2: still.absStd,
+    motion1: perturbed.motion,
+    motion2: still.motion,
+    anchors: ANCHORS,
+    motionThreshold: 0.12,
+  });
+  assert.ok(t, "target must exist");
+  assert.ok(t!.balance < 0.1, `balance ${t!.balance} should sit near node 1`);
+  assert.ok(t!.x < -1.2, `x ${t!.x} should be near N1 (-1.5)`);
+});
+
 test("computeNodeMotion: constant amplitude => zero motion", () => {
   const m = computeNodeMotion([10, 10, 10, 10]);
   assert.equal(m.absStd, 0);
   assert.equal(m.motion, 0);
+});
+
+test("rising balance (positive axis velocity) => N2 approaching, N1 receding", () => {
+  const prev = { 1: "stable", 2: "stable" } as { 1: NodeTrend; 2: NodeTrend };
+  const t = computeNodeTrends(0.4, prev, 0.05);
+  assert.equal(t[1], "receding");
+  assert.equal(t[2], "approaching");
+});
+
+test("falling balance (negative axis velocity) => N1 approaching, N2 receding", () => {
+  const prev = { 1: "stable", 2: "stable" } as { 1: NodeTrend; 2: NodeTrend };
+  const t = computeNodeTrends(-0.4, prev, 0.05);
+  assert.equal(t[1], "approaching");
+  assert.equal(t[2], "receding");
+});
+
+test("velocity inside the deadband keeps the previous trends (hysteresis)", () => {
+  const prev = { 1: "approaching", 2: "receding" } as { 1: NodeTrend; 2: NodeTrend };
+  const t = computeNodeTrends(0.01, prev, 0.05);
+  assert.deepEqual(t, prev);
+});
+
+test("distanceM bookkeeping: balance splits the separation between the nodes", () => {
+  // balance 0.25 on a 3 m axis => 0.75 m from N1, 2.25 m from N2.
+  const t = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING });
+  assert.ok(t);
+  assert.ok(Math.abs(t!.balance - 0.25) < 1e-9);
+  const dN1 = Math.abs(t!.x - ANCHORS[1].x);
+  const dN2 = Math.abs(t!.x - ANCHORS[2].x);
+  assert.ok(Math.abs(dN1 - 0.75) < 1e-9, `dN1 ${dN1}`);
+  assert.ok(Math.abs(dN2 - 2.25) < 1e-9, `dN2 ${dN2}`);
 });
 
 test("computeNodeMotion: saturates at 1.0 and uses the documented scale", () => {

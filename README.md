@@ -38,31 +38,24 @@ This repo is being stabilized for a **realistic two-node ESP32-S3 deployment**. 
 
 ## Current Runtime State
 
-There are two important runtime tracks in this repository.
+There are two runtime tracks in this repository.
 
-### 1. Current live dashboard path
+### 1. Live dashboard path (authoritative for live mode)
 
-The active live dashboard path today is:
+The active live path is the Node/TS host, and it is the **sole owner of UDP :5005**:
 
-- Express for auth and audit
-- UDP ingest in the Node host path
-- WebSocket publishing to the dashboard
-- React rendering for the operator UI
+- `server/lib/udp-server.ts` binds UDP :5005, parses ADR-018 CSI + heartbeat frames, and source-pins each node
+- `server/lib/websocket.ts` runs the processing pipeline, **two-node balance fusion**, and WebSocket publishing
+- Express handles auth and audit; React renders the operator UI
+- accepted raw frames are forwarded to the optional AI sidecar on :5006
 
-This path is still the **temporary truth source for live dashboard behavior** while the Python milestone runtime continues to take over authority.
+`server/lib/authority-follower.ts` is intentionally **inert** (compatibility stub); nothing reads the old Python authority API.
 
-### 2. Milestone 1 Python authority path
+### 2. Python runtime path (replay/tooling; gated in dev)
 
-The target authoritative runtime shape for Milestone 1 is the Python package in:
+The Python package (`phantom.protocol`, `phantom.ingest`, `phantom.recording`, `phantom.dsp`, `phantom.runtime`, `phantom.api`) remains the replay/recording/DSP toolkit and test target.
 
-- `phantom.protocol`
-- `phantom.ingest`
-- `phantom.recording`
-- `phantom.dsp`
-- `phantom.runtime`
-- `phantom.api`
-
-That path is intended to become the canonical runtime for ingest, replay, DSP, recording, and runtime API.
+Its live mode also binds :5005, so `npm run dev` (`script/dev-full.cjs`) **does not start it by default** — set `PHANTOM_USE_AUTHORITY=1` only if you intentionally want the Python authority to own :5005 instead of the dashboard (never run both; the port clash silently starves the dashboard).
 
 ---
 
@@ -84,6 +77,10 @@ Responsibilities:
 - stamp CSI with device timestamps
 - emit node ID, sequence number, heartbeat/status packets
 - send UDP frames to the host
+- **self-ping the gateway (ICMP @ ~50 Hz)** so the router's echo replies keep the
+  CSI callback fed on quiet networks — without this the CSI engine starves
+  (`yield=0pps`) and every downstream layer reads zero (`csi_collector.c`,
+  `csi_start_self_ping`)
 
 Important files:
 
@@ -145,6 +142,9 @@ Rules:
 - optional only
 - disabled/isolated by default in the milestone path
 - system must continue in DSP-only mode when models are missing or incompatible
+- model weights are **not committed**: `ai model and densepose/model` is a git
+  submodule pointer plus a small stub; large weights belong in Git LFS or a
+  release asset, never a normal commit
 
 ### Layer E: API / UI / monitoring
 
@@ -292,7 +292,11 @@ Important tests include:
 - `tests/test_esp_capture_e2e.py`
 - `server/lib/udp-server.test.ts`
 - `server/lib/target-state.test.ts`
+- `server/lib/node-fusion.test.ts` (balance localization, empty-room gate, trends)
 - `server/auth/service.test.ts`
+
+Run the server suite with `npx tsx --test server/**/*.test.ts` (31 tests passing at
+the time of writing).
 
 ---
 
@@ -312,6 +316,61 @@ Required behavior:
 - per-node buffers
 - degraded mode with one node
 - fused outputs only when both nodes are valid and aligned
+
+---
+
+## Two-Node Live Localization (RuView balance method)
+
+When both nodes are live (`fused_two_node`), the dashboard places the target on the
+line between the two boards using the cross-node motion ratio.
+
+### Geometry
+
+Node anchor positions are a single constant shared by server and client
+(`NODE_ANCHORS` in `shared/schema.ts`):
+
+```text
+N1 = (-1.5, 0)      N2 = (+1.5, 0)      separation = 3 m, origin at the midpoint
+```
+
+### Fusion (server/lib/node-fusion.ts)
+
+- per node: a 3-second **time-based** window of **per-subcarrier amplitude frames**
+  (≤64 subcarriers per packet, as in RuView's bridge). Motion energy is the temporal
+  std of **each subcarrier** averaged across subcarriers → raw `absStd`, plus a
+  saturated display `motion = min(1, absStd/mean·4)`. A best-subcarrier scalar
+  fallback exists only for legacy senders — its subcarrier index jumps per frame,
+  so its std is selection noise and cannot localize
+- `balance = r2 / (r1 + r2)` using the **raw, unsaturated** `absStd` values
+  (0 → at node 1, 0.5 → midpoint, 1 → at node 2)
+- target position: `x = N1.x + (N2.x − N1.x)·balance` — it slides along the N1–N2 axis
+- **empty-room gate**: no target is emitted (not a centered ghost) unless
+  `max(motion1, motion2)` clears `PHANTOM_MOTION_THRESHOLD` (default 0.12 — a
+  placeholder that must be calibrated from an empty-room baseline and validated
+  against a fan/curtain negative control)
+
+### Per-node distance and direction
+
+Each broadcast `SensorNode` carries, while a live fused target exists:
+
+- `distanceM` — along-axis distance from the target to that node
+  (`sep·balance` for N1, `sep·(1−balance)` for N2)
+- `trend` — `approaching` / `receding` / `stable`, from the sign of `d(balance)/dt`
+  with a deadband (`PHANTOM_TREND_DEADBAND_MPS`, default 0.05 m/s, also a
+  calibration placeholder)
+
+The radar renders two labeled beacons (N1 cyan, N2 pink) with live
+`N1 · 1.2 m ▼ approaching`-style labels, the N1–N2 axis line, connector lines from
+the target to each node, and a travel arrow pointing toward the node being approached.
+
+### Honest limits (by design)
+
+- **1-D only:** two nodes cannot resolve a true (x, z). The position is along the
+  N1–N2 line; a person standing off-axis reads as a wrong on-line distance.
+- "Moving away from *both* nodes" (perpendicular escape) is not representable
+  without per-node ranging (future work: preserve per-node subcarriers and use
+  two-circle intersection, which adds a front/back mirror ambiguity).
+- `trend` reflects smoothed balance movement; a still person may read `stable`.
 
 ---
 
@@ -351,6 +410,13 @@ Important target-state rules:
 - if `target_visible` is false, no target mesh renders
 - if `position_confident` is false, no confidently placed human target renders
 - degraded visible targets may still render as abstract markers
+
+Radar scene (`client/src/components/dashboard/RadialScene.tsx`):
+
+- renders **both** node beacons at their `NODE_ANCHORS` positions (N1 cyan, N2 pink)
+  with live distance + approaching/receding labels, plus the N1–N2 axis line
+- in fused mode the target slides along the axis and shows connector lines to each node
+- falls back to a single origin beacon when no node data has arrived yet
 
 ---
 
@@ -511,8 +577,9 @@ Firmware commands are documented here, but actual verification depends on ESP-ID
 - `dist/` and `node_modules/` are generated artifacts, not authoritative source/config
 - the old dashboard diagnostic virtual terminal path has been removed
 - report download is no longer automatically triggered on scan stop
-- the Node live path is still the temporary truth source for current dashboard debugging
-- the Python package remains the Milestone 1 authority target
+- the Node/TS host is the authoritative live path and sole owner of UDP :5005
+- the Python package is the replay/recording/DSP toolkit; its live authority mode is
+  gated behind `PHANTOM_USE_AUTHORITY=1` and must not run alongside the dashboard
 
 ---
 

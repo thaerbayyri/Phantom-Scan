@@ -34,6 +34,12 @@ node 1 at `[-1.5, 0]`, node 2 at `[+1.5, 0]` — 3 m separation, origin at the c
    ~1.5 m from each node); live hardware tolerance is `[TO BE MEASURED]`.
    Negative control: an empty room / on-axis fan must yield **no target** (motion below the
    calibrated `PHANTOM_MOTION_THRESHOLD`), not a centered ghost.
+6. Distance-readout accuracy (per trial): at 3+ tape-marked points on the axis, record
+   **displayed per-node `distanceM` vs actual tape-measured distance** to each node, so the
+   readout has an error figure instead of "looks right". Same trial logs whether the per-node
+   `trend` (approaching/receding) flips correctly at the walk turnaround. Note: displayed
+   distances are along-axis; log the walker's off-axis offset too, since off-axis standing
+   reads as a wrong on-line distance (2-node limit).
 
 Result: `[TO BE MEASURED]`
 
