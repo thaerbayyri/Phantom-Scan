@@ -10,7 +10,6 @@ import type {
   MotionStatus,
   DopplerFrame,
   RecordingStatus,
-  TrackedTarget,
   RadialTarget,
   TargetIdentity,
   TargetDebug,
@@ -32,7 +31,6 @@ interface WSState {
   motionStatus: MotionStatus;
   dopplerFrame: DopplerFrame | null;
   recordingStatus: RecordingStatus;
-  trackedTarget: TrackedTarget | null;
   radialTarget: RadialTarget | null;
   targetIdentity: TargetIdentity | null;
   targetDebug: TargetDebug | null;
@@ -118,7 +116,6 @@ function buildClearedSceneState(
 ) {
   return {
     pointCloud: [] as PointCloudPoint[],
-    trackedTarget: null as TrackedTarget | null,
     radialTarget: null as RadialTarget | null,
     targetIdentity: null as TargetIdentity | null,
     targetDebug: null as TargetDebug | null,
@@ -144,7 +141,6 @@ export function useWebSocket() {
     motionStatus: defaultMotionStatus,
     dopplerFrame: null,
     recordingStatus: defaultRecordingStatus,
-    trackedTarget: null,
     radialTarget: null,
     targetIdentity: null,
     targetDebug: null,
@@ -334,12 +330,8 @@ export function useWebSocket() {
         }));
         break;
 
-      case "trackedTarget":
-        setState((prev) => ({
-          ...prev,
-          trackedTarget: message.data as TrackedTarget | null,
-        }));
-        break;
+      // "trackedTarget" messages are intentionally ignored: no client consumer
+      // (fused/radial target is the rendered position source).
 
       case "radialTarget":
         lastTargetMsgRef.current = Date.now();

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   fuseTwoNodeTarget,
-  computeNodeMotion,
+  biasBalanceTowardNearestNode,
   computeNodeMotionFromMatrix,
   computeNodeTrends,
   MOTION_SATURATION_SCALE,
@@ -33,6 +33,30 @@ test("r2 >> r1 places the target at node 2 (x ≈ +1.5)", () => {
   assert.ok(t);
   assert.ok(t!.balance > 0.95, `balance ${t!.balance}`);
   assert.ok(Math.abs(t!.x - 1.5) < 0.1, `x ${t!.x}`);
+});
+
+test("display bias preserves the midpoint exactly", () => {
+  assert.equal(biasBalanceTowardNearestNode(0.5), 0.5);
+});
+
+test("display bias pulls the target closer to node 1 when balance is low", () => {
+  const linearX = ANCHORS[1].x + (ANCHORS[2].x - ANCHORS[1].x) * 0.25;
+  const t = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING });
+  assert.ok(t);
+  // Contrast p=2: 10² / (30² + 10²) = 100/1000 = 0.1.
+  assert.ok(Math.abs(t!.balance - 0.1) < 1e-9, `balance ${t!.balance}`);
+  assert.ok(t!.x < linearX, `biased x ${t!.x} should be closer to N1 than linear ${linearX}`);
+  assert.ok(t!.x < -0.9, `x ${t!.x} should land aggressively near N1`);
+});
+
+test("display bias pulls the target closer to node 2 when balance is high", () => {
+  const linearX = ANCHORS[1].x + (ANCHORS[2].x - ANCHORS[1].x) * 0.75;
+  const t = fuseTwoNodeTarget({ r1: 10, r2: 30, anchors: ANCHORS, ...MOVING });
+  assert.ok(t);
+  // Contrast p=2: 30² / (10² + 30²) = 900/1000 = 0.9.
+  assert.ok(Math.abs(t!.balance - 0.9) < 1e-9, `balance ${t!.balance}`);
+  assert.ok(t!.x > linearX, `biased x ${t!.x} should be closer to N2 than linear ${linearX}`);
+  assert.ok(t!.x > 0.9, `x ${t!.x} should land aggressively near N2`);
 });
 
 test("empty room (motion below threshold) returns NO target — not a centered ghost", () => {
@@ -108,7 +132,8 @@ test("matrix motion detects per-subcarrier oscillation the best-subcarrier scala
     [20, 10],
   ];
   const matrix = computeNodeMotionFromMatrix(frames);
-  const scalar = computeNodeMotion(frames.map((f) => Math.max(...f)));
+  // The max-power scalar per frame is constant 20 → 1-element frames, std 0.
+  const scalar = computeNodeMotionFromMatrix(frames.map((f) => [Math.max(...f)]));
   assert.equal(scalar.motion, 0, "scalar path blind to this motion");
   assert.ok(matrix.absStd > 4, `matrix absStd ${matrix.absStd}`);
   assert.ok(matrix.motion > 0.5, `matrix motion ${matrix.motion}`);
@@ -141,8 +166,12 @@ test("balance tracks the node with stronger per-subcarrier perturbation", () => 
   assert.ok(t!.x < -1.2, `x ${t!.x} should be near N1 (-1.5)`);
 });
 
-test("computeNodeMotion: constant amplitude => zero motion", () => {
-  const m = computeNodeMotion([10, 10, 10, 10]);
+test("computeNodeMotionFromMatrix: constant amplitude => zero motion", () => {
+  const m = computeNodeMotionFromMatrix([
+    [10, 10],
+    [10, 10],
+    [10, 10],
+  ]);
   assert.equal(m.absStd, 0);
   assert.equal(m.motion, 0);
 });
@@ -168,19 +197,37 @@ test("velocity inside the deadband keeps the previous trends (hysteresis)", () =
 });
 
 test("distanceM bookkeeping: balance splits the separation between the nodes", () => {
-  // balance 0.25 on a 3 m axis => 0.75 m from N1, 2.25 m from N2.
+  // Raw balance still reflects the motion ratio even though display x is biased.
   const t = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING });
   assert.ok(t);
-  assert.ok(Math.abs(t!.balance - 0.25) < 1e-9);
-  const dN1 = Math.abs(t!.x - ANCHORS[1].x);
-  const dN2 = Math.abs(t!.x - ANCHORS[2].x);
-  assert.ok(Math.abs(dN1 - 0.75) < 1e-9, `dN1 ${dN1}`);
-  assert.ok(Math.abs(dN2 - 2.25) < 1e-9, `dN2 ${dN2}`);
+  // Contrast p=2 sharpens the raw ratio: 0.25 linear → 0.1.
+  assert.ok(Math.abs(t!.balance - 0.1) < 1e-9);
+  assert.ok(t!.distToNearestNodeM < 0.75, `nearest distance ${t!.distToNearestNodeM} should be closer than linear`);
 });
 
-test("computeNodeMotion: saturates at 1.0 and uses the documented scale", () => {
-  // absStd/mean * SCALE >= 1 must clamp to 1.
-  const m = computeNodeMotion([0, 20]); // mean 10, absStd 10 => 10/10*4 = 4 -> clamp 1
+test("contrast exponent widens balance vs the linear ratio; p=1 restores linear", () => {
+  const sharp = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING });
+  const linear = fuseTwoNodeTarget({
+    r1: 30,
+    r2: 10,
+    anchors: ANCHORS,
+    ...MOVING,
+    contrastExponent: 1,
+  });
+  assert.ok(sharp && linear);
+  assert.ok(Math.abs(linear!.balance - 0.25) < 1e-9, `linear balance ${linear!.balance}`);
+  assert.ok(sharp!.balance < linear!.balance, "p=2 must pull balance further toward N1");
+  // Midpoint is invariant under any exponent.
+  const mid = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, contrastExponent: 3 });
+  assert.ok(Math.abs(mid!.balance - 0.5) < 1e-9);
+});
+
+test("computeNodeMotionFromMatrix: saturates at 1.0 and uses the documented scale", () => {
+  // Temporal std per subcarrier: [0,20] -> std 10, mean 10 => 10/10*4 = 4 -> clamp 1.
+  const m = computeNodeMotionFromMatrix([
+    [0, 0],
+    [20, 20],
+  ]);
   assert.equal(m.motion, 1);
   assert.ok(m.absStd > 0);
   assert.equal(MOTION_SATURATION_SCALE, 4);

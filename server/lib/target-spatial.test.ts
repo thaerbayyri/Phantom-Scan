@@ -49,13 +49,13 @@ test("fused targets summarize the between-node position and destination node", (
 
   const summary = summarizeTargetSpatial(target, fusedNodes, buildTargetState());
   assert(summary);
-  assert.equal(summary.zoneLabel, "Projected Near N1");
-  assert.equal(summary.motionLabel, "Projected motion toward N2");
+  assert.equal(summary.zoneLabel, "Near N1");
+  assert.equal(summary.motionLabel, "Toward N2");
   assert.equal(summary.presentationMode, "fused_axis");
   assert.equal(summary.balanceZone, "near_n1");
-  assert.equal(summary.projectionLabel, "front / behind / beside collapses to this axis projection");
-  assert.match(summary.detailLabel, /to N1/);
-  assert.match(summary.detailLabel, /to N2/);
+  assert.equal(summary.projectionLabel, "axis-only estimate");
+  assert.match(summary.detailLabel, /N1/);
+  assert.match(summary.detailLabel, /N2/);
 });
 
 test("fused midpoint targets call out midpoint hold on the node axis", () => {
@@ -83,8 +83,8 @@ test("fused midpoint targets call out midpoint hold on the node axis", () => {
     target_visible: false,
   }));
   assert(summary);
-  assert.equal(summary.zoneLabel, "Projected Between N1 and N2");
-  assert.equal(summary.motionLabel, "Projected hold at the midpoint");
+  assert.equal(summary.zoneLabel, "Between N1 and N2");
+  assert.equal(summary.motionLabel, "Holding at midpoint");
   assert.equal(summary.presentationMode, "fused_axis");
   assert.equal(summary.balanceZone, "midpoint");
 });
@@ -117,8 +117,8 @@ test("fused targets near the second node identify the far-side destination", () 
     buildTargetState(),
   );
   assert(summary);
-  assert.equal(summary.zoneLabel, "Projected Near N2");
-  assert.equal(summary.motionLabel, "Projected motion toward N1");
+  assert.equal(summary.zoneLabel, "Near N2");
+  assert.equal(summary.motionLabel, "Toward N1");
   assert.equal(summary.presentationMode, "fused_axis");
   assert.equal(summary.balanceZone, "near_n2");
 });

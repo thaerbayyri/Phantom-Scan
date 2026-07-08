@@ -54,6 +54,32 @@ export const TREND_DEADBAND_MPS = Number.parseFloat(
   process.env.PHANTOM_TREND_DEADBAND_MPS ?? "0.05",
 );
 
+/**
+ * Endpoint bias for the display projection.
+ *
+ * 1.0 = linear balance; values below 1 pull the projected x harder toward the
+ * nearest node while keeping 0, 0.5, and 1 fixed. This affects only the
+ * on-axis displayed position, not the underlying balance ratio.
+ */
+export const BALANCE_BIAS_EXPONENT = Number.parseFloat(
+  process.env.PHANTOM_BALANCE_BIAS_EXPONENT ?? "0.72",
+);
+
+/**
+ * Contrast exponent applied to the raw per-node perturbations BEFORE the
+ * balance ratio: balance = r2^p / (r1^p + r2^p).
+ *
+ * Both nodes see the same walking person, so r1 and r2 are correlated and the
+ * linear ratio compresses toward 0.5 (the dot hugs the midpoint). p > 1 widens
+ * balance toward 0/1 when one node clearly sees more perturbation, letting the
+ * target reach the node it is actually near. p = 1 restores the linear ratio.
+ * Unlike BALANCE_BIAS_EXPONENT (display-only), this shapes the balance VALUE
+ * and therefore also the trend velocity. Override via PHANTOM_BALANCE_CONTRAST.
+ */
+export const BALANCE_CONTRAST_EXPONENT = Number.parseFloat(
+  process.env.PHANTOM_BALANCE_CONTRAST ?? "2.0",
+);
+
 export type NodeTrend = "approaching" | "receding" | "stable";
 
 /**
@@ -86,32 +112,6 @@ export interface NodeMotion {
   absStd: number;
   /** Saturated 0..1 motion for display/thresholding only. */
   motion: number;
-}
-
-/** Population std (matches RuView `_pvar` = sum((x-mean)^2)/n). */
-function pstdev(xs: number[], mean: number): number {
-  if (xs.length === 0) return 0;
-  let acc = 0;
-  for (const x of xs) {
-    const d = x - mean;
-    acc += d * d;
-  }
-  return Math.sqrt(acc / xs.length);
-}
-
-/**
- * Per-node motion energy from a window of amplitude samples.
- * `absStd` (raw) feeds localization; `motion` (saturated) feeds display + gating.
- */
-export function computeNodeMotion(amps: number[]): NodeMotion {
-  if (amps.length === 0) {
-    return { mean: 0, absStd: 0, motion: 0 };
-  }
-  const mean = amps.reduce((s, v) => s + v, 0) / amps.length;
-  const absStd = pstdev(amps, mean);
-  const base = mean || 1.0;
-  const motion = Math.min(1.0, (absStd / base) * MOTION_SATURATION_SCALE);
-  return { mean, absStd, motion };
 }
 
 /**
@@ -174,6 +174,8 @@ export interface FuseInput {
   motion2: number;
   anchors: { 1: NodeAnchor; 2: NodeAnchor };
   motionThreshold?: number;
+  /** Balance contrast exponent p (default BALANCE_CONTRAST_EXPONENT). */
+  contrastExponent?: number;
 }
 
 export interface FusedTarget {
@@ -183,6 +185,28 @@ export interface FusedTarget {
   balance: number;
   /** Range to the NEAREST node anchor in meters (physically meaningful). */
   distToNearestNodeM: number;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Bias the projected display position toward the nearest node while preserving
+ * 0, 0.5, and 1 exactly. Used only for the displayed on-axis estimate.
+ */
+export function biasBalanceTowardNearestNode(
+  balance: number,
+  exponent: number = BALANCE_BIAS_EXPONENT,
+): number {
+  const clamped = clamp01(balance);
+  const signed = clamped * 2 - 1;
+  const magnitude = Math.abs(signed);
+  if (magnitude <= EPS) {
+    return 0.5;
+  }
+  const biasedMagnitude = Math.pow(magnitude, exponent);
+  return clamp01(0.5 + Math.sign(signed) * biasedMagnitude * 0.5);
 }
 
 /**
@@ -202,11 +226,17 @@ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
     return null;
   }
 
-  const balance = r2 / (r1 + r2);
+  // Contrast-sharpened ratio (see BALANCE_CONTRAST_EXPONENT): widens balance
+  // toward the node that clearly sees more perturbation.
+  const p = input.contrastExponent ?? BALANCE_CONTRAST_EXPONENT;
+  const r1p = Math.pow(r1, p);
+  const r2p = Math.pow(r2, p);
+  const balance = r1p + r2p > EPS ? r2p / (r1p + r2p) : 0.5;
+  const biasedBalance = biasBalanceTowardNearestNode(balance);
   const n1 = input.anchors[1];
   const n2 = input.anchors[2];
-  const x = n1.x + (n2.x - n1.x) * balance;
-  const z = n1.z + (n2.z - n1.z) * balance;
+  const x = n1.x + (n2.x - n1.x) * biasedBalance;
+  const z = n1.z + (n2.z - n1.z) * biasedBalance;
 
   const d1 = Math.hypot(x - n1.x, z - n1.z);
   const d2 = Math.hypot(x - n2.x, z - n2.z);

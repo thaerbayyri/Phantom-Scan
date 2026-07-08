@@ -1,5 +1,57 @@
 [
   {
+    "id": "000000070 - 2026-07-08",
+    "name": "scan 01 test",
+    "startTime": 1783512026632,
+    "endTime": 1783512924128,
+    "durationS": 897.5,
+    "totalFrames": 32893,
+    "targetClassification": "human",
+    "classificationConfidence": 0.886,
+    "avgDistanceCm": 269.1,
+    "avgSpeedMs": 0.715,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000069 - 2026-07-08",
+    "name": "scan 01 test",
+    "startTime": 1783509941909,
+    "endTime": 1783511414707,
+    "durationS": 1472.8,
+    "totalFrames": 53663,
+    "targetClassification": "human",
+    "classificationConfidence": 0.898,
+    "avgDistanceCm": 173.8,
+    "avgSpeedMs": 0.685,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000068 - 2026-07-08",
+    "name": "scan 01 test",
+    "startTime": 1783508797163,
+    "endTime": 1783509183966,
+    "durationS": 386.8,
+    "totalFrames": 14183,
+    "targetClassification": "human",
+    "classificationConfidence": 0.846,
+    "avgDistanceCm": 221.9,
+    "avgSpeedMs": 0.078,
+    "dataSource": "esp32"
+  },
+  {
+    "id": "000000067 - 2026-07-08",
+    "name": "test scan csi data from esp",
+    "startTime": 1783469911006,
+    "endTime": 1783471047151,
+    "durationS": 1136.1,
+    "totalFrames": 41099,
+    "targetClassification": "human",
+    "classificationConfidence": 0.883,
+    "avgDistanceCm": 237.6,
+    "avgSpeedMs": 0.098,
+    "dataSource": "esp32"
+  },
+  {
     "id": "000000066 - 2026-07-08",
     "name": "codex-two-node-live-test",
     "startTime": 1783469013157,

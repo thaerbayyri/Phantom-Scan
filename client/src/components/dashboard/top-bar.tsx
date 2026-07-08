@@ -1,7 +1,8 @@
 import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, LogOut, Shield, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { SystemStatus, MotionStatus, RecordingStatus, TargetState } from "@shared/schema";
+import type { SystemStatus, MotionStatus, RecordingStatus, TargetState, RadialTarget, SensorNode } from "@shared/schema";
+import { summarizeTargetSpatial } from "@shared/target-spatial";
 import { ScanController } from "./scan-controller";
 
 interface TopBarProps {
@@ -11,6 +12,8 @@ interface TopBarProps {
   motionStatus: MotionStatus;
   recordingStatus: RecordingStatus;
   targetState?: TargetState | null;
+  radialTarget?: RadialTarget | null;
+  nodes?: SensorNode[];
   onStart: (name?: string) => void;
   onStop: () => void;
   onStartRecording: () => void;
@@ -27,6 +30,8 @@ export function TopBar({
   motionStatus,
   recordingStatus,
   targetState,
+  radialTarget,
+  nodes = [],
   onStart,
   onStop,
   onStartRecording,
@@ -35,6 +40,7 @@ export function TopBar({
   onOpenSettings,
   onLogout,
 }: TopBarProps) {
+  const spatialSummary = summarizeTargetSpatial(radialTarget, nodes, targetState);
   const liveModeBadge = status.isProcessing ? (
     <Badge variant="default" className="gap-1 bg-green-600 animate-pulse">
       <Wifi className="h-3 w-3" />
@@ -69,14 +75,17 @@ export function TopBar({
           {liveModeBadge}
         </div>
 
-        <div className="order-3 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground xl:order-none xl:w-auto xl:flex-1 xl:justify-center">
-          <span>Samples:</span>
-          <span className="font-mono" data-testid="text-samples-count">
+        {/* Inline stats: no order-3/w-full so the bar stays a single row and
+            only wraps when it truly runs out of space. Sample/frame counters
+            are debug-grade — hidden below lg. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground xl:flex-1 xl:justify-center">
+          <span className="hidden lg:inline">Samples:</span>
+          <span className="hidden font-mono lg:inline" data-testid="text-samples-count">
             {status.samplesReceived.toLocaleString()}
           </span>
-          <span className="text-muted-foreground/50">|</span>
-          <span>Frames:</span>
-          <span className="font-mono" data-testid="text-frames-count">
+          <span className="hidden text-muted-foreground/50 lg:inline">|</span>
+          <span className="hidden lg:inline">Frames:</span>
+          <span className="hidden font-mono lg:inline" data-testid="text-frames-count">
             {status.framesProcessed.toLocaleString()}
           </span>
 
@@ -104,7 +113,7 @@ export function TopBar({
 
           {status.isProcessing && (
             <Badge variant="outline" className="gap-1 border-cyan-500/30 text-cyan-300">
-              Target: {targetState?.target_visible ? targetState.state.toUpperCase() : "NONE"}
+              Target: {targetState?.target_visible ? (spatialSummary?.zoneLabel ?? targetState.state.toUpperCase()) : "NONE"}
             </Badge>
           )}
         </div>

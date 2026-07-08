@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd \"d:/WIFI csi/phanotm/phantom scan\" && ls -la \"ai model and densepose/model/\" 2>/dev/null; echo \"---ROOT---\"; ls \"ai model and densepose/\" 2>/dev/null; echo \"---F DRIVE---\"; ls \"F:/RuView-0.8.2-esp32\" 2>/dev/null | head -50)",
-      "Read(//f/RuView-0.8.2-esp32/**)"
-    ]
-  }
-}

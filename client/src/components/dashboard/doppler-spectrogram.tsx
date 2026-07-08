@@ -13,22 +13,30 @@ export function DopplerSpectrogram({
     frame,
     className = "",
 }: DopplerSpectrogramProps) {
+    // Honest empty state: never synthesize a fake spectrogram — a visible
+    // plot must always be real data.
     const plotData = useMemo(() => {
         if (!frame || frame.intensities.length === 0) {
-            // Demo spectrogram
-            const times = Array.from({ length: 50 }, (_, i) => i * 0.1);
-            const frequencies = Array.from({ length: 32 }, (_, k) => k * 0.3125);
-            const intensities = times.map((t) =>
-                frequencies.map((f) => {
-                    const motion = Math.exp(-((f - 3) ** 2) / 4) * Math.sin(t * 2) ** 2;
-                    const noise = Math.random() * 0.05;
-                    return 20 * Math.log10(motion + noise + 0.001);
-                })
-            );
-            return { times, frequencies, intensities };
+            return null;
         }
         return frame;
     }, [frame]);
+
+    if (!plotData) {
+        return (
+            <Card className={`flex flex-col overflow-hidden ${className}`}>
+                <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm">Doppler Spectrogram</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-1 items-center justify-center px-2 pb-2 pt-0">
+                    <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground/60">
+                        no live stream
+                    </span>
+                </CardContent>
+            </Card>
+        );
+    }
 
     return (
         <Card className={`flex flex-col overflow-hidden ${className}`}>

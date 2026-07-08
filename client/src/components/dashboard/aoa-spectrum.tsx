@@ -10,17 +10,11 @@ interface AoASpectrumProps {
 }
 
 export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
+  // Honest empty state: never synthesize a fake spectrum — an operator must be
+  // able to trust that a visible curve is real data.
   const plotData = useMemo(() => {
     if (!frame || frame.spectrum.length === 0) {
-      // Generate demo spectrum
-      const angles = Array.from({ length: 121 }, (_, i) => -60 + i);
-      const powers = angles.map((a) => {
-        const peak1 = Math.exp(-((a - 15) ** 2) / 50) * 0.8;
-        const peak2 = Math.exp(-((a + 25) ** 2) / 80) * 0.4;
-        const noise = Math.random() * 0.05;
-        return 20 * Math.log10(peak1 + peak2 + noise + 0.01);
-      });
-      return { angles, powers, peakAngle: 15 };
+      return null;
     }
     return {
       angles: frame.spectrum.map((p) => p.angle),
@@ -28,6 +22,22 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
       peakAngle: frame.peakAngle,
     };
   }, [frame]);
+
+  if (!plotData) {
+    return (
+      <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>
+        <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
+          <Radio className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm">AoA Spectrum (MUSIC)</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-1 items-center justify-center px-2 pb-2 pt-0">
+          <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground/60">
+            no live stream
+          </span>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>

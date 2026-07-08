@@ -52,22 +52,22 @@ export function summarizeTargetSpatial(
           : "midpoint";
     const zoneLabel =
       balanceZone === "near_n1"
-        ? `Projected Near N${distances[0].nodeId}`
+        ? `Near N${distances[0].nodeId}`
         : balanceZone === "near_n2"
-          ? `Projected Near N${distances[1].nodeId}`
-          : `Projected Between N${distances[0].nodeId} and N${distances[1].nodeId}`;
+          ? `Near N${distances[1].nodeId}`
+          : `Between N${distances[0].nodeId} and N${distances[1].nodeId}`;
     const detailLabel = distances
-      .map((distance) => `${roundDistance(distance.distanceM)} to N${distance.nodeId}`)
+      .map((distance) => `N${distance.nodeId} ${roundDistance(distance.distanceM)}`)
       .join(" • ");
     const motionLabel = radialTarget.isMoving
       ? approaching
-        ? `Projected motion toward N${approaching.node_id}`
+        ? `Toward N${approaching.node_id}`
         : balanceZone === "midpoint"
-          ? "Projected crossing at the midpoint"
-          : "Projected motion on the node axis"
+          ? "Crossing the midpoint"
+          : "Moving on the node axis"
       : balanceZone === "midpoint"
-        ? "Projected hold at the midpoint"
-        : "Projected hold on the node axis";
+        ? "Holding at midpoint"
+        : `Holding near N${nearest?.nodeId ?? distances[0].nodeId}`;
 
     return {
       zoneLabel,
@@ -77,7 +77,7 @@ export function summarizeTargetSpatial(
       distances,
       presentationMode: "fused_axis",
       balanceZone,
-      projectionLabel: "front / behind / beside collapses to this axis projection",
+      projectionLabel: "axis-only estimate",
     };
   }
 

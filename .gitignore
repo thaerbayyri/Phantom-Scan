@@ -35,3 +35,8 @@ recordings/
 # Crash dumps and local scratch
 *.stackdump
 .tmp/
+
+# Agent-local settings (machine-specific)
+.claude/
+**/.claude/
+.docx_deps/

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Settings, Target, ShieldCheck, Radar, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Settings, Target, ShieldCheck, Radar } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,47 +17,17 @@ interface ControlPanelProps {
   onConfigChange: (config: Partial<ProcessingConfig>) => void;
 }
 
+// Renders inside the Settings Sheet, which already provides the panel frame —
+// no sidebar chrome or collapse state of its own.
 export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
-
   return (
-    <div
-      className={`border-r bg-sidebar overflow-y-auto transition-all duration-300 ease-in-out flex flex-col ${collapsed ? "w-12" : "w-80"
-        }`}
-    >
-      {/* Toggle button */}
-      <div className={`flex items-center ${collapsed ? "justify-center p-2" : "gap-2 p-4 pb-2"}`}>
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-          title={collapsed ? "Expand panel" : "Collapse panel"}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-5 w-5" />
-          ) : (
-            <PanelLeftClose className="h-5 w-5" />
-          )}
-        </button>
-        {!collapsed && (
-          <>
-            <Settings className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-medium">Signal Processing</h2>
-          </>
-        )}
+    <div className="flex w-full flex-col">
+      <div className="flex items-center gap-2 p-4 pb-2">
+        <Settings className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-medium">Signal Processing</h2>
       </div>
 
-      {/* Collapsed: show vertical icons only */}
-      {collapsed && (
-        <div className="flex flex-col items-center gap-3 pt-4">
-          <span title="Clutter Removal"><ShieldCheck className="h-4 w-4 text-emerald-500" /></span>
-          <span title="Motion Gate"><Radar className="h-4 w-4 text-amber-500" /></span>
-          <span title="ISAR / MUSIC"><Target className="h-4 w-4 text-chart-2" /></span>
-        </div>
-      )}
-
-      {/* Expanded: full accordion */}
-      {!collapsed && (
-        <div className="px-4 pb-4 flex-1">
+      <div className="px-4 pb-4 flex-1">
           <Accordion
             type="multiple"
             defaultValue={["clutter", "motion", "isar"]}
@@ -278,7 +247,6 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
 
           </Accordion>
         </div>
-      )}
     </div>
   );
 }

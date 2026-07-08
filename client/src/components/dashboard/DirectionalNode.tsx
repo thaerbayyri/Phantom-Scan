@@ -14,6 +14,11 @@ interface DirectionalNodeProps {
 // Max trail length
 const TRAIL_LENGTH = 60;
 
+function getNearNodeStrength(balance?: number): number {
+    if (balance === undefined) return 0;
+    return Math.min(1, Math.abs(balance - 0.5) * 2);
+}
+
 export function DirectionalNode({ target }: DirectionalNodeProps) {
     const groupRef = useRef<THREE.Group>(null);
     const arrowRef = useRef<THREE.Group>(null);
@@ -35,6 +40,12 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
         const colors = new Float32Array(TRAIL_LENGTH * 2 * 4); // RGBA
         return { positions, colors };
     }, []);
+    const nearNodeStrength = getNearNodeStrength(target.balance);
+    const isFusedTarget = target.balance !== undefined;
+    const coreRadius = 0.22 + nearNodeStrength * 0.09;
+    const glowRadius = 0.34 + nearNodeStrength * 0.14;
+    const ringInner = 0.36 + target.confidence * 0.18 + nearNodeStrength * 0.05;
+    const ringOuter = 0.43 + target.confidence * 0.18 + nearNodeStrength * 0.08;
 
     useEffect(() => {
         targetPos.current.set(target.x, 0.3, target.z);
@@ -49,7 +60,7 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
         // Snap large jumps immediately so the live marker cannot feel stuck
         // after reconnects or mode transitions.
-        if (jumpDistance > 0.4 || trailPositions.current.length === 0) {
+        if (jumpDistance > 0.3 || trailPositions.current.length === 0) {
             current.copy(next);
             lastTrailPoint.current.copy(next);
             trailPositions.current = [next.clone()];
@@ -64,13 +75,22 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
         // ── Smooth position lerp ──
         targetPos.current.set(target.x, 0.3, target.z);
         const distanceToTarget = groupRef.current.position.distanceTo(targetPos.current);
-        const followAlpha = distanceToTarget > 0.12 ? 0.55 : 0.3;
+        const followAlpha =
+            distanceToTarget > 0.25
+                ? 0.88
+                : target.speed > 0.18
+                    ? 0.8
+                    : isFusedTarget
+                        ? Math.min(0.9, 0.7 + nearNodeStrength * 0.18)
+                        : distanceToTarget > 0.08
+                            ? 0.6
+                            : 0.34;
         groupRef.current.position.lerp(targetPos.current, followAlpha);
 
         // ── Smooth heading rotation ──
         const angleDiff = target.angle - currentAngle.current;
         const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        currentAngle.current += wrapped * 0.12;
+        currentAngle.current += wrapped * (isFusedTarget ? 0.22 : 0.12);
 
         // Rotate arrow to point in direction of travel
         if (arrowRef.current) {
@@ -78,8 +98,8 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
             // Scale arrow by speed (min 0.3, max 1.5)
             const arrowScale = target.isMoving
-                ? Math.min(1.5, 0.3 + target.speed * 2)
-                : 0.3;
+                ? Math.min(1.9, 0.38 + target.speed * 2.7 + nearNodeStrength * 0.28)
+                : 0.34 + nearNodeStrength * 0.16;
             arrowRef.current.scale.setScalar(arrowScale);
         }
 
@@ -163,22 +183,22 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
                 {/* Confidence ring */}
                 <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.27, 0]}>
-                    <ringGeometry args={[0.36 + target.confidence * 0.18, 0.43 + target.confidence * 0.18, 32]} />
+                    <ringGeometry args={[ringInner, ringOuter, 32]} />
                     <meshBasicMaterial
                         color={nodeColor}
                         transparent
-                        opacity={0.4 + target.confidence * 0.3}
+                        opacity={0.42 + target.confidence * 0.24 + nearNodeStrength * 0.16}
                         side={THREE.DoubleSide}
                     />
                 </mesh>
 
                 {/* Core sphere (target node) */}
                 <mesh>
-                    <sphereGeometry args={[0.22, 32, 32]} />
+                    <sphereGeometry args={[coreRadius, 32, 32]} />
                     <meshStandardMaterial
                         color={nodeColor}
                         emissive={emissiveColor}
-                        emissiveIntensity={emissiveIntensity}
+                        emissiveIntensity={emissiveIntensity + nearNodeStrength * 0.9}
                         roughness={0.1}
                         metalness={0.9}
                     />
@@ -186,11 +206,11 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
                 {/* Outer glow */}
                 <mesh ref={glowRef}>
-                    <sphereGeometry args={[0.34, 32, 32]} />
+                    <sphereGeometry args={[glowRadius, 32, 32]} />
                     <meshBasicMaterial
                         color={nodeColor}
                         transparent
-                        opacity={0.18}
+                        opacity={0.18 + nearNodeStrength * 0.08}
                     />
                 </mesh>
 
@@ -222,7 +242,7 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
                 {/* Point light — brightness proportional to confidence */}
                 <pointLight
                     color={nodeColor}
-                    intensity={1 + target.confidence * 2.5}
+                    intensity={1 + target.confidence * 2.5 + nearNodeStrength * 1.4}
                     distance={5}
                     decay={2}
                 />

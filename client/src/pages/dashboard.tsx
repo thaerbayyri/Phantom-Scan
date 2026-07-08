@@ -121,7 +121,7 @@ export default function Dashboard() {
   }, [logout, setLocation]);
 
   return (
-    <div className="flex min-h-svh flex-col bg-background">
+    <div className="flex h-svh flex-col overflow-hidden bg-background">
       <TopBar
         status={status}
         operatorName={session.username}
@@ -129,6 +129,8 @@ export default function Dashboard() {
         motionStatus={motionStatus}
         recordingStatus={recordingStatus}
         targetState={targetState}
+        radialTarget={livePositionVisible ? radialTarget : null}
+        nodes={nodes}
         onStart={startProcessing}
         onStop={stopProcessing}
         onStartRecording={startRecording}
@@ -138,7 +140,7 @@ export default function Dashboard() {
         onLogout={handleLogout}
       />
 
-      <div className="relative flex flex-1 min-h-0">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Full-screen 3D Background */}
         <div className="absolute inset-0 z-0">
           <PointCloud3D
@@ -153,12 +155,21 @@ export default function Dashboard() {
 
         {/* Floating Widgets Container */}
         {/* pointer-events-none ensures we can click through to the 3D canvas */}
-        <main className="pointer-events-none relative z-10 flex-1 min-h-0 overflow-auto px-4 py-3">
-          <div className="grid min-h-full w-full grid-cols-1 items-start gap-4 xl:grid-cols-[calc(17rem+10px)_minmax(0,1fr)_21rem] 2xl:grid-cols-[calc(18rem+10px)_minmax(0,1fr)_22rem]">
+        {/* Single scroll context at every breakpoint: main is the only scroller,
+            columns flow naturally over the click-through 3D center. */}
+        <main className="pointer-events-none relative z-10 flex-1 min-h-0 overflow-x-hidden overflow-y-auto px-3 py-3 xl:px-4">
+          <div className="mx-auto grid min-h-full w-full max-w-[1920px] grid-cols-1 items-start gap-4 xl:grid-cols-[20rem_minmax(0,1fr)_21rem] 2xl:grid-cols-[21rem_minmax(0,1fr)_22rem]">
 
-            {/* Left Floating Widgets */}
-            <section className="pointer-events-auto flex min-w-0 flex-col gap-3 pt-2 xl:pl-0 xl:max-h-full">
-              <AoASpectrum frame={isarFrame} className="h-[14rem] min-h-[14rem] overflow-hidden border-white/10 bg-card/80 backdrop-blur xl:h-[15rem]" />
+            {/* Left Floating Widgets: signal plots live here so they get a
+                full-width column instead of the crowded target column. */}
+            <section className="pointer-events-auto flex min-w-0 flex-col gap-3 pt-2 xl:pr-1">
+              <AoASpectrum frame={isarFrame} className="h-[13rem] min-h-[13rem] overflow-hidden border-white/10 bg-card/80 backdrop-blur xl:h-[14rem]" />
+              <ResizableWrapper defaultHeight={176} minHeight={160} maxHeight={280}>
+                <AoAHeatmap data={heatmap} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
+              </ResizableWrapper>
+              <ResizableWrapper defaultHeight={176} minHeight={160} maxHeight={280}>
+                <DopplerSpectrogram frame={dopplerFrame} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
+              </ResizableWrapper>
               <MetricsPanel
                 channelEstimate={channelEstimate}
                 isarFrame={isarFrame}
@@ -168,34 +179,23 @@ export default function Dashboard() {
             <div className="hidden xl:block" aria-hidden="true" />
 
             {/* Right Floating Widgets */}
-            <section className="pointer-events-auto flex min-w-0 flex-col gap-3 pt-2 drop-shadow-xl xl:justify-self-end xl:min-h-0 xl:overflow-y-auto xl:pb-3">
-              <TargetIdentityCard 
-                identity={visibleIdentity} 
-                bearingRad={targetBearing}
+            <section className="pointer-events-auto flex min-w-0 flex-col gap-3 pt-2 drop-shadow-xl xl:justify-self-end xl:pb-3 xl:pl-1">
+              <TargetIdentityCard
+                identity={visibleIdentity}
                 targetState={targetState ?? null}
                 radialTarget={livePositionVisible ? radialTarget : null}
                 nodes={nodes}
                 presentationCaveat={livePositionCaveat}
               />
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                <DistanceMeter
-                  distanceCm={targetDistanceCm}
-                  wallDistance={wallDistance}
-                  bearingRad={targetBearing}
-                  targetState={targetState ?? null}
-                  hasLivePosition={livePositionVisible}
-                  presentationCaveat={livePositionCaveat}
-                />
-                <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
-              </div>
+              <DistanceMeter
+                distanceCm={targetDistanceCm}
+                wallDistance={wallDistance}
+                bearingRad={targetBearing}
+                targetState={targetState ?? null}
+                hasLivePosition={livePositionVisible}
+              />
+              <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
               <NodeFeaturesCard nodeFeatures={nodeFeatures} />
-
-              <ResizableWrapper defaultHeight={128} minHeight={112} maxHeight={220}>
-                <AoAHeatmap data={heatmap} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
-              </ResizableWrapper>
-              <ResizableWrapper defaultHeight={128} minHeight={112} maxHeight={220}>
-                <DopplerSpectrogram frame={dopplerFrame} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
-              </ResizableWrapper>
             </section>
           </div>
         </main>
@@ -209,22 +209,19 @@ export default function Dashboard() {
                 Adjust the live operator processing controls and visualization settings for ESP32-S3 scans.
               </SheetDescription>
             </SheetHeader>
-            <div className="pb-12 space-y-2">
+            <div className="pb-6 space-y-2">
               <ControlPanel config={config} onConfigChange={updateConfig} />
+            </div>
+            <div className="border-t border-white/10 px-4 py-3 text-xs text-muted-foreground">
+              Shortcuts: <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">Space</kbd> start/stop
+              {" · "}
+              <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">M</kbd> mark sync
+              {" · "}
+              <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">R</kbd> reload
             </div>
           </SheetContent>
         </Sheet>
       </div>
-
-      <footer className="border-t bg-card px-4 py-2">
-        <div className="text-center text-xs text-muted-foreground">
-          Press <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">Space</kbd> to start/stop
-          {" | "}
-          <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">M</kbd> to mark sync
-          {" | "}
-          <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">R</kbd> to reset
-        </div>
-      </footer>
     </div>
   );
 }

@@ -19,6 +19,17 @@ import type {
 } from "@shared/schema";
 import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
 import { compassBearingRad } from "@shared/bearing";
+
+/**
+ * Per-node amplitude window for motion/balance (ms). Shorter = faster target
+ * response and sharper node-to-node contrast; longer = smoother but laggier.
+ * At the measured 20-40 fps a 1.5 s window still holds 30-60 frames — plenty
+ * for the per-subcarrier temporal std. Override via PHANTOM_MOTION_WINDOW_MS.
+ */
+const MOTION_WINDOW_MS = Number.parseInt(
+  process.env.PHANTOM_MOTION_WINDOW_MS ?? "1500",
+  10,
+);
 import {
   fuseTwoNodeTarget,
   computeNodeMotionFromMatrix,
@@ -128,8 +139,8 @@ export class SignalProcessingServer {
   // scalar h1 when the packet carried no vector).
   private nodeAmpWindow: Map<number, { t: number; amps: number[] }[]> = new Map();
   private nodeLastRssi: Map<number, number> = new Map();
-  private prevBalance: number | null = null;
-  private prevBalanceMs = 0;
+  private prevFusedX: number | null = null;
+  private prevFusedMs = 0;
   private lastNodeFpsLogMs = 0;
   private lastIdleDebugMs = 0;
   // Single per-tick fused snapshot: BOTH the radialTarget broadcast (x) and
@@ -880,13 +891,15 @@ export class SignalProcessingServer {
         radZ = fused.z;
         // Snapshot is the single source both broadcasts read this tick.
         const velMps = this.updateFusedSnapshot(fused.balance, fused.x);
+        targetVx = velMps;
+        targetVz = 0;
         speed = Math.abs(velMps); // m/s along the axis
         fusedBalance = fused.balance;
         fusedDistanceCm = fused.distToNearestNodeM * 100;
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
       }
 
-      const projectedMotion = speed > 0.05;
+      const projectedMotion = speed > (fused ? 0.035 : 0.05);
       const isMoving = motionResult.motionDetected;
 
       // Direction of travel (smooth)
@@ -1169,7 +1182,7 @@ export class SignalProcessingServer {
   private nodeFpsFor(nodeId: number): number {
     // Same wall-clock cutoff as nodeMotionFor: a silent node's fps must decay
     // to 0 rather than freezing at its last live value.
-    const cutoff = Date.now() - 3000;
+    const cutoff = Date.now() - MOTION_WINDOW_MS;
     const win = (this.nodeAmpWindow.get(nodeId) ?? []).filter((s) => s.t >= cutoff);
     if (win.length < 2) return 0;
     const spanS = (win[win.length - 1].t - win[0].t) / 1000;
@@ -1260,7 +1273,7 @@ export class SignalProcessingServer {
         ? sample.amplitudes
         : [magnitude(sample.h1)];
     win.push({ t, amps });
-    const cutoff = t - 3000; // fixed 3 s window by timestamp (yield-independent)
+    const cutoff = t - MOTION_WINDOW_MS; // fixed window by timestamp (yield-independent)
     while (win.length && win[0].t < cutoff) win.shift();
     this.nodeLastRssi.set(nodeId, sample.rssi ?? -100);
   }
@@ -1269,7 +1282,7 @@ export class SignalProcessingServer {
     // Wall-clock eviction on READ, not just on ingest: a silent (unplugged)
     // node stops receiving packets, so ingest-side eviction never runs and the
     // frozen window would keep reporting the unplug transient as motion.
-    const cutoff = Date.now() - 3000;
+    const cutoff = Date.now() - MOTION_WINDOW_MS;
     const win = (this.nodeAmpWindow.get(nodeId) ?? []).filter((s) => s.t >= cutoff);
     return computeNodeMotionFromMatrix(win.map((s) => s.amps));
   }
@@ -1297,15 +1310,16 @@ export class SignalProcessingServer {
   private updateFusedSnapshot(balance: number, x: number): number {
     const now = Date.now();
     let velMps = 0;
-    if (this.prevBalance !== null && this.prevBalanceMs > 0) {
-      const dt = (now - this.prevBalanceMs) / 1000;
+    if (this.prevFusedX !== null && this.prevFusedMs > 0) {
+      const dt = (now - this.prevFusedMs) / 1000;
       if (dt > 0) {
-        // Signed m/s along the N1–N2 axis (balance ∈ [0,1] × separation).
-        velMps = ((balance - this.prevBalance) * NODE_SEPARATION_M) / dt;
+        const endpointStrength = Math.min(1, Math.abs(balance - 0.5) * 2);
+        const endpointBoost = 1 + Math.pow(endpointStrength, 0.8) * 0.35;
+        velMps = ((x - this.prevFusedX) / dt) * endpointBoost;
       }
     }
-    this.prevBalance = balance;
-    this.prevBalanceMs = now;
+    this.prevFusedX = x;
+    this.prevFusedMs = now;
 
     const prevTrends = this.fusedSnapshot?.trends ?? { 1: "stable" as NodeTrend, 2: "stable" as NodeTrend };
     this.fusedSnapshot = {
@@ -1320,8 +1334,8 @@ export class SignalProcessingServer {
 
   private clearFusedSnapshot(): void {
     this.fusedSnapshot = null;
-    this.prevBalance = null;
-    this.prevBalanceMs = 0;
+    this.prevFusedX = null;
+    this.prevFusedMs = 0;
   }
 
   private buildSensorNodes(): SensorNode[] {

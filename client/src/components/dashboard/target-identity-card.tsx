@@ -1,13 +1,11 @@
 import type { RadialTarget, SensorNode, TargetIdentity, TargetState } from "@shared/schema";
 import type { TargetPresentationCaveat } from "@shared/target-presentation";
 import { summarizeTargetSpatial } from "@shared/target-spatial";
-import { bearingToCardinal } from "@shared/bearing";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Cog } from "lucide-react";
 
 interface TargetIdentityCardProps {
     identity: TargetIdentity | null;
-    bearingRad?: number;
     targetState?: TargetState | null;
     radialTarget?: RadialTarget | null;
     nodes?: SensorNode[];
@@ -17,7 +15,6 @@ interface TargetIdentityCardProps {
 
 export function TargetIdentityCard({
     identity,
-    bearingRad,
     targetState,
     radialTarget,
     nodes = [],
@@ -48,9 +45,9 @@ export function TargetIdentityCard({
                     <span className="text-xs font-mono text-muted-foreground uppercase">
                         {renderState}
                     </span>
-                    {bearingRad !== undefined && (
-                        <span className="text-xs font-mono bg-primary/20 text-primary px-2 py-0.5 rounded border border-primary/30 animate-pulse">
-                            BEARING: {bearingToCardinal(bearingRad)}
+                    {spatialSummary?.nearestNodeId !== null && spatialSummary?.nearestNodeId !== undefined && (
+                        <span className="text-xs font-mono rounded border border-cyan-400/20 bg-cyan-500/10 px-2 py-0.5 text-cyan-200">
+                            N{spatialSummary.nearestNodeId} NEAREST
                         </span>
                     )}
                     <span className={`max-w-full truncate text-xs font-bold px-2 py-0.5 rounded-full ${isHuman ? "bg-cyan-900/50 text-cyan-300" :
@@ -94,11 +91,14 @@ export function TargetIdentityCard({
                 )}
                 {spatialSummary && (
                     <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-[10px] font-mono text-cyan-100">
-                        <div className="uppercase tracking-[0.2em] text-cyan-300/80">{spatialSummary.zoneLabel}</div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="uppercase tracking-[0.16em] text-cyan-300/80">{spatialSummary.zoneLabel}</div>
+                            <div className="text-[9px] text-slate-400 uppercase">{spatialSummary.presentationMode === "fused_axis" ? "fused axis" : "single node"}</div>
+                        </div>
                         <div className="mt-1 text-cyan-100">{spatialSummary.motionLabel}</div>
                         <div className="mt-1 text-slate-300">{spatialSummary.detailLabel}</div>
                         {spatialSummary.projectionLabel && (
-                            <div className="mt-1 text-[9px] text-amber-200/80">{spatialSummary.projectionLabel}</div>
+                            <div className="mt-1 text-[9px] text-slate-400">{spatialSummary.projectionLabel}</div>
                         )}
                         {presentationCaveat && (
                             <div className="mt-2 border-t border-cyan-400/15 pt-2 text-[9px] leading-relaxed text-amber-100/90">

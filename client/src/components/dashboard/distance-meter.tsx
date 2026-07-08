@@ -2,7 +2,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Ruler } from "lucide-react";
 import type { TargetState } from "@shared/schema";
 import { bearingToCardinal } from "@shared/bearing";
-import type { TargetPresentationCaveat } from "@shared/target-presentation";
 
 interface DistanceMeterProps {
     distanceCm: number;
@@ -10,7 +9,6 @@ interface DistanceMeterProps {
     bearingRad?: number;
     targetState?: TargetState | null;
     hasLivePosition?: boolean;
-    presentationCaveat?: TargetPresentationCaveat | null;
     className?: string;
 }
 
@@ -20,7 +18,6 @@ export function DistanceMeter({
     bearingRad,
     targetState,
     hasLivePosition = false,
-    presentationCaveat = null,
     className = "",
 }: DistanceMeterProps) {
     const distanceM = distanceCm / 100;
@@ -43,9 +40,6 @@ export function DistanceMeter({
             <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-5 pb-3 pt-5">
                 <Ruler className="h-4 w-4 text-primary" />
                 <CardTitle className="text-base">Distance Meter</CardTitle>
-                <span className="ml-auto text-xs font-mono text-muted-foreground">
-                    Wall: {hasTruthfulDistance ? `${wallDistance.toFixed(1)}m` : "--"}
-                </span>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-2 px-5 pb-5 pt-1">
                 {/* SVG Radial Gauge */}
@@ -131,13 +125,6 @@ export function DistanceMeter({
                     </div>
                 </div>
 
-                {/* 1-D honesty caveat: the cm readout is an on-axis projection */}
-                {hasTruthfulDistance && presentationCaveat && (
-                    <div className="text-center text-[10px] font-mono leading-tight text-amber-500/90">
-                        <div className="uppercase tracking-tight">{presentationCaveat.primary}</div>
-                        <div className="text-amber-500/60">{presentationCaveat.secondary}</div>
-                    </div>
-                )}
             </CardContent>
         </Card>
     );

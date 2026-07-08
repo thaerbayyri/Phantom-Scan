@@ -476,13 +476,13 @@ export function RadialScene({
                     {targetState?.node_mode === "fused_two_node" && (
                         <Billboard position={[radialTarget.x, 0.95, radialTarget.z]} follow={true}>
                             <Text
-                                fontSize={0.16}
-                                color="#fbbf24"
-                                fillOpacity={0.55}
+                                fontSize={0.11}
+                                color="#cbd5e1"
+                                fillOpacity={0.34}
                                 anchorX="center"
                                 anchorY="middle"
                             >
-                                ON-AXIS ESTIMATE
+                                axis projection
                             </Text>
                         </Billboard>
                     )}

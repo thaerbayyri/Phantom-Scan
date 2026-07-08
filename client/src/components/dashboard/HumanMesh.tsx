@@ -15,6 +15,11 @@ interface HumanMeshProps {
     poseFrame?: PoseFrame | null;
 }
 
+function getNearNodeStrength(balance?: number): number {
+    if (balance === undefined) return 0;
+    return Math.min(1, Math.abs(balance - 0.5) * 2);
+}
+
 // ── Pose-anchor constants ───────────────────────────────────────────
 // Maximum distance a single keypoint can appear from the body root on
 // the x/z plane.  Prevents noisy or outlier joints from flying off
@@ -73,6 +78,8 @@ export function HumanMesh({ target, poseFrame }: HumanMeshProps) {
 
     const targetPos = useRef(new THREE.Vector3(target.x, 0, target.z));
     const currentAngle = useRef(target.angle);
+    const nearNodeStrength = getNearNodeStrength(target.balance);
+    const isFusedTarget = target.balance !== undefined;
 
     useFrame((state) => {
         // Skip procedural updates if we are in AI Pose mode
@@ -83,12 +90,23 @@ export function HumanMesh({ target, poseFrame }: HumanMeshProps) {
 
         // Smooth position
         targetPos.current.set(target.x, 0, target.z);
-        groupRef.current.position.lerp(targetPos.current, 0.12);
+        const distanceToTarget = groupRef.current.position.distanceTo(targetPos.current);
+        if (distanceToTarget > 0.35) {
+            groupRef.current.position.copy(targetPos.current);
+        } else {
+            const followAlpha =
+                target.speed > 0.16
+                    ? 0.42
+                    : isFusedTarget
+                        ? 0.28 + nearNodeStrength * 0.12
+                        : 0.16;
+            groupRef.current.position.lerp(targetPos.current, followAlpha);
+        }
 
         // Smooth heading
         const angleDiff = target.angle - currentAngle.current;
         const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        currentAngle.current += wrapped * 0.12;
+        currentAngle.current += wrapped * (isFusedTarget ? 0.2 : 0.12);
         if (bodyRef.current) {
             bodyRef.current.rotation.y = -currentAngle.current + Math.PI / 2;
         }
@@ -280,7 +298,7 @@ export function HumanMesh({ target, poseFrame }: HumanMeshProps) {
                 </group>
 
                 {/* Point light */}
-                <pointLight color={color} intensity={target.confidence * 1.5} distance={4} decay={2} position={[0, 1.2, 0]} />
+                <pointLight color={color} intensity={target.confidence * 1.5 + nearNodeStrength} distance={4} decay={2} position={[0, 1.2, 0]} />
             </group>
 
             {/* Ground shadow */}

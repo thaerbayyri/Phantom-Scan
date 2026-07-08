@@ -10,23 +10,30 @@ interface AoAHeatmapProps {
 }
 
 export function AoAHeatmap({ data, className = "" }: AoAHeatmapProps) {
+  // Honest empty state: never synthesize fake intensities — a visible heatmap
+  // must always be real data.
   const plotData = useMemo(() => {
     if (!data || data.intensities.length === 0) {
-      // Generate demo heatmap
-      const angles = Array.from({ length: 121 }, (_, i) => -60 + i);
-      const times = Array.from({ length: 50 }, (_, i) => i * 0.1);
-      const intensities = times.map((t) =>
-        angles.map((a) => {
-          // Create moving peak pattern
-          const peakAngle = Math.sin(t * 2) * 20;
-          const dist = Math.abs(a - peakAngle);
-          return Math.exp(-dist * dist / 100) * 0.5 + Math.random() * 0.1;
-        })
-      );
-      return { angles, times, intensities };
+      return null;
     }
     return data;
   }, [data]);
+
+  if (!plotData) {
+    return (
+      <Card className={`flex flex-col overflow-hidden ${className}`}>
+        <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
+          <Grid3x3 className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm">AoA Heatmap (Time vs Angle)</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-1 items-center justify-center px-2 pb-2 pt-0">
+          <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground/60">
+            no live stream
+          </span>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className={`flex flex-col overflow-hidden ${className}`}>
