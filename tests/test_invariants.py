@@ -51,7 +51,6 @@ def test_runtime_scope_guard_has_no_flight_control_imports():
         ROOT / "phantom" / "api.py",
         ROOT / "phantom" / "ingest.py",
         ROOT / "server" / "index.ts",
-        ROOT / "server" / "lib" / "authority-follower.ts",
     ]
     forbidden = ["mavlink", "uav", "drone", "gps", "imu", "psc"]
     for path in runtime_files:

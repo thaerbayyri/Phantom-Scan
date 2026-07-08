@@ -31,3 +31,7 @@ data/sessions/
 data/operator.json
 data/audit/
 recordings/
+
+# Crash dumps and local scratch
+*.stackdump
+.tmp/

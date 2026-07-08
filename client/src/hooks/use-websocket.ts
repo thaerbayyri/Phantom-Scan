@@ -18,6 +18,7 @@ import type {
   VitalSigns,
   PoseFrame,
   SensorNode,
+  NodeFeatureState,
 } from "@shared/schema";
 
 interface WSState {
@@ -39,6 +40,7 @@ interface WSState {
   vitalSigns: VitalSigns | null;
   poseFrame: PoseFrame | null;
   nodes: SensorNode[];
+  nodeFeatures: NodeFeatureState[];
   isConnected: boolean;
   error: string | null;
 }
@@ -52,6 +54,7 @@ const defaultConfig: ProcessingConfig = {
   clutterWindowSize: 50,
   motionGateEnabled: false,
   motionThreshold: 0.05,
+  fusedTargetMotionThreshold: 0.12,
 };
 
 const defaultStatus: SystemStatus = {
@@ -83,6 +86,8 @@ const defaultRecordingStatus: RecordingStatus = {
   isRecording: false,
   sampleCount: 0,
   durationMs: 0,
+  lastFile: undefined,
+  lastSyncAtMs: undefined,
 };
 
 const defaultTargetState: TargetState = {
@@ -107,7 +112,10 @@ function buildClearedTargetState(reason: string): TargetState {
   };
 }
 
-function buildClearedSceneState(reason: string) {
+function buildClearedSceneState(
+  reason: string,
+  opts: { clearNodes?: boolean } = {},
+) {
   return {
     pointCloud: [] as PointCloudPoint[],
     trackedTarget: null as TrackedTarget | null,
@@ -117,6 +125,10 @@ function buildClearedSceneState(reason: string) {
     targetState: buildClearedTargetState(reason),
     vitalSigns: null as VitalSigns | null,
     poseFrame: null as PoseFrame | null,
+    nodeFeatures: [] as NodeFeatureState[],
+    // Node beacons are only cleared on socket death: on Stop the server
+    // intentionally keeps sending quiesced beacons (honest node presence).
+    ...(opts.clearNodes ? { nodes: [] as SensorNode[] } : {}),
   };
 }
 
@@ -140,12 +152,18 @@ export function useWebSocket() {
     vitalSigns: null,
     poseFrame: null,
     nodes: [],
+    nodeFeatures: [],
     isConnected: false,
     error: null,
   });
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Client-side staleness watchdog: wall-clock of the last target-bearing
+  // message ARRIVAL (radialTarget or targetState — the server keeps emitting
+  // targetState during the intentional empty-room gate, so an idle room does
+  // not trip the watchdog; only a frozen/silent server does).
+  const lastTargetMsgRef = useRef<number>(Date.now());
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -172,7 +190,7 @@ export function useWebSocket() {
         setState((prev) => ({
           ...prev,
           isConnected: false,
-          ...buildClearedSceneState("websocket_closed"),
+          ...buildClearedSceneState("websocket_closed", { clearNodes: true }),
         }));
         reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
@@ -183,7 +201,7 @@ export function useWebSocket() {
           ...prev,
           error: "Connection error",
           isConnected: false,
-          ...buildClearedSceneState("websocket_error"),
+          ...buildClearedSceneState("websocket_error", { clearNodes: true }),
         }));
       };
     } catch (e) {
@@ -324,6 +342,7 @@ export function useWebSocket() {
         break;
 
       case "radialTarget":
+        lastTargetMsgRef.current = Date.now();
         setState((prev) => ({
           ...prev,
           radialTarget: message.data as RadialTarget | null,
@@ -338,6 +357,7 @@ export function useWebSocket() {
         break;
 
       case "targetState":
+        lastTargetMsgRef.current = Date.now();
         setState((prev) => ({
           ...prev,
           targetState: message.data as TargetState,
@@ -369,6 +389,13 @@ export function useWebSocket() {
         setState((prev) => ({
           ...prev,
           nodes: (message.data as SensorNode[]) ?? [],
+        }));
+        break;
+
+      case "nodeFeatures":
+        setState((prev) => ({
+          ...prev,
+          nodeFeatures: (message.data as NodeFeatureState[]) ?? [],
         }));
         break;
 
@@ -433,8 +460,8 @@ export function useWebSocket() {
         status: {
           ...prev.status,
           dataSource: source as SystemStatus["dataSource"],
-          source: source === "demo" ? "synthetic" : "live",
-          synthetic_enabled: source === "demo",
+          source: "live",
+          synthetic_enabled: false,
         },
       }));
     },
@@ -449,9 +476,25 @@ export function useWebSocket() {
     sendMessage("stopRecording", null);
   }, [sendMessage]);
 
+  const markSyncEvent = useCallback(() => {
+    sendMessage("markSyncEvent", null);
+  }, [sendMessage]);
+
   useEffect(() => {
     connect();
+    // Defense-in-depth staleness watchdog: if the socket stays open but the
+    // server freezes (no radialTarget/targetState for >5 s), clear the scene
+    // instead of rendering the last target forever. Server-side freshness
+    // (isSampleFresh + stale/clear timers) remains the primary mechanism.
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastTargetMsgRef.current <= 5000) return;
+      setState((prev) => {
+        if (!prev.isConnected || prev.radialTarget === null) return prev;
+        return { ...prev, ...buildClearedSceneState("client_watchdog_stale") };
+      });
+    }, 1000);
     return () => {
+      clearInterval(watchdog);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -467,6 +510,7 @@ export function useWebSocket() {
     setDataSource,
     startRecording,
     stopRecording,
+    markSyncEvent,
     reconnect: connect,
   };
 }

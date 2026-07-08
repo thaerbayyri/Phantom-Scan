@@ -9,10 +9,19 @@ interface PointCloud3DProps {
   poseFrame?: PoseFrame | null;
   targetState?: TargetState | null;
   nodes?: SensorNode[];
+  showLivePosition?: boolean;
   className?: string;
 }
 
-export function PointCloud3D({ points, radialTarget, poseFrame, targetState, nodes, className = "" }: PointCloud3DProps) {
+export function PointCloud3D({
+  points,
+  radialTarget,
+  poseFrame,
+  targetState,
+  nodes,
+  showLivePosition = false,
+  className = "",
+}: PointCloud3DProps) {
   return (
     <div className={`relative w-full h-full ${className}`}>
       <Canvas camera={{ position: [0, 8, 6], fov: 50 }}>
@@ -23,6 +32,7 @@ export function PointCloud3D({ points, radialTarget, poseFrame, targetState, nod
           poseFrame={poseFrame ?? null}
           targetState={targetState ?? null}
           nodes={nodes ?? []}
+          showLivePosition={showLivePosition}
         />
         <OrbitControls
           makeDefault

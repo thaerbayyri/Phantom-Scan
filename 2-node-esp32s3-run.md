@@ -10,10 +10,12 @@
 > volumetric point clouds or per-limb pose. Firmware is "working" only when a **real boot
 > log** shows CSI `yield > 0`.
 >
-> **Current repo truth:** the supported Phantom Scan runtime is the **Python authority path**
-> (`phantom/`) with a **32-byte ADR-018 CSI frame** plus **40-byte heartbeat** packets. The
-> Node dashboard is a follower/compatibility consumer in canonical runs and should not be treated
-> as the authoritative UDP ingest path.
+> **Current repo truth:** the supported Phantom Scan runtime is the **Node dashboard**
+> (`npm run dev`), which **owns UDP `:5005` ingest directly** (`server/lib/udp-server.ts`)
+> and parses the **32-byte ADR-018 CSI frame**, the **40-byte heartbeat**, and the
+> **56-byte `0xC5110006` feature-state** packets. The Python authority (`phantom/`) is a
+> superseded opt-in mode (`PHANTOM_USE_AUTHORITY=1`) and must never run alongside the
+> dashboard — both bind `:5005`.
 
 ---
 
@@ -67,9 +69,9 @@ python -m esptool --chip esp32s3 -p COM5 -b 460800 write_flash \
 
 ### A.3 Provision NVS (WiFi + host target + identity)
 ```bash
-python provision.py --port COM5 --ssid "<SSID>" --password "<secret>" \
+python esp-flash.py --port COM5 --ssid "<SSID>" --password "<secret>" \
     --target-ip <HOST_IP> --target-port 5005 --node-id 1
-python provision.py --port COM6 ... --node-id 2      # distinct node_id!
+python esp-flash.py --port COM6 ... --node-id 2      # distinct node_id!
 ```
 Never echo/commit the password.
 
@@ -91,10 +93,12 @@ If `yield=0` here, **stop** — Layers B–E will all read zero. It's a Layer-A 
 path `server/lib/{udp-server.ts, websocket.ts}`, `shared/schema.ts`.
 
 ### B.1 Wire protocol (the current integration contract)
-Two little-endian UDP packet types arrive on `:5005`. The current repo does **not** use the
-older 20-byte host contract or `0xC5110006` feature-state packets as the supported path.
-Canonical parsing lives in `phantom/protocol.py`; Node-side compatibility parsing lives in
-`server/lib/udp-server.ts`.
+Three little-endian UDP packet types arrive on `:5005` and are parsed by the dashboard
+(`server/lib/udp-server.ts`): `0xC5110001` raw CSI, `0xC51100A1` heartbeat, and
+`0xC5110006` **feature-state** (board-side DSP: motion, presence, respiration, heart
+rate — broadcast to the UI as the `nodeFeatures` message and shown in the "Board DSP"
+card). The older 20-byte host contract is a legacy fallback only. `phantom/protocol.py`
+holds the superseded Python-authority parsing.
 
 **`0xC5110001` — ADR-018 raw CSI** (32-byte header, then interleaved `int8` I/Q):
 | Off | Field | Type |
@@ -121,22 +125,24 @@ Canonical parsing lives in `phantom/protocol.py`; Node-side compatibility parsin
 Current acceptance rules:
 - drop wrong magic, unsupported schema, truncated headers, and mismatched I/Q payload sizes
 - preserve both host receive time and device timestamps when valid
-- pin each `node_id` to its first observed source IP/port for the session
-- record CSI, heartbeat, and security events to JSONL through the same authority path
+- pin each `node_id` to its first observed source IP/port (same-IP port rebinds silently
+  for reboots; a new IP is accepted only after ≥10 s of silence — DHCP renumber; a
+  conflicting IP while the pin is fresh is rejected as `node_source_mismatch`, with a
+  rate-limited warning that flags the duplicate-`node_id` provisioning pitfall)
+- feature-state packets go through the same per-node source guard
 
-### B.2 Ingest responsibilities (`phantom/ingest.py`, `phantom/runtime.py`, `phantom/api.py`)
-- **Canonical live binder**: `python -m phantom.runtime live --host 0.0.0.0 --port 5005 --api-port 8789 --no-synthetic`
-- **Health contract**:
-  - `GET /api/health`
-  - `GET /api/status`
-  - `GET /api/sensing/frame`
-- **Per-node state**: maintain separate CSI/heartbeat buffers and node health for nodes `1` and `2`.
-- **Loss/reorder detection**: track CSI and heartbeat sequence gaps per node.
+### B.2 Ingest responsibilities (`server/lib/udp-server.ts`, `server/lib/websocket.ts`)
+- **Canonical live binder**: the dashboard — `npm run dev` binds UDP `0.0.0.0:5005` directly.
+- **Per-node state**: separate 3 s amplitude windows, RSSI, and feature-state per node `1`/`2`.
+- **Freshness**: stale queued samples are dropped (`isSampleFresh`, 1.5 s); a silent node's
+  motion decays to zero; the client additionally clears a frozen scene after 5 s (watchdog).
 - **Degraded vs fused truth**:
   - one fresh node -> degraded single-node mode
   - two fresh nodes -> fused two-node mode
-- **Replay**: JSONL remains the only supported recording/replay format in the authority path.
-- **Node dashboard role**: in canonical runs the dashboard follows authority state; it should not bind UDP `5005`.
+- **UI contract**: WS messages `radialTarget`, `targetState`, `nodes` (beacon markers with
+  distance/trend), and `nodeFeatures` (firmware DSP metrics, aged out after 5 s of silence).
+- **Superseded**: the Python authority (`phantom/runtime.py`, `:8789` API) is opt-in via
+  `PHANTOM_USE_AUTHORITY=1` only, and never together with the dashboard.
 
 ---
 
@@ -195,13 +201,14 @@ tx = p1x + (p2x - p1x)*balance                   # place target on the line betw
 
 **Target files:** `server/`, `client/`
 
-### E.1 Authority-first dashboard publishing
-The supported live contract is the authority snapshot exposed by `phantom/api.py`, with the
-dashboard following that state. For canonical two-node evidence:
-- start Python authority first on `:5005` and `:8789`
-- optionally start the AI sidecar after authority is up
-- start the Node dashboard as a follower, not as the UDP owner
-- use `/api/status` and `/api/sensing/frame` as the truth source when the UI looks wrong
+### E.1 Dashboard-owned live publishing
+The supported live contract is the dashboard's own WebSocket stream (`/ws`), fed by its
+UDP `:5005` ingest. For canonical two-node evidence:
+- start the dashboard first (`npm run dev`) and confirm `[UDP] CSI Receiver listening`
+- optionally start the AI sidecar (the dashboard forwards raw frames to `:5006`)
+- never start the Python authority or the RuView bridge alongside it (both bind `:5005`)
+- use the server console (`[UDP] Received N packets…`) and the target debug panel as the
+  truth source when the UI looks wrong
 
 ### E.2 3D visualization
 - **Reliable path:** a small Three.js page that reads `signal_field.values` (20x20) and renders
@@ -220,10 +227,10 @@ dashboard following that state. For canonical two-node evidence:
 1. Flash both boards with the fixed firmware — Layer A.2
 2. Provision distinct `node_id` values and host target `:5005` — Layer A.3
 3. Verify serial: WiFi connect, self-ping start, CSI callbacks climbing, non-zero `yield`
-4. Start Python authority on UDP `:5005` and API `:8789`
-5. Confirm `GET /api/health`, `GET /api/status`, and `GET /api/sensing/frame`
+4. Start the dashboard: `npm run dev` (binds UDP `:5005`, serves `http://localhost:5000`)
+5. Confirm console: `[UDP] CSI Receiver listening` + `[UDP] Received N packets in last 5s`
 6. Verify one-node degraded mode, then two-node fused mode
-7. Start the follower dashboard only after authority is healthy
+7. Check the Board DSP card refreshes ~1 Hz per node (feature-state packets)
 ```
 
 ## Troubleshooting
@@ -235,16 +242,17 @@ dashboard following that state. For canonical two-node evidence:
 | `sendto ENOMEM` on serial | no listener on :5005, TX buffer backs up | start Layer-B ingest; it clears |
 | target never moves | boards too close / person not between them | 2-4 m apart, walk the line between them |
 | both nodes overwrite each other | same `node_id` | re-provision `--node-id 1` / `2` |
-| UI blank but data flows | follower dashboard issue, wrong mode, or stale client state | check `GET /api/sensing/frame` first, then verify Node is following authority instead of owning UDP |
+| UI blank but data flows | wrong mode or stale client state | check the server console for `[UDP] Received…`; ensure nothing else holds `:5005` (Python authority / RuView bridge must not run alongside the dashboard) |
 
 ## Reference implementations in this repo
 | Layer | Look at |
 |---|---|
 | A firmware/self-ping | `firmware/esp32-csi-node/main/csi_collector.c` |
-| A provisioning | `firmware/esp32-csi-node/provision.py` |
-| B authority runtime | `phantom/runtime.py`, `phantom/api.py`, `phantom/ingest.py`, `phantom/protocol.py` |
+| A provisioning | `firmware/esp32-csi-node/esp-flash.py` |
+| B dashboard ingest (canonical) | `server/lib/udp-server.ts`, `server/lib/websocket.ts`, `server/lib/node-fusion.ts` |
+| B authority runtime (superseded, opt-in) | `phantom/runtime.py`, `phantom/api.py`, `phantom/ingest.py`, `phantom/protocol.py` |
 | B raw-CSI recorder (JSONL) | `scripts/record-csi-udp.py` |
-| E follower dashboard | `server/lib/authority-follower.ts`, `server/lib/websocket.ts`, `client/src/pages/dashboard.tsx` |
+| E dashboard UI | `client/src/pages/dashboard.tsx`, `client/src/components/dashboard/node-features-card.tsx` |
 
 *Numbers labeled (measured) were verified on 2x ESP32-S3 (8 MB) on channel 6 during setup:
 41 fps raw CSI/node, 128 subcarriers, motion 0.20->1.00 and balance 0.51->0.86 on movement.*

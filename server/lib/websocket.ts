@@ -15,12 +15,15 @@ import type {
   VitalSigns,
   PoseFrame,
   SensorNode,
+  NodeFeatureState,
 } from "@shared/schema";
 import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
+import { compassBearingRad } from "@shared/bearing";
 import {
   fuseTwoNodeTarget,
   computeNodeMotionFromMatrix,
   computeNodeTrends,
+  DEFAULT_MOTION_THRESHOLD,
   type FusedTarget,
   type NodeTrend,
 } from "./node-fusion";
@@ -29,7 +32,6 @@ import {
   findSpectrumPeak,
   aoaToPoint,
   HeatmapAccumulator,
-  DemoDataGenerator,
   BackgroundSubtractor,
   MotionGate,
   DopplerComputer,
@@ -43,7 +45,16 @@ import {
   buildTargetState,
   emptyTargetState,
   resolveLiveHoldState,
+  isSampleFresh,
 } from "./target-state";
+import {
+  buildRecordingRow,
+  buildRecordingSessionMeta,
+  serializeRecordingCsv,
+  type GroundTruthTag,
+  type RecordingRow,
+  type RecordingSessionMeta,
+} from "./recording-export";
 import * as fs from "fs";
 import * as path from "path";
 import { sessionStore } from "./session-store";
@@ -74,6 +85,7 @@ export class SignalProcessingServer {
     clutterWindowSize: 50,
     motionGateEnabled: false,
     motionThreshold: 0.05,
+    fusedTargetMotionThreshold: DEFAULT_MOTION_THRESHOLD,
   };
 
   private status: SystemStatus = {
@@ -89,7 +101,6 @@ export class SignalProcessingServer {
   };
 
   // Processing engines
-  private demoGenerator = new DemoDataGenerator();
   private heatmapAccumulator = new HeatmapAccumulator();
   private backgroundSubtractor = new BackgroundSubtractor(50);
   private motionGate = new MotionGate();
@@ -120,6 +131,7 @@ export class SignalProcessingServer {
   private prevBalance: number | null = null;
   private prevBalanceMs = 0;
   private lastNodeFpsLogMs = 0;
+  private lastIdleDebugMs = 0;
   // Single per-tick fused snapshot: BOTH the radialTarget broadcast (x) and
   // buildSensorNodes (distanceM/trend) read this same value so the target dot
   // and the node distance labels can never disagree within a tick.
@@ -133,15 +145,13 @@ export class SignalProcessingServer {
 
   // Recording state
   private isRecording = false;
-  private recordingBuffer: (CSISample & {
-    x?: number;
-    z?: number;
-    speed?: number;
-    label?: string;
-    distanceCm?: number;
-  })[] = [];
+  private recordingBuffer: RecordingRow[] = [];
   private recordingStartTime = 0;
   private lastRecordingFile?: string;
+  private recordingSessionMeta: RecordingSessionMeta | null = null;
+  private pendingSyncMarker = false;
+  private lastSyncAtMs?: number;
+  private activeGroundTruthTag: GroundTruthTag | null = null;
 
   private currentSessionName: string = "";
   private currentTrackedTarget: TrackedTarget | null = null;
@@ -294,6 +304,18 @@ export class SignalProcessingServer {
         this.stopRecording();
         void this.auditClientAction(client, "recording_stopped");
         break;
+      case "markSyncEvent":
+        this.markSyncEvent();
+        void this.auditClientAction(client, "recording_sync_marked");
+        break;
+      case "setGroundTruthPoint":
+        this.setGroundTruthPoint(message.data);
+        void this.auditClientAction(client, "ground_truth_point_set");
+        break;
+      case "clearGroundTruthPoint":
+        this.activeGroundTruthTag = null;
+        void this.auditClientAction(client, "ground_truth_point_cleared");
+        break;
       case "registerAIClient":
         if (client) {
           client.isAI = true;
@@ -350,7 +372,6 @@ export class SignalProcessingServer {
 
     this.isStopping = false;
     this.status.isProcessing = true;
-    this.demoGenerator.reset();
     this.heatmapAccumulator.reset();
     this.backgroundSubtractor.reset();
     this.motionGate.reset();
@@ -442,6 +463,9 @@ export class SignalProcessingServer {
     this.status.sessionName = "";
     this.status.lastUpdate = Date.now();
     this.clearTargetArtifacts("processing_stopped");
+    // Quiesce the radar immediately: beacons drop motion glow and
+    // distance/trend labels (buildSensorNodes returns idle nodes when stopped).
+    this.broadcastNodes();
 
     this.broadcast("status", this.status);
 
@@ -459,9 +483,10 @@ export class SignalProcessingServer {
   }
 
   private setDataSource(source: DataSource) {
-    this.status.dataSource = source;
-    this.status.source = source === "demo" ? "synthetic" : "live";
-    this.status.synthetic_enabled = source === "demo";
+    void source;
+    this.status.dataSource = "esp32";
+    this.status.source = "live";
+    this.status.synthetic_enabled = false;
     this.status.lastUpdate = Date.now();
 
     // Clear buffers when switching modes
@@ -487,6 +512,16 @@ export class SignalProcessingServer {
     this.isRecording = true;
     this.recordingBuffer = [];
     this.recordingStartTime = Date.now();
+    this.recordingSessionMeta = buildRecordingSessionMeta({
+      sessionName: this.currentSessionName || "session",
+      recordingStartMs: this.recordingStartTime,
+      node1Fps: this.nodeFpsFor(1),
+      node2Fps: this.nodeFpsFor(2),
+      scalarMotionThreshold: this.config.motionThreshold,
+      fusedMotionThreshold: this.config.fusedTargetMotionThreshold,
+    });
+    this.pendingSyncMarker = false;
+    this.lastSyncAtMs = undefined;
 
     console.log("[REC] Recording started");
     this.broadcastRecordingStatus();
@@ -565,6 +600,7 @@ export class SignalProcessingServer {
         ? Date.now() - this.recordingStartTime
         : 0,
       lastFile: this.lastRecordingFile ? path.basename(this.lastRecordingFile) : undefined,
+      lastSyncAtMs: this.lastSyncAtMs,
     });
   }
 
@@ -578,15 +614,21 @@ export class SignalProcessingServer {
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const filePath = path.join(dir, `${safeName}_${ts}.csv`);
 
-    const header =
-      "timestamp,subcarrier_index,h1_re,h1_im,h2_re,h2_im,rssi,x,z,speed,label,distance_cm\n";
-    const rows = this.recordingBuffer.map(
-      (s) =>
-        `${s.timestamp},${s.subcarrierIndex ?? 0},${s.h1.re},${s.h1.im},${s.h2.re},${s.h2.im},${s.rssi ?? ""},${s.x?.toFixed(3) ?? ""},${s.z?.toFixed(3) ?? ""},${s.speed?.toFixed(3) ?? ""},${s.label ?? ""},${s.distanceCm?.toFixed(1) ?? ""}`
+    const csv = serializeRecordingCsv(
+      this.recordingBuffer,
+      this.recordingSessionMeta ?? buildRecordingSessionMeta({
+        sessionName: this.currentSessionName || "session",
+        recordingStartMs: this.recordingStartTime,
+        node1Fps: this.nodeFpsFor(1),
+        node2Fps: this.nodeFpsFor(2),
+        scalarMotionThreshold: this.config.motionThreshold,
+        fusedMotionThreshold: this.config.fusedTargetMotionThreshold,
+      }),
     );
 
-    fs.writeFileSync(filePath, header + rows.join("\n"), "utf-8");
+    fs.writeFileSync(filePath, csv, "utf-8");
     this.recordingBuffer = [];
+    this.recordingSessionMeta = null;
 
     return filePath;
   }
@@ -599,40 +641,51 @@ export class SignalProcessingServer {
     }
 
     let sample: CSISample;
-    let isDemoSample = false;
 
-    // Get sample based on data source
-    if (this.status.dataSource === "esp32") {
-      const queuedSample = this.dequeueHardwareSample();
-      if (queuedSample) {
-        sample = queuedSample;
-        this.lastProcessedSampleMs = Date.now();
-      } else {
-        this.handleLiveGap();
-        this.status.lastUpdate = Date.now();
-        if (this.status.framesProcessed % 20 === 0) {
-          this.broadcast("status", this.status);
-        }
-        return;
+    // Ghost-target fix: with zero fresh nodes (none seen ≤1.5 s) there is no
+    // live truth — purge any backlog and take the live-gap path immediately,
+    // instead of replaying up to ~50 s of stale queued samples.
+    if (this.activeHardwareNodeIds().length === 0) {
+      if (this.hardwareSampleQueue.length > 0) {
+        this.hardwareSampleQueue = [];
+        this.nextHardwareQueueIndex = 0;
       }
+      this.handleLiveGap();
+      this.status.lastUpdate = Date.now();
+      if (this.status.framesProcessed % 20 === 0) {
+        this.broadcast("status", this.status);
+      }
+      return;
+    }
 
-      if (this.hardwareSampleQueue.length > 1000) {
-        this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
-        this.nextHardwareQueueIndex = Math.min(
-          this.nextHardwareQueueIndex,
-          this.hardwareSampleQueue.length - 1
-        );
-      }
+    // Drop stale backlog samples at dequeue: only frames received within the
+    // live stale window may drive the pipeline.
+    const nowMs = Date.now();
+    let queuedSample = this.dequeueHardwareSample();
+    while (queuedSample && !isSampleFresh(queuedSample, nowMs)) {
+      queuedSample = this.dequeueHardwareSample();
+    }
+    if (queuedSample) {
+      sample = queuedSample;
+      this.lastProcessedSampleMs = Date.now();
     } else {
-      sample = this.demoGenerator.generateSample();
-      isDemoSample = true;
+      this.handleLiveGap();
+      this.status.lastUpdate = Date.now();
+      if (this.status.framesProcessed % 20 === 0) {
+        this.broadcast("status", this.status);
+      }
+      return;
+    }
+
+    if (this.hardwareSampleQueue.length > 1000) {
+      this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
+      this.nextHardwareQueueIndex = Math.min(
+        this.nextHardwareQueueIndex,
+        this.hardwareSampleQueue.length - 1
+      );
     }
 
     this.status.samplesReceived++;
-
-    if (isDemoSample) {
-      this.broadcastToAI("rawSample", sample);
-    }
 
     // ── 1. Background subtraction (clutter removal) ──
     let h1Proc = sample.h1;
@@ -784,8 +837,10 @@ export class SignalProcessingServer {
       // Distance estimate: use actual PDP ranging distance in meters
       const r = pdpResult.distanceCm / 100;
 
-      // Polar → Cartesian (ESP32 at origin)
-      // Final Alignment: North (+Z local) = Top (-Z world), East (+X world) = Right
+      // Polar → Cartesian (array center at origin; +x = east, +z = north).
+      // MUSIC AoA sign: positive AoA maps west (-x) per antenna calibration.
+      // The broadcast `theta` is recomputed from x/z as a compass bearing
+      // (shared/bearing.ts) so it stays consistent with position by construction.
       const rawRadX = -r * Math.sin(thetaRad);
       const rawRadZ = r * Math.cos(thetaRad);
 
@@ -831,10 +886,11 @@ export class SignalProcessingServer {
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
       }
 
-      const isMoving = motionResult.motionDetected && speed > 0.05;
+      const projectedMotion = speed > 0.05;
+      const isMoving = motionResult.motionDetected;
 
       // Direction of travel (smooth)
-      if (isMoving && speed > 0.02) {
+      if (projectedMotion && speed > 0.02) {
         const rawAngle = Math.atan2(targetVz, targetVx);
         const angleDiff = rawAngle - this.radialAngle;
         const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
@@ -851,9 +907,10 @@ export class SignalProcessingServer {
       const radialTarget: RadialTarget = {
         x: radX,
         z: radZ,
-        // r/theta are display-only in fused mode; kept consistent with x/z.
+        // r/theta are derived from x/z so they can never disagree with the
+        // rendered position. theta = compass bearing (0 = north, +π/2 = east).
         r: fused ? Math.hypot(radX, radZ) : r,
-        theta: fused ? Math.atan2(-radX, radZ) : thetaRad,
+        theta: compassBearingRad(radX, radZ),
         vx: targetVx,
         vz: targetVz,
         isMoving,
@@ -999,14 +1056,25 @@ export class SignalProcessingServer {
     if (this.isRecording) {
       // Cap at 5000 samples to prevent unbounded memory growth
       if (this.recordingBuffer.length < 5000) {
-        this.recordingBuffer.push({
-          ...sample,
-          x: currentRadX,
-          z: currentRadZ,
-          speed: currentSpeed,
-          label: currentLabel,
-          distanceCm: currentDistanceCm,
-        });
+        const motion1 = this.nodeMotionFor(1).motion;
+        const motion2 = this.nodeMotionFor(2).motion;
+        this.recordingBuffer.push(
+          buildRecordingRow({
+            sample: {
+              ...sample,
+              amplitudes: undefined,
+            },
+            sessionStartMs: this.recordingStartTime,
+            radialTarget: this.currentRadialTarget,
+            targetState: this.currentTargetState,
+            fusedSnapshot: this.fusedSnapshot,
+            nodeMotion: { 1: motion1, 2: motion2 },
+            nodeFps: { 1: this.nodeFpsFor(1), 2: this.nodeFpsFor(2) },
+            syncMarker: this.pendingSyncMarker,
+            groundTruthTag: this.activeGroundTruthTag,
+          }),
+        );
+        this.pendingSyncMarker = false;
       }
       // Broadcast recording status every 50 samples
       if (this.recordingBuffer.length % 50 === 0) {
@@ -1060,6 +1128,7 @@ export class SignalProcessingServer {
     this.sendToClient(clientId, "poseFrame", this.currentPoseFrame);
     this.sendToClient(clientId, "vitalSigns", this.currentVitalSigns);
     this.sendToClient(clientId, "nodes", this.buildSensorNodes());
+    this.sendToClient(clientId, "nodeFeatures", this.buildNodeFeatureStates());
   }
 
   private handleLiveGap() {
@@ -1097,6 +1166,16 @@ export class SignalProcessingServer {
     );
   }
 
+  private nodeFpsFor(nodeId: number): number {
+    // Same wall-clock cutoff as nodeMotionFor: a silent node's fps must decay
+    // to 0 rather than freezing at its last live value.
+    const cutoff = Date.now() - 3000;
+    const win = (this.nodeAmpWindow.get(nodeId) ?? []).filter((s) => s.t >= cutoff);
+    if (win.length < 2) return 0;
+    const spanS = (win[win.length - 1].t - win[0].t) / 1000;
+    return spanS > 0 ? Math.round((win.length / spanS) * 10) / 10 : 0;
+  }
+
   private updateTargetDebug() {
     const nowMs = Date.now();
     this.currentTargetDebug = {
@@ -1108,6 +1187,11 @@ export class SignalProcessingServer {
       radial_target_present: Boolean(this.currentRadialTarget),
       tracked_target_present: Boolean(this.currentTrackedTarget),
       hold_state: resolveLiveHoldState(this.lastTruthfulTargetUpdateMs || null, nowMs),
+      node_fps: { "1": this.nodeFpsFor(1), "2": this.nodeFpsFor(2) },
+      node_motion: {
+        "1": Math.round(this.nodeMotionFor(1).motion * 1000) / 1000,
+        "2": Math.round(this.nodeMotionFor(2).motion * 1000) / 1000,
+      },
     };
     this.broadcast("targetDebug", this.currentTargetDebug);
   }
@@ -1154,12 +1238,9 @@ export class SignalProcessingServer {
   }
 
   private resolveLiveNodeMode(): TargetState["node_mode"] {
-    if (this.status.dataSource === "esp32") {
-      return this.activeHardwareNodeIds().length >= 2
-        ? "fused_two_node"
-        : "single_node";
-    }
-    return this.status.dataSource === "demo" ? "fused_two_node" : "single_node";
+    return this.activeHardwareNodeIds().length >= 2
+      ? "fused_two_node"
+      : "single_node";
   }
 
   // ── Two-node fusion (RuView balance) ───────────────────────────────
@@ -1185,7 +1266,11 @@ export class SignalProcessingServer {
   }
 
   private nodeMotionFor(nodeId: number) {
-    const win = this.nodeAmpWindow.get(nodeId) ?? [];
+    // Wall-clock eviction on READ, not just on ingest: a silent (unplugged)
+    // node stops receiving packets, so ingest-side eviction never runs and the
+    // frozen window would keep reporting the unplug transient as motion.
+    const cutoff = Date.now() - 3000;
+    const win = (this.nodeAmpWindow.get(nodeId) ?? []).filter((s) => s.t >= cutoff);
     return computeNodeMotionFromMatrix(win.map((s) => s.amps));
   }
 
@@ -1198,6 +1283,7 @@ export class SignalProcessingServer {
       motion1: m1.motion,
       motion2: m2.motion,
       anchors: { 1: NODE_ANCHORS[1], 2: NODE_ANCHORS[2] },
+      motionThreshold: this.config.fusedTargetMotionThreshold,
     });
     if (!fused) return null;
     return { ...fused, maxMotion: Math.max(m1.motion, m2.motion) };
@@ -1239,28 +1325,31 @@ export class SignalProcessingServer {
   }
 
   private buildSensorNodes(): SensorNode[] {
-    const synthetic = this.status.synthetic_enabled;
+    const processing = this.status.isProcessing;
     const active = new Set(this.activeHardwareNodeIds());
     // Read the SAME per-tick snapshot the radialTarget broadcast used; a stale
     // snapshot (no fused update within the live window) drops the readout.
+    // When the scan is STOPPED the radar must quiesce: beacons stay (honest
+    // node presence via active/rssi) but show no motion glow and no target
+    // distance/trend labels.
     const snap =
-      this.fusedSnapshot && Date.now() - this.fusedSnapshot.atMs <= 1500
+      processing && this.fusedSnapshot && Date.now() - this.fusedSnapshot.atMs <= 1500
         ? this.fusedSnapshot
         : null;
     const nodes: SensorNode[] = [];
     for (const key of [1, 2] as const) {
       const anchor = NODE_ANCHORS[key];
-      const motion = synthetic
-        ? Math.abs(Math.sin(Date.now() / 700 + key)) // demo-only synthetic activity
+      const motion = !processing
+        ? 0
         : this.nodeMotionFor(key).motion;
       nodes.push({
         node_id: key,
         x: anchor.x,
         z: anchor.z,
         motion,
-        active: synthetic ? true : active.has(key),
+        active: active.has(key),
         rssi: this.nodeLastRssi.get(key) ?? -100,
-        source: synthetic ? "synthetic" : "live",
+        source: "live",
         // Along-axis distance from the fused target to THIS node.
         distanceM: snap ? Math.abs(snap.x - anchor.x) : undefined,
         trend: snap ? snap.trends[key] : "stable",
@@ -1269,13 +1358,69 @@ export class SignalProcessingServer {
     return nodes;
   }
 
+  // ── Firmware DSP feature-state (RuView 0xC5110006, 1 Hz per node) ──
+  // Board-side metrics kept STRICTLY separate from the host-DSP fusion path;
+  // broadcast for side-by-side cross-checking in the UI only.
+  private nodeFeatureStates = new Map<
+    number,
+    {
+      rxMs: number;
+      motion: number;
+      presence: number;
+      respBpm: number;
+      respConf: number;
+      hrBpm: number;
+      hrConf: number;
+    }
+  >();
+  /** A silent board's firmware metrics must not persist past this age. */
+  private static readonly NODE_FEATURE_FRESH_MS = 5000;
+
+  ingestNodeFeatureState(feat: {
+    nodeId: number;
+    motion: number;
+    presence: number;
+    respBpm: number;
+    respConf: number;
+    hrBpm: number;
+    hrConf: number;
+  }): void {
+    this.nodeFeatureStates.set(feat.nodeId, { rxMs: Date.now(), ...feat });
+    // 1 Hz per node on the wire — broadcasting on receipt is cheap and keeps
+    // the card live even when the processing tick is idle.
+    this.broadcast("nodeFeatures", this.buildNodeFeatureStates());
+  }
+
+  private buildNodeFeatureStates(): NodeFeatureState[] {
+    const now = Date.now();
+    const out: NodeFeatureState[] = [];
+    for (const [nodeId, s] of Array.from(this.nodeFeatureStates.entries())) {
+      const age = now - s.rxMs;
+      if (age > SignalProcessingServer.NODE_FEATURE_FRESH_MS) continue;
+      out.push({
+        node_id: nodeId,
+        motion: s.motion,
+        presence: s.presence,
+        resp_bpm: s.respBpm,
+        resp_conf: s.respConf,
+        hr_bpm: s.hrBpm,
+        hr_conf: s.hrConf,
+        age_ms: age,
+      });
+    }
+    return out.sort((a, b) => a.node_id - b.node_id);
+  }
+
   private broadcastNodes(): void {
     this.broadcast("nodes", this.buildSensorNodes());
+    // Rebroadcast firmware metrics on the node tick so a board that goes
+    // silent ages out client-side (its own 1 Hz receipts stop arriving).
+    this.broadcast("nodeFeatures", this.buildNodeFeatureStates());
 
     // fps sanity: warn (≤ every 10 s) if an active node isn't near the ~40 fps
     // the 3 s window assumes. Ties to the firmware self-ping lineage question.
     const now = Date.now();
-    if (!this.status.synthetic_enabled && now - this.lastNodeFpsLogMs > 10000) {
+    if (now - this.lastNodeFpsLogMs > 10000) {
       for (const key of [1, 2] as const) {
         const win = this.nodeAmpWindow.get(key);
         if (win && win.length > 5) {
@@ -1290,6 +1435,46 @@ export class SignalProcessingServer {
       }
       this.lastNodeFpsLogMs = now;
     }
+  }
+
+  private markSyncEvent() {
+    if (!this.isRecording) {
+      this.broadcast("error", "Start recording before marking sync.");
+      return;
+    }
+
+    this.pendingSyncMarker = true;
+    this.lastSyncAtMs = Date.now();
+    this.broadcastRecordingStatus();
+    console.log("[REC] Sync marker armed for next recorded row");
+  }
+
+  private setGroundTruthPoint(data: unknown) {
+    if (!data || typeof data !== "object") {
+      return;
+    }
+
+    const candidate = data as {
+      xM?: unknown;
+      yM?: unknown;
+      pointId?: unknown;
+      source?: unknown;
+    };
+
+    if (
+      typeof candidate.xM !== "number" ||
+      typeof candidate.yM !== "number" ||
+      (candidate.source !== "dwell" && candidate.source !== "video")
+    ) {
+      return;
+    }
+
+    this.activeGroundTruthTag = {
+      xM: candidate.xM,
+      yM: candidate.yM,
+      pointId: typeof candidate.pointId === "string" ? candidate.pointId : undefined,
+      source: candidate.source,
+    };
   }
 
   private dequeueHardwareSample(): CSISample | undefined {
@@ -1346,7 +1531,14 @@ export class SignalProcessingServer {
     this.lastSampleRxMs = Date.now();
     this.status.connected = true;
     this.status.lastUpdate = this.lastSampleRxMs;
-    this.updateTargetDebug();
+    // While stopped, don't broadcast targetDebug per UDP packet (~80/s churn
+    // that makes the UI look alive); throttle to 1/s. Full rate when scanning.
+    if (this.status.isProcessing) {
+      this.updateTargetDebug();
+    } else if (this.lastSampleRxMs - this.lastIdleDebugMs >= 1000) {
+      this.lastIdleDebugMs = this.lastSampleRxMs;
+      this.updateTargetDebug();
+    }
 
     const qLen = this.hardwareSampleQueue.length;
     if (qLen === 1 || qLen % 100 === 0) {

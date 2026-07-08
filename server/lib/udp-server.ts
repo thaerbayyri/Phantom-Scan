@@ -7,6 +7,9 @@ const UDP_HOST = "0.0.0.0";
 
 const MAGIC_NUMBER_LE = 0xc5110001;
 const HEARTBEAT_MAGIC_LE = 0xc51100a1;
+/** RuView firmware rv_feature_state packet (1 Hz per node, board-side DSP). */
+const FEATURE_STATE_MAGIC_LE = 0xc5110006;
+const FEATURE_STATE_MIN_SIZE = 56;
 const LEGACY_HEADER_SIZE = 20;
 const ADR018_HEADER_SIZE = 32;
 
@@ -26,25 +29,66 @@ type ParsedCsiPacket = {
 };
 
 export class SourcePinningGuard {
-    private bindings = new Map<number, { address: string; port: number }>();
+    /** A pinned source goes stale after this much silence; a new IP may then
+     *  claim the node (device reboot + DHCP renumber), which is NOT a spoof. */
+    static readonly STALE_BINDING_MS = 10_000;
+    /** At most one [UDP][SEC] console line per node per this interval. */
+    static readonly WARN_INTERVAL_MS = 5_000;
+    /** Bounded security-event history. */
+    static readonly MAX_EVENTS = 200;
+
+    private bindings = new Map<
+        number,
+        { address: string; port: number; lastAcceptedMs: number }
+    >();
     private rejectionCount = 0;
+    private lastWarnMs = new Map<number, number>();
     private securityEvents: Array<{
         record_type: "security_event";
         event_type: "node_source_mismatch";
         node_id: number;
         expected_source: { ip: string; port: number };
         actual_source: { ip: string; port: number };
-        packet_kind: "csi_frame";
+        packet_kind: "csi_frame" | "feature_state";
     }> = [];
 
-    check(nodeId: number, source: { address: string; port: number }): boolean {
+    check(
+        nodeId: number,
+        source: { address: string; port: number },
+        nowMs: number = Date.now(),
+        packetKind: "csi_frame" | "feature_state" = "csi_frame",
+    ): boolean {
         const existing = this.bindings.get(nodeId);
         if (!existing) {
-            this.bindings.set(nodeId, { address: source.address, port: source.port });
+            this.bindings.set(nodeId, {
+                address: source.address,
+                port: source.port,
+                lastAcceptedMs: nowMs,
+            });
             return true;
         }
 
-        if (existing.address === source.address && existing.port === source.port) {
+        if (existing.address === source.address) {
+            // Same device, possibly a new ephemeral UDP port after reboot.
+            if (existing.port !== source.port) {
+                existing.port = source.port;
+            }
+            existing.lastAcceptedMs = nowMs;
+            return true;
+        }
+
+        // Different IP. If the pinned source has been silent past the stale
+        // window, this is a legitimate reconnect (DHCP renumber) — rebind.
+        // A conflicting IP while the pinned source is still actively sending
+        // is the real spoof signal and stays rejected.
+        if (nowMs - existing.lastAcceptedMs > SourcePinningGuard.STALE_BINDING_MS) {
+            console.log(
+                `[UDP] node ${nodeId} source rebound after silence: ` +
+                    `${existing.address}:${existing.port} -> ${source.address}:${source.port}`,
+            );
+            existing.address = source.address;
+            existing.port = source.port;
+            existing.lastAcceptedMs = nowMs;
             return true;
         }
 
@@ -55,12 +99,24 @@ export class SourcePinningGuard {
             node_id: nodeId,
             expected_source: { ip: existing.address, port: existing.port },
             actual_source: { ip: source.address, port: source.port },
-            packet_kind: "csi_frame" as const,
+            packet_kind: packetKind,
         };
         this.securityEvents.push(event);
-        console.warn(
-            `[UDP][SEC] ${JSON.stringify(event)}`
-        );
+        if (this.securityEvents.length > SourcePinningGuard.MAX_EVENTS) {
+            this.securityEvents.splice(
+                0,
+                this.securityEvents.length - SourcePinningGuard.MAX_EVENTS,
+            );
+        }
+        const lastWarn = this.lastWarnMs.get(nodeId) ?? 0;
+        if (nowMs - lastWarn >= SourcePinningGuard.WARN_INTERVAL_MS) {
+            this.lastWarnMs.set(nodeId, nowMs);
+            console.warn(
+                `[UDP][SEC] ${JSON.stringify(event)} (rejections for node ${nodeId}: rate-limited log). ` +
+                    `If BOTH boards keep sending, they were likely provisioned with the same node_id — ` +
+                    `re-provision one with a unique id (firmware/esp32-csi-node/esp-flash.py).`,
+            );
+        }
         return false;
     }
 
@@ -68,7 +124,7 @@ export class SourcePinningGuard {
         return Object.fromEntries(
             Array.from(this.bindings.entries()).map(([nodeId, source]) => [
                 String(nodeId),
-                source,
+                { address: source.address, port: source.port },
             ])
         );
     }
@@ -83,10 +139,44 @@ export class SourcePinningGuard {
         node_id: number;
         expected_source: { ip: string; port: number };
         actual_source: { ip: string; port: number };
-        packet_kind: "csi_frame";
+        packet_kind: "csi_frame" | "feature_state";
     }> {
         return [...this.securityEvents];
     }
+}
+
+export type ParsedFeatureState = {
+    nodeId: number;
+    motion: number;
+    presence: number;
+    respBpm: number;
+    respConf: number;
+    hrBpm: number;
+    hrConf: number;
+};
+
+/**
+ * Parse a RuView rv_feature_state packet (magic 0xC5110006, ≥56 bytes LE).
+ * Field offsets mirror scripts/ruview-dashboard-bridge.py parse_feat():
+ * node_id u8 @4; f32 motion @16, presence @20, resp_bpm @24, resp_conf @28,
+ * hr_bpm @32, hr_conf @36.
+ */
+export function parseFeatureStatePacket(msg: Buffer): ParsedFeatureState | null {
+    if (msg.length < FEATURE_STATE_MIN_SIZE) {
+        return null;
+    }
+    if (msg.readUInt32LE(0) !== FEATURE_STATE_MAGIC_LE) {
+        return null;
+    }
+    return {
+        nodeId: msg.readUInt8(4),
+        motion: msg.readFloatLE(16),
+        presence: msg.readFloatLE(20),
+        respBpm: msg.readFloatLE(24),
+        respConf: msg.readFloatLE(28),
+        hrBpm: msg.readFloatLE(32),
+        hrConf: msg.readFloatLE(36),
+    };
 }
 
 export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
@@ -196,6 +286,16 @@ export function startUDPServer() {
     let lastLogTime = Date.now();
 
     server.on("message", (msg, rinfo) => {
+        // Firmware DSP feature-state (RuView 0xC5110006): independent 1 Hz
+        // stream shown alongside host-DSP metrics — never fused with them.
+        if (msg.length >= 4 && msg.readUInt32LE(0) === FEATURE_STATE_MAGIC_LE) {
+            const feat = parseFeatureStatePacket(msg);
+            if (feat && sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
+                signalServer.ingestNodeFeatureState(feat);
+            }
+            return;
+        }
+
         const parsed = parseCsiPacket(msg);
         if (!parsed) {
             return;

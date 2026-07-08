@@ -41,6 +41,23 @@ static uint32_t s_cb_drop = 0;
 static esp_ping_handle_t s_self_ping = NULL;
 
 /**
+ * Node ID cached before WiFi bring-up (see csi_collector_set_node_id()).
+ * 0xFF = not yet set; fall back to reading g_nvs_config live.
+ */
+static uint8_t s_node_id = 0xFF;
+
+void csi_collector_set_node_id(uint8_t node_id)
+{
+    s_node_id = node_id;
+    ESP_LOGI(TAG, "node_id cached pre-WiFi: %u", (unsigned)node_id);
+}
+
+static inline uint8_t csi_node_id(void)
+{
+    return (s_node_id != 0xFF) ? s_node_id : (uint8_t)g_nvs_config.node_id;
+}
+
+/**
  * Minimum interval between UDP sends in microseconds.
  * CSI callbacks can fire hundreds of times per second in promiscuous mode.
  * We cap the send rate to avoid exhausting lwIP packet buffers (ENOMEM).
@@ -186,8 +203,8 @@ size_t csi_serialize_frame(const wifi_csi_info_t *info, uint8_t *buf, size_t buf
     /* Schema version */
     buf[4] = (uint8_t)CSI_SCHEMA_VERSION;
 
-    /* Node ID */
-    buf[5] = (uint8_t)g_nvs_config.node_id;
+    /* Node ID (cached pre-WiFi; see csi_collector_set_node_id) */
+    buf[5] = csi_node_id();
 
     /* Number of antennas */
     buf[6] = n_antennas;
@@ -467,7 +484,7 @@ static void csi_heartbeat_task(void *arg)
         memset(&pkt, 0, sizeof(pkt));
         pkt.magic = CSI_HEARTBEAT_MAGIC;
         pkt.schema_version = CSI_SCHEMA_VERSION;
-        pkt.node_id = g_nvs_config.node_id;
+        pkt.node_id = csi_node_id();
         pkt.wifi_connected = g_wifi_connected ? 1 : 0;
         pkt.seq = s_sequence;
         pkt.device_ts_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);

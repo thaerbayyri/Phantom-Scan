@@ -47,6 +47,28 @@ test("empty room (motion below threshold) returns NO target — not a centered g
   assert.equal(t, null);
 });
 
+test("fused target uses the configured presence threshold instead of the placeholder default", () => {
+  const belowCustom = fuseTwoNodeTarget({
+    r1: 0.3,
+    r2: 0.25,
+    motion1: 0.4,
+    motion2: 0.35,
+    anchors: ANCHORS,
+    motionThreshold: 0.5,
+  });
+  assert.equal(belowCustom, null);
+
+  const aboveCustom = fuseTwoNodeTarget({
+    r1: 0.3,
+    r2: 0.25,
+    motion1: 0.6,
+    motion2: 0.35,
+    anchors: ANCHORS,
+    motionThreshold: 0.5,
+  });
+  assert.ok(aboveCustom);
+});
+
 test("zero perturbation returns NO target even if motion inputs are high", () => {
   const t = fuseTwoNodeTarget({
     r1: 0,

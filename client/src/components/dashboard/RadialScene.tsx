@@ -3,6 +3,9 @@ import { useFrame } from "@react-three/fiber";
 import { Text, Billboard } from "@react-three/drei";
 import * as THREE from "three";
 import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState, SensorNode } from "@shared/schema";
+import { summarizeTargetSpatial } from "@shared/target-spatial";
+import { canPresentAxisMotionVector } from "@shared/target-presentation";
+import { headingVectorFromAngle } from "@shared/bearing";
 import { DirectionalNode } from "./DirectionalNode";
 import { HumanMesh } from "./HumanMesh";
 import { MachineStatic } from "./MachineStatic";
@@ -53,11 +56,13 @@ function PolarGrid() {
                 );
             })}
 
-            {/* Cardinal Markers (Labels on floor grid) */}
-            <Billboard position={[0, 6.5, 0.15]} follow={true}>
+            {/* Cardinal Markers (Labels on floor grid). The group is rotated
+                -π/2 about x, so local +y lands at world -z: north (+z world,
+                schema convention) is the local -y slot. */}
+            <Billboard position={[0, -6.5, 0.15]} follow={true}>
                 <Text fontSize={0.7} color="#00ffff" anchorX="center" anchorY="middle">N</Text>
             </Billboard>
-            <Billboard position={[0, -6.5, 0.15]} follow={true}>
+            <Billboard position={[0, 6.5, 0.15]} follow={true}>
                 <Text fontSize={0.6} color="#00cccc" anchorX="center" anchorY="middle">S</Text>
             </Billboard>
             <Billboard position={[6.5, 0, 0.15]} follow={true}>
@@ -77,26 +82,16 @@ function PolarGrid() {
 // Distinct colors per node so N1/N2 are visually separable.
 const NODE_COLORS: Record<number, string> = { 1: "#00ffcc", 2: "#ff7ac6" };
 
-const TREND_STYLE: Record<string, { glyph: string; color: string }> = {
-    approaching: { glyph: "▼", color: "#4ade80" }, // green: target closing in
-    receding: { glyph: "▲", color: "#fbbf24" },    // amber: target moving away
-    stable: { glyph: "•", color: "#64748b" },      // dim: idle / below deadband
-};
-
 function ESPBeacon({
     position = [0, 0.15, 0],
     color = "#00ffcc",
     motion = 0,
     label,
-    distanceM,
-    trend = "stable",
 }: {
     position?: [number, number, number];
     color?: string;
     motion?: number;
     label?: string;
-    distanceM?: number;
-    trend?: "approaching" | "receding" | "stable";
 }) {
     const coreRef = useRef<THREE.Mesh>(null);
 
@@ -128,19 +123,8 @@ function ESPBeacon({
             {label && (
                 <Billboard position={[0, 0.62, 0]} follow={true}>
                     <Text fontSize={0.32} color={color} anchorX="center" anchorY="middle">
-                        {distanceM !== undefined ? `${label} · ${distanceM.toFixed(1)} m` : label}
+                        {label}
                     </Text>
-                    {distanceM !== undefined && (
-                        <Text
-                            position={[0, -0.34, 0]}
-                            fontSize={0.22}
-                            color={TREND_STYLE[trend].color}
-                            anchorX="center"
-                            anchorY="middle"
-                        >
-                            {`${TREND_STYLE[trend].glyph} ${trend}`}
-                        </Text>
-                    )}
                 </Billboard>
             )}
         </group>
@@ -219,6 +203,78 @@ function NodeAxis({ a, b }: { a: SensorNode; b: SensorNode }) {
     );
 }
 
+function NodeInfluenceRings({ node }: { node: SensorNode }) {
+    const color = NODE_COLORS[node.node_id] ?? "#00ffcc";
+    return (
+        <group rotation={[-Math.PI / 2, 0, 0]} position={[node.x, 0.01, node.z]}>
+            {[0.9, 1.8].map((radius, index) => (
+                <mesh key={`${node.node_id}-${radius}`}>
+                    <ringGeometry args={[radius - 0.015, radius + 0.015, 48]} />
+                    <meshBasicMaterial
+                        color={color}
+                        transparent
+                        opacity={index === 0 ? 0.12 : 0.06}
+                        side={THREE.DoubleSide}
+                    />
+                </mesh>
+            ))}
+        </group>
+    );
+}
+
+function NodeAxisField({
+    a,
+    b,
+    emphasis = 0,
+}: {
+    a: SensorNode;
+    b: SensorNode;
+    emphasis?: number;
+}) {
+    const midpointX = (a.x + b.x) / 2;
+    const midpointZ = (a.z + b.z) / 2;
+    const axisLength = Math.max(0.6, Math.hypot(b.x - a.x, b.z - a.z));
+    const axisAngle = Math.atan2(b.z - a.z, b.x - a.x);
+
+    return (
+        <group position={[midpointX, 0.012, midpointZ]} rotation={[-Math.PI / 2, 0, axisAngle]}>
+            <mesh>
+                <planeGeometry args={[axisLength, 0.7]} />
+                <meshBasicMaterial color="#22d3ee" transparent opacity={0.08 + emphasis * 0.1} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh position={[0, 0, 0.001]}>
+                <ringGeometry args={[0.22, 0.34 + emphasis * 0.14, 48]} />
+                <meshBasicMaterial color="#e2f3ff" transparent opacity={0.18 + emphasis * 0.2} side={THREE.DoubleSide} />
+            </mesh>
+        </group>
+    );
+}
+
+function TargetMotionVector({ target }: { target: RadialTarget }) {
+    const geometry = useMemo(() => {
+        const length = Math.max(0.6, Math.min(1.8, 0.6 + target.speed * 2.5));
+        // Canonical travel-angle decode (cos → x, sin → z) — matches
+        // DirectionalNode's heading cone; see shared/bearing.ts.
+        const { dx, dz } = headingVectorFromAngle(target.angle);
+        const endX = target.x + dx * length;
+        const endZ = target.z + dz * length;
+        return new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(target.x, 0.32, target.z),
+            new THREE.Vector3(endX, 0.32, endZ),
+        ]);
+    }, [target.angle, target.speed, target.x, target.z]);
+
+    if (!target.isMoving) {
+        return null;
+    }
+
+    return (
+        <lineSegments geometry={geometry}>
+            <lineBasicMaterial color="#7dd3fc" transparent opacity={0.75} />
+        </lineSegments>
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  Wall Plane — static reflection boundary
 // ═══════════════════════════════════════════════════════════════════
@@ -279,9 +335,10 @@ function AmbientPoints({ points }: { points: PointCloudPoint[] }) {
 
         for (let i = 0; i < points.length; i++) {
             const p = points[i];
+            // Same axis convention as the target marker: x, y(up), z(north).
             pos[i * 3] = p.x;
-            pos[i * 3 + 1] = p.z;
-            pos[i * 3 + 2] = p.y;
+            pos[i * 3 + 1] = p.y;
+            pos[i * 3 + 2] = p.z;
 
             const normalized = Math.min(1, Math.max(0, p.amplitude / 50));
             colorObj.setHSL(0.55 + normalized * 0.1, 0.8, 0.4 + normalized * 0.3);
@@ -315,19 +372,36 @@ interface RadialSceneProps {
     poseFrame: PoseFrame | null;
     targetState: TargetState | null;
     nodes?: SensorNode[];
+    showLivePosition?: boolean;
 }
 
-export function RadialScene({ radialTarget, points, poseFrame, targetState, nodes = [] }: RadialSceneProps) {
+export function RadialScene({
+    radialTarget,
+    points,
+    poseFrame,
+    targetState,
+    nodes = [],
+    showLivePosition = false,
+}: RadialSceneProps) {
     const label = radialTarget?.label ?? "unknown";
     const wallDistance = radialTarget?.wallDistance ?? 5.0;
     const canRenderTarget = Boolean(
+        showLivePosition &&
         radialTarget &&
-        targetState?.target_visible &&
-        !targetState.stale &&
+        targetState &&
         targetState.state !== "none" &&
         targetState.state !== "stale"
     );
-    const canRenderConfidentHuman = Boolean(canRenderTarget && targetState?.position_confident);
+    const canRenderConfidentHuman = false;
+    const canRenderVolumetricOverlay = false;
+    const spatialSummary = useMemo(
+        () => summarizeTargetSpatial(radialTarget, nodes, targetState),
+        [radialTarget, nodes, targetState],
+    );
+    const fusedNodes = targetState?.node_mode === "fused_two_node" && nodes.length >= 2;
+    const midpointEmphasis = spatialSummary?.presentationMode === "fused_axis" && spatialSummary.balanceZone === "midpoint"
+        ? 1
+        : 0.25;
 
     // Fused mode: point the travel arrow along the axis toward the node the
     // target is approaching (per-node trend), instead of the single-node angle.
@@ -339,6 +413,11 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState, node
         radialTarget && approachedNode
             ? { ...radialTarget, angle: approachedNode.x >= radialTarget.x ? 0 : Math.PI }
             : null;
+    const showAxisMotionVector = canPresentAxisMotionVector({
+        dataSource: "esp32",
+        radialTarget,
+        targetState,
+    });
 
     return (
         <>
@@ -352,16 +431,17 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState, node
             {nodes.length > 0 ? (
                 <>
                     {nodes.map((n) => (
-                        <ESPBeacon
-                            key={n.node_id}
-                            position={[n.x, 0.15, n.z]}
-                            color={NODE_COLORS[n.node_id] ?? "#00ffcc"}
-                            motion={n.active ? n.motion : 0}
-                            label={`N${n.node_id}`}
-                            distanceM={canRenderTarget ? n.distanceM : undefined}
-                            trend={n.trend}
-                        />
+                        <group key={n.node_id}>
+                            <NodeInfluenceRings node={n} />
+                            <ESPBeacon
+                                position={[n.x, 0.15, n.z]}
+                                color={NODE_COLORS[n.node_id] ?? "#00ffcc"}
+                                motion={n.active ? n.motion : 0}
+                                label={`N${n.node_id}`}
+                            />
+                        </group>
                     ))}
+                    {fusedNodes && <NodeAxisField a={nodes[0]} b={nodes[1]} emphasis={midpointEmphasis} />}
                     {nodes.length >= 2 && <NodeAxis a={nodes[0]} b={nodes[1]} />}
                     {canRenderTarget && radialTarget && (
                         <TargetLinks target={radialTarget} nodes={nodes} />
@@ -373,18 +453,40 @@ export function RadialScene({ radialTarget, points, poseFrame, targetState, node
             <FloorPlane />
             <AmbientPoints points={points} />
 
-            {/* Wall plane at detected reflection distance */}
-            <WallPlane distance={wallDistance} />
+            {/* Wall plane at detected reflection distance. 1-D range indicator:
+                its due-east placement is fictional orientation, so only show it
+                alongside a rendered target. */}
+            {canRenderTarget && <WallPlane distance={wallDistance} />}
 
             {/* Render only state-authorized target objects. Unknown targets stay abstract. */}
             {canRenderTarget && radialTarget && (
-                label === "mechanical" ? (
-                    <MachineStatic target={radialTarget} />
-                ) : label === "human" && canRenderConfidentHuman ? (
-                    <HumanMesh target={radialTarget} poseFrame={poseFrame} />
-                ) : (
+                <>
+                    {/* Always keep the live target anchor visible in the radar,
+                        even when a richer human/mechanical overlay is rendered. */}
                     <DirectionalNode target={fusedArrowTarget ?? radialTarget} />
-                )
+                    {label === "mechanical" && canRenderVolumetricOverlay ? (
+                        <MachineStatic target={radialTarget} />
+                    ) : label === "human" && canRenderConfidentHuman ? (
+                        <HumanMesh target={radialTarget} poseFrame={poseFrame} />
+                    ) : null}
+                    {showAxisMotionVector && (
+                        <TargetMotionVector target={fusedArrowTarget ?? radialTarget} />
+                    )}
+                    {/* 1-D honesty label: the dot is an on-axis projection. */}
+                    {targetState?.node_mode === "fused_two_node" && (
+                        <Billboard position={[radialTarget.x, 0.95, radialTarget.z]} follow={true}>
+                            <Text
+                                fontSize={0.16}
+                                color="#fbbf24"
+                                fillOpacity={0.55}
+                                anchorX="center"
+                                anchorY="middle"
+                            >
+                                ON-AXIS ESTIMATE
+                            </Text>
+                        </Billboard>
+                    )}
+                </>
             )}
         </>
     );

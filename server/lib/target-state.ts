@@ -3,6 +3,22 @@ import type { DataSource, MotionStatus, RadialTarget, TargetState } from "@share
 export const LIVE_TARGET_STALE_TIMEOUT_MS = 1_500;
 export const LIVE_TARGET_CLEAR_TIMEOUT_MS = 5_000;
 
+/**
+ * Is a queued hardware sample still fresh enough to process as "live"?
+ *
+ * Samples are stamped with host Date.now() at UDP receipt. After a node
+ * disconnect, up to 1000 backlog samples could otherwise keep the pipeline
+ * painting a ghost target for ~50 s (1 sample per 50 ms tick); dropping
+ * anything older than the live stale window kills that replay.
+ */
+export function isSampleFresh(
+  sample: { timestamp: number },
+  nowMs: number,
+  staleMs: number = LIVE_TARGET_STALE_TIMEOUT_MS,
+): boolean {
+  return sample.timestamp >= nowMs - staleMs;
+}
+
 type SourceMode = TargetState["source_mode"];
 type NodeMode = TargetState["node_mode"];
 type StateKind = TargetState["state"];
@@ -20,16 +36,12 @@ export interface BuildTargetStateInput {
 export type LiveHoldState = "startup" | "live" | "stale_hold" | "cleared";
 
 export function resolveSourceMode(dataSource: DataSource): SourceMode {
-  if (dataSource === "demo") {
-    return "synthetic";
-  }
+  void dataSource;
   return "live";
 }
 
 export function resolveNodeMode(sourceMode: SourceMode): NodeMode {
-  if (sourceMode === "synthetic") {
-    return "fused_two_node";
-  }
+  void sourceMode;
   return "single_node";
 }
 
@@ -78,7 +90,7 @@ export function buildTargetState(input: BuildTargetStateInput): TargetState {
   const isMoving = input.radialTarget.isMoving || (input.motionStatus?.motionDetected ?? false);
 
   let state: StateKind;
-  if (sourceMode !== "synthetic" && nodeMode === "single_node") {
+  if (nodeMode === "single_node") {
     state = "degraded";
   } else {
     state = isMoving ? "moving" : "idle";
@@ -95,6 +107,7 @@ export function buildTargetState(input: BuildTargetStateInput): TargetState {
       y: 0,
       z: input.radialTarget.z,
     },
+    // Compass degrees (0 = north, 90 = east) — see radialTargetSchema / shared/bearing.ts.
     bearing_deg: (input.radialTarget.theta * 180) / Math.PI,
     range_m: input.radialTarget.r,
     motion_score: input.motionStatus?.variance ?? (input.radialTarget.isMoving ? input.radialTarget.speed : 0),

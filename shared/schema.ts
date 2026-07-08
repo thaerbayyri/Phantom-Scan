@@ -105,6 +105,8 @@ export const recordingStatusSchema = z.object({
   isRecording: z.boolean(),
   sampleCount: z.number(),
   durationMs: z.number(),
+  lastFile: z.string().optional(),
+  lastSyncAtMs: z.number().optional(),
 });
 export type RecordingStatus = z.infer<typeof recordingStatusSchema>;
 
@@ -118,11 +120,12 @@ export const processingConfigSchema = z.object({
   clutterWindowSize: z.number().min(10).max(200).default(50),
   motionGateEnabled: z.boolean().default(false),
   motionThreshold: z.number().min(0).max(1).default(0.05),
+  fusedTargetMotionThreshold: z.number().min(0).max(1).default(0.12),
 });
 export type ProcessingConfig = z.infer<typeof processingConfigSchema>;
 
 // Data source configuration
-export const dataSourceSchema = z.enum(["demo", "esp32"]);
+export const dataSourceSchema = z.enum(["esp32"]);
 export type DataSource = z.infer<typeof dataSourceSchema>;
 
 // Hardware ingestion sample (for REST API)
@@ -176,16 +179,24 @@ export const targetIdentitySchema = z.object({
 });
 export type TargetIdentity = z.infer<typeof targetIdentitySchema>;
 
-// Radial target (ESP-centric coordinate system)
+// Radial target — CANONICAL COORDINATE CONVENTIONS (see shared/bearing.ts).
+// World frame: +x = east, +z = north, y = up. Origin at the array center.
+//   theta — COMPASS bearing: atan2(x, z); 0 = north (+z), +π/2 = east (+x),
+//           clockwise-positive from above. Encode x = r·sin(θ), z = r·cos(θ).
+//   angle — direction of TRAVEL, math convention: atan2(vz, vx); 0 = east,
+//           +π/2 = north. Decode to a world vector as (cos → x, sin → z).
+// Single-node caveat: theta derives from one node's MUSIC AoA and is only a
+// true compass bearing if that node's boresight faces north (antenna-relative;
+// surfaced to users via the SINGLE-NODE BEARING caveat in target-presentation).
 export const radialTargetSchema = z.object({
-  x: z.number(),        // Cartesian x = r·cos(θ)
-  z: z.number(),        // Cartesian z = r·sin(θ)
-  r: z.number(),        // Radial distance from ESP32 (meters)
-  theta: z.number(),    // Bearing angle in radians
+  x: z.number(),        // world east (m); = r·sin(theta)
+  z: z.number(),        // world north (m); = r·cos(theta)
+  r: z.number(),        // Radial distance from array center (meters)
+  theta: z.number(),    // Compass bearing (radians, 0 = north, +π/2 = east)
   vx: z.number(),       // Velocity x-component (m/s)
   vz: z.number(),       // Velocity z-component (m/s)
   isMoving: z.boolean(),
-  angle: z.number(),    // Direction of travel (radians)
+  angle: z.number(),    // Direction of travel (radians, math convention: 0 = east)
   speed: z.number(),    // Velocity magnitude
   confidence: z.number(),
   // Classification & ranging
@@ -252,6 +263,24 @@ export const sensorNodeSchema = z.object({
 });
 export type SensorNode = z.infer<typeof sensorNodeSchema>;
 
+// Firmware DSP feature state (RuView 0xC5110006 packet, 1 Hz per node).
+// Board-computed metrics shown ALONGSIDE the host-DSP estimates for
+// cross-checking — never fed into the host-side fusion/target math.
+export const nodeFeatureStateSchema = z.object({
+  node_id: z.number(),
+  motion: z.number(),            // firmware motion score (0..1-ish, verbatim)
+  presence: z.number(),          // firmware presence score (verbatim)
+  resp_bpm: z.number(),          // respiration estimate (breaths/min)
+  resp_conf: z.number(),         // respiration confidence 0..1
+  hr_bpm: z.number(),            // heartbeat estimate (beats/min)
+  hr_conf: z.number(),           // heartbeat confidence 0..1
+  age_ms: z.number(),            // ms since the packet was received (server clock)
+});
+export type NodeFeatureState = z.infer<typeof nodeFeatureStateSchema>;
+
+// nodeFeatures WS payload: latest fresh feature state per node.
+export const nodeFeatureStatesSchema = z.array(nodeFeatureStateSchema);
+
 export const targetDebugSchema = z.object({
   hardware_queue_length: z.number(),
   last_sample_rx_ms: z.number().nullable(),
@@ -261,6 +290,10 @@ export const targetDebugSchema = z.object({
   radial_target_present: z.boolean(),
   tracked_target_present: z.boolean(),
   hold_state: z.enum(["startup", "live", "stale_hold", "cleared"]),
+  // Live-trial monitoring (Stage 0 preflight gate): per-node ingest rate and
+  // current saturated motion, so hardware runs are checkable from diagnostics.
+  node_fps: z.record(z.string(), z.number()).optional(),
+  node_motion: z.record(z.string(), z.number()).optional(),
 });
 export type TargetDebug = z.infer<typeof targetDebugSchema>;
 
@@ -293,6 +326,9 @@ export const wsMessageTypeSchema = z.enum([
   "motionStatus",
   "dopplerFrame",
   "recordingStatus",
+  "markSyncEvent",
+  "setGroundTruthPoint",
+  "clearGroundTruthPoint",
   "trackedTarget",
   "radialTarget",
   "targetIdentity",
@@ -301,6 +337,8 @@ export const wsMessageTypeSchema = z.enum([
   "poseFrame",
   "targetState",
   "targetDebug",
+  "nodes",
+  "nodeFeatures",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
@@ -320,6 +358,8 @@ export const streamFrameSchema = z.object({
     poseFrameSchema,
     targetStateSchema,
     targetDebugSchema,
+    z.array(sensorNodeSchema),
+    nodeFeatureStatesSchema,
   ]),
 });
 export type StreamFrame = z.infer<typeof streamFrameSchema>;

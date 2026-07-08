@@ -111,13 +111,13 @@ static esp_err_t wasm_upload_handler(httpd_req_t *req)
          * CONFIG_WASM_SKIP_SIGNATURE is explicitly set for dev/lab). */
 #ifndef CONFIG_WASM_SKIP_SIGNATURE
         {
-            /* Load pubkey from NVS config (set via provision.py --wasm-pubkey). */
+            /* Load pubkey from NVS config (set via esp-flash.py --wasm-pubkey). */
             extern nvs_config_t g_nvs_config;
             if (!g_nvs_config.wasm_pubkey_valid) {
                 free(buf);
                 httpd_resp_send_err(req, HTTPD_403_FORBIDDEN,
                                     "wasm_verify enabled but no pubkey in NVS. "
-                                    "Provision with: provision.py --wasm-pubkey <hex>");
+                                    "Provision with: esp-flash.py --wasm-pubkey <hex>");
                 return ESP_FAIL;
             }
             if (parsed.signature == NULL) {

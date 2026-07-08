@@ -1,3 +1,5 @@
+> **HISTORICAL (superseded):** point-in-time record. Current runtime: the TS dashboard (`npm run dev`, :5000) is the sole UDP :5005 ingest — see README.md and RUN.md.
+
 # Measurement Plan
 
 All metrics in this file are `[TO BE MEASURED]` until a real two-node run records them.

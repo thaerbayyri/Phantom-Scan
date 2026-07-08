@@ -143,7 +143,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label className="text-sm">Threshold η</Label>
+                        <Label className="text-sm">Scalar Motion Gate Threshold</Label>
                         <span className="text-sm font-mono text-muted-foreground">
                           {config.motionThreshold.toFixed(3)}
                         </span>
@@ -161,9 +161,31 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
                       />
                     </div>
                     <div className="text-xs text-muted-foreground p-2 bg-muted rounded-md">
-                      Suppresses rendering when signal variance falls below threshold
-                      η (empty room). Auto-calibrates from the first 100 "still"
-                      samples.
+                      Controls the scalar motion-status gate only. This does not
+                      decide whether the fused two-node target is present in an
+                      empty room.
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm">Fused Target Presence Threshold</Label>
+                        <span className="text-sm font-mono text-muted-foreground">
+                          {config.fusedTargetMotionThreshold.toFixed(3)}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[config.fusedTargetMotionThreshold * 1000]}
+                        min={0}
+                        max={1000}
+                        step={1}
+                        onValueChange={([v]) =>
+                          onConfigChange({ fusedTargetMotionThreshold: v / 1000 })
+                        }
+                        data-testid="slider-fused-motion-threshold"
+                      />
+                    </div>
+                    <div className="text-xs text-muted-foreground p-2 bg-muted rounded-md">
+                      Controls the fused two-node presence detector that decides
+                      whether the dashboard emits a live target or clears the room.
                     </div>
                   </CardContent>
                 </AccordionContent>

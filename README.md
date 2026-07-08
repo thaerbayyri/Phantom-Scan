@@ -44,12 +44,14 @@ There are two runtime tracks in this repository.
 
 The active live path is the Node/TS host, and it is the **sole owner of UDP :5005**:
 
-- `server/lib/udp-server.ts` binds UDP :5005, parses ADR-018 CSI + heartbeat frames, and source-pins each node
-- `server/lib/websocket.ts` runs the processing pipeline, **two-node balance fusion**, and WebSocket publishing
+- `server/lib/udp-server.ts` binds UDP :5005, parses ADR-018 CSI + heartbeat + `0xC5110006` **feature-state** frames, and source-pins each node
+- `server/lib/websocket.ts` runs the processing pipeline, **two-node balance fusion**, and WebSocket publishing (`radialTarget`, `targetState`, `nodes` beacon markers, `nodeFeatures` firmware metrics)
+- firmware DSP metrics (presence, motion, respiration, heart rate at 1 Hz per node) render in the **Board DSP** card (`client/src/components/dashboard/node-features-card.tsx`), kept strictly separate from the host-DSP fusion for cross-checking
+- the client clears a frozen scene after 5 s without target messages (staleness watchdog in `use-websocket.ts`), on top of the server-side freshness gates
 - Express handles auth and audit; React renders the operator UI
 - accepted raw frames are forwarded to the optional AI sidecar on :5006
 
-`server/lib/authority-follower.ts` is intentionally **inert** (compatibility stub); nothing reads the old Python authority API.
+The old authority-follower compatibility stub has been **removed**; nothing reads the old Python authority API.
 
 ### 2. Python runtime path (replay/tooling; gated in dev)
 
@@ -276,7 +278,7 @@ Purpose:
 Important contents:
 
 - `firmware/esp32-csi-node/main/`
-- `firmware/esp32-csi-node/provision.py`
+- `firmware/esp32-csi-node/esp-flash.py`
 - `firmware/esp32-csi-node/nvs_node1.csv`
 - `firmware/esp32-csi-node/nvs_node1.bin`
 - `firmware/esp32-csi-node/nvs_node2.csv`
@@ -332,6 +334,21 @@ Node anchor positions are a single constant shared by server and client
 ```text
 N1 = (-1.5, 0)      N2 = (+1.5, 0)      separation = 3 m, origin at the midpoint
 ```
+
+### Coordinate conventions (single source of truth: `shared/bearing.ts`)
+
+World frame: **+x = east, +z = north, y = up**. Two angle kinds flow through
+`RadialTarget` and must never be mixed:
+
+- `theta` — **compass bearing**: `atan2(x, z)`; 0 = north (+z), +90° = east (+x),
+  clockwise-positive from above. Encode `x = r·sin θ`, `z = r·cos θ`.
+- `angle` — **direction of travel**, math convention: `atan2(vz, vx)`; 0 = east,
+  +90° = north. Decode to a world vector as `(cos → x, sin → z)`.
+
+All bearing→cardinal text (N/NE/E/…) and 3D heading decodes go through the helpers in
+`shared/bearing.ts` (`bearingToCardinal`, `headingVectorFromAngle`, …) — never inline
+the trig. Single-node caveat: `theta` derives from one node's MUSIC AoA and is only a
+true compass bearing if that node's boresight faces north.
 
 ### Fusion (server/lib/node-fusion.ts)
 
@@ -495,7 +512,7 @@ idf.py -p COM5 flash monitor
 
 Provisioning helper:
 
-- `firmware/esp32-csi-node/provision.py`
+- `firmware/esp32-csi-node/esp-flash.py`
 
 Current NVS artifacts:
 

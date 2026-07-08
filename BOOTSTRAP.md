@@ -14,7 +14,8 @@
 
 ## Python milestone runtime
 - Tests: `python -m pytest`
-- Live runtime: `python -m phantom.runtime live`
+- Live runtime: `python -m phantom.runtime live` — **binds UDP :5005; never run it
+  alongside `npm run dev` (the dashboard is the canonical :5005 owner)**
 - Replay runtime: `python -m phantom.runtime replay --input <session.jsonl>`
 - Note: on this machine, an explicit Python 3.13 path was used during verification.
 

@@ -190,7 +190,7 @@ menu "WASM Programmable Sensing (ADR-040)"
         help
             When enabled, uploaded .wasm binaries must include a valid
             Ed25519 signature.  Uses the same signing key as OTA firmware.
-            Disable with provision.py --no-wasm-verify for lab/dev use.
+            Disable with esp-flash.py --no-wasm-verify for lab/dev use.
 
     config WASM_TIMER_INTERVAL_MS
         int "WASM on_timer() interval (ms)"

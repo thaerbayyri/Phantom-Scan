@@ -6,7 +6,7 @@ Writes WiFi credentials and aggregator target to the ESP32's NVS partition
 so users can configure a pre-built firmware binary without recompiling.
 
 Usage:
-    python provision.py --port COM7 --ssid "MyWiFi" --password "secret" --target-ip 192.168.1.20
+    python esp-flash.py --port COM7 --ssid "MyWiFi" --password "secret" --target-ip 192.168.1.20
 
 Requirements:
     pip install esptool nvs-partition-gen
@@ -67,6 +67,31 @@ def build_nvs_csv(args):
     return buf.getvalue()
 
 
+def find_gen_scripts():
+    """All candidate ESP-IDF nvs_partition_gen.py scripts, best-first.
+
+    $IDF_PATH first, then common install roots (newest IDF first). Callers try
+    each in order: newer IDF generators (v5.4+) are thin wrappers that require
+    the pip package `esp-idf-nvs-partition-gen`, while older ones (<= v5.3)
+    are self-contained — so falling through matters.
+    """
+    candidates = []
+    env = os.environ.get("IDF_PATH", "")
+    if env:
+        candidates.append(env)
+    import glob as _glob
+    candidates += sorted(_glob.glob(r"C:\Espressif\frameworks\esp-idf-*"), reverse=True)
+    home = os.path.expanduser("~")
+    candidates += [os.path.join(home, "esp", "esp-idf"), r"C:\esp\esp-idf"]
+    scripts = []
+    for c in candidates:
+        gen = os.path.join(c, "components", "nvs_flash",
+                           "nvs_partition_generator", "nvs_partition_gen.py")
+        if os.path.isfile(gen) and gen not in scripts:
+            scripts.append(gen)
+    return scripts
+
+
 def generate_nvs_binary(csv_content, size):
     """Generate an NVS partition binary from CSV using nvs_partition_gen.py."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f_csv:
@@ -85,17 +110,25 @@ def generate_nvs_binary(csv_content, size):
         except ImportError:
             pass
 
-        # Fall back to calling the ESP-IDF script directly
-        idf_path = os.environ.get("IDF_PATH", "")
-        gen_script = os.path.join(idf_path, "components", "nvs_flash",
-                                  "nvs_partition_generator", "nvs_partition_gen.py")
-        if os.path.isfile(gen_script):
-            subprocess.check_call([
-                sys.executable, gen_script, "generate",
-                csv_path, bin_path, hex(size)
-            ])
-            with open(bin_path, "rb") as f:
-                return f.read()
+        # Fall back to ESP-IDF scripts ($IDF_PATH or auto-discovered installs).
+        # Try each in order: newer wrappers may need the pip package
+        # esp-idf-nvs-partition-gen; older self-contained ones then still work.
+        last_err = None
+        for gen_script in find_gen_scripts():
+            print(f"Using ESP-IDF NVS generator: {gen_script}")
+            try:
+                subprocess.check_call([
+                    sys.executable, gen_script, "generate",
+                    csv_path, bin_path, hex(size)
+                ])
+                with open(bin_path, "rb") as f:
+                    return f.read()
+            except (subprocess.CalledProcessError, OSError) as e:
+                print(f"  generator failed ({e}); trying next candidate...",
+                      file=sys.stderr)
+                last_err = e
+        if last_err is not None:
+            raise last_err
 
         # Last resort: try as a module
         subprocess.check_call([
@@ -136,7 +169,7 @@ def flash_nvs(port, baud, nvs_bin):
 def main():
     parser = argparse.ArgumentParser(
         description="Provision ESP32-S3 CSI Node with WiFi and aggregator settings",
-        epilog="Example: python provision.py --port COM7 --ssid MyWiFi --password secret --target-ip 192.168.1.20",
+        epilog="Example: python esp-flash.py --port COM7 --ssid MyWiFi --password secret --target-ip 192.168.1.20",
     )
     parser.add_argument("--port", required=True, help="Serial port (e.g. COM7, /dev/ttyUSB0)")
     parser.add_argument("--baud", type=int, default=460800, help="Flash baud rate (default: 460800)")

@@ -15,6 +15,41 @@ interface HumanMeshProps {
     poseFrame?: PoseFrame | null;
 }
 
+// ── Pose-anchor constants ───────────────────────────────────────────
+// Maximum distance a single keypoint can appear from the body root on
+// the x/z plane.  Prevents noisy or outlier joints from flying off
+// into the scene far away from the detected target position.
+const POSE_CLAMP_M = 0.8;
+
+// Return the x/z anatomical root of a keypoint set so that local
+// offsets are computed relative to the body, not the scene origin.
+// Priority: hip midpoint → shoulder midpoint → mean of all joints.
+function getAnatomicalRoot(keypoints: { name: string; x: number; z: number }[]): {
+    rootX: number;
+    rootZ: number;
+} {
+    const kpMap = new Map(keypoints.map((k) => [k.name, k]));
+
+    const lh = kpMap.get("left_hip");
+    const rh = kpMap.get("right_hip");
+    if (lh && rh) {
+        return { rootX: (lh.x + rh.x) / 2, rootZ: (lh.z + rh.z) / 2 };
+    }
+
+    const ls = kpMap.get("left_shoulder");
+    const rs = kpMap.get("right_shoulder");
+    if (ls && rs) {
+        return { rootX: (ls.x + rs.x) / 2, rootZ: (ls.z + rs.z) / 2 };
+    }
+
+    // Final fallback: mean of all available joints (x/z only).
+    const n = keypoints.length || 1;
+    return {
+        rootX: keypoints.reduce((s, k) => s + k.x, 0) / n,
+        rootZ: keypoints.reduce((s, k) => s + k.z, 0) / n,
+    };
+}
+
 const BONE_CONNECTIONS = [
     ["nose", "left_eye"], ["nose", "right_eye"],
     ["left_eye", "left_ear"], ["right_eye", "right_ear"],
@@ -88,17 +123,33 @@ export function HumanMesh({ target, poseFrame }: HumanMeshProps) {
         return !!(poseFrame && poseFrame.keypoints && poseFrame.keypoints.length > 0);
     }, [poseFrame]);
 
-    // Map predicted skeleton points to Three.js coordinates
+    // Map predicted skeleton points to Three.js world coordinates.
+    //
+    // Anchoring strategy:
+    //   1. Extract the anatomical root (hip/shoulder midpoint) from the
+    //      keypoints themselves — this is the body centre in the model's
+    //      own coordinate frame.
+    //   2. Subtract the root to get a true local-body offset per joint.
+    //   3. Clamp each offset to POSE_CLAMP_M to prevent noisy joints from
+    //      flying away from the body.
+    //   4. Add the authoritative radialTarget.x/z to anchor the whole
+    //      skeleton to the live detected position.
+    //   5. y is kept absolute — scripts/ai_inference.py already outputs
+    //      height in scene units (head ~1.65 m, feet ~0 m).
     const jointsMap = useMemo(() => {
         if (!hasAIPose || !poseFrame) return new Map<string, THREE.Vector3>();
+        const { rootX, rootZ } = getAnatomicalRoot(poseFrame.keypoints);
         const map = new Map<string, THREE.Vector3>();
         for (const kp of poseFrame.keypoints) {
-            // Apply scale offsets relative to target center coordinate (target.x, target.z)
-            // Model outputs x and z offsets (typically around -1.0 to 1.0).
-            const x = target.x + kp.x * 1.5;
-            const y = kp.y; // height coordinate computed in scripts/ai_inference.py
-            const z = target.z + kp.z * 1.5;
-            map.set(kp.name, new THREE.Vector3(x, y, z));
+            // Local body offset, clamped to prevent drift from the target dot.
+            const localX = Math.max(-POSE_CLAMP_M, Math.min(POSE_CLAMP_M, kp.x - rootX));
+            const localZ = Math.max(-POSE_CLAMP_M, Math.min(POSE_CLAMP_M, kp.z - rootZ));
+            // World position = authoritative target root + local body offset.
+            map.set(kp.name, new THREE.Vector3(
+                target.x + localX,
+                kp.y,           // absolute height from inference script
+                target.z + localZ,
+            ));
         }
         return map;
     }, [poseFrame, target.x, target.z, hasAIPose]);

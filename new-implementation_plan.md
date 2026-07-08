@@ -1,3 +1,5 @@
+> **HISTORICAL (superseded):** point-in-time record. Current runtime: the TS dashboard (`npm run dev`, :5000) is the sole UDP :5005 ingest — see README.md and RUN.md.
+
 # RuView AI Models & Multi-Node Pose Integration Plan
 
 This plan details how to integrate the RuView models (`csi-embed-v2` and `pose_v1` DensePose) into the Phantom Scan project to enable high-fidelity presence detection, activity classification, and real-time 3D human pose reconstruction on the dashboard. It also resolves the issue of using multiple (2) ESP32-S3 nodes by separating their CSI streams.

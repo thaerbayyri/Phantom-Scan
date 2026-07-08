@@ -1,4 +1,4 @@
-import { useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { RadialTarget } from "@shared/schema";
@@ -27,6 +27,7 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
     // Trail history
     const trailPositions = useRef<THREE.Vector3[]>([]);
     const trailGeometry = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry());
+    const lastTrailPoint = useRef<THREE.Vector3>(new THREE.Vector3(target.x, 0.3, target.z));
 
     // Pre-allocate trail buffer
     const trailBuffer = useMemo(() => {
@@ -35,6 +36,26 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
         return { positions, colors };
     }, []);
 
+    useEffect(() => {
+        targetPos.current.set(target.x, 0.3, target.z);
+
+        if (!groupRef.current) {
+            return;
+        }
+
+        const current = groupRef.current.position;
+        const next = targetPos.current;
+        const jumpDistance = current.distanceTo(next);
+
+        // Snap large jumps immediately so the live marker cannot feel stuck
+        // after reconnects or mode transitions.
+        if (jumpDistance > 0.4 || trailPositions.current.length === 0) {
+            current.copy(next);
+            lastTrailPoint.current.copy(next);
+            trailPositions.current = [next.clone()];
+        }
+    }, [target.x, target.z]);
+
     useFrame((state) => {
         if (!groupRef.current) return;
 
@@ -42,7 +63,9 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
         // ── Smooth position lerp ──
         targetPos.current.set(target.x, 0.3, target.z);
-        groupRef.current.position.lerp(targetPos.current, 0.12);
+        const distanceToTarget = groupRef.current.position.distanceTo(targetPos.current);
+        const followAlpha = distanceToTarget > 0.12 ? 0.55 : 0.3;
+        groupRef.current.position.lerp(targetPos.current, followAlpha);
 
         // ── Smooth heading rotation ──
         const angleDiff = target.angle - currentAngle.current;
@@ -70,9 +93,12 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
         // ── Update trail ──
         const currentPos = groupRef.current.position.clone();
-        trailPositions.current.push(currentPos);
-        if (trailPositions.current.length > TRAIL_LENGTH) {
-            trailPositions.current.shift();
+        if (currentPos.distanceTo(lastTrailPoint.current) >= 0.02) {
+            trailPositions.current.push(currentPos);
+            lastTrailPoint.current.copy(currentPos);
+            if (trailPositions.current.length > TRAIL_LENGTH) {
+                trailPositions.current.shift();
+            }
         }
 
         // Build trail line segments
@@ -131,24 +157,24 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
             <group ref={groupRef}>
                 {/* Ground shadow */}
                 <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.28, 0]}>
-                    <circleGeometry args={[0.35, 32]} />
+                    <circleGeometry args={[0.45, 32]} />
                     <meshBasicMaterial color="#004d40" transparent opacity={0.3} />
                 </mesh>
 
                 {/* Confidence ring */}
                 <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.27, 0]}>
-                    <ringGeometry args={[0.3 + target.confidence * 0.15, 0.35 + target.confidence * 0.15, 32]} />
+                    <ringGeometry args={[0.36 + target.confidence * 0.18, 0.43 + target.confidence * 0.18, 32]} />
                     <meshBasicMaterial
                         color={nodeColor}
                         transparent
-                        opacity={0.3 + target.confidence * 0.3}
+                        opacity={0.4 + target.confidence * 0.3}
                         side={THREE.DoubleSide}
                     />
                 </mesh>
 
                 {/* Core sphere (target node) */}
                 <mesh>
-                    <sphereGeometry args={[0.15, 32, 32]} />
+                    <sphereGeometry args={[0.22, 32, 32]} />
                     <meshStandardMaterial
                         color={nodeColor}
                         emissive={emissiveColor}
@@ -160,11 +186,11 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
 
                 {/* Outer glow */}
                 <mesh ref={glowRef}>
-                    <sphereGeometry args={[0.22, 32, 32]} />
+                    <sphereGeometry args={[0.34, 32, 32]} />
                     <meshBasicMaterial
                         color={nodeColor}
                         transparent
-                        opacity={0.12}
+                        opacity={0.18}
                     />
                 </mesh>
 
@@ -196,8 +222,8 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
                 {/* Point light — brightness proportional to confidence */}
                 <pointLight
                     color={nodeColor}
-                    intensity={target.confidence * 2}
-                    distance={4}
+                    intensity={1 + target.confidence * 2.5}
+                    distance={5}
                     decay={2}
                 />
             </group>

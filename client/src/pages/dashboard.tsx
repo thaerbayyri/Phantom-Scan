@@ -10,9 +10,15 @@ import { DopplerSpectrogram } from "../components/dashboard/doppler-spectrogram"
 import { MetricsPanel } from "@/components/dashboard/metrics-panel";
 import { TargetIdentityCard } from "@/components/dashboard/target-identity-card";
 import { DistanceMeter } from "@/components/dashboard/distance-meter";
+import { NodeFeaturesCard } from "@/components/dashboard/node-features-card";
 import { VitalsMonitor } from "@/components/dashboard/vitals-monitor";
 import { ResizableWrapper } from "@/components/ui/resizable-wrapper";
-import type { DataSource } from "@shared/schema";
+import {
+  canPresentLiveTargetPosition,
+  canPresentVolumetricTarget,
+  canPresentTruthfulTarget,
+  getLivePositionCaveat,
+} from "@shared/target-presentation";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 
@@ -33,23 +39,42 @@ export default function Dashboard() {
     updateConfig,
     startProcessing,
     stopProcessing,
-    setDataSource,
     startRecording,
     stopRecording,
+    markSyncEvent,
     radialTarget,
     targetIdentity,
     targetState,
     vitalSigns,
     poseFrame,
     nodes,
+    nodeFeatures,
   } = useWebSocket();
 
-  const truthfulTargetVisible = Boolean(targetState?.target_visible && radialTarget);
-  const targetBearing = truthfulTargetVisible ? radialTarget?.theta : undefined;
-  const targetDistanceCm = truthfulTargetVisible && radialTarget ? radialTarget.distanceCm : 0;
-  const wallDistance = truthfulTargetVisible && radialTarget ? radialTarget.wallDistance : 0;
+  const livePositionVisible = canPresentLiveTargetPosition({
+    dataSource: status.dataSource,
+    radialTarget,
+    targetState,
+  });
+  const truthfulTargetVisible = canPresentTruthfulTarget({
+    radialTarget,
+    targetState,
+  });
+  const volumetricTargetVisible = canPresentVolumetricTarget({
+    dataSource: status.dataSource,
+    radialTarget,
+    targetState,
+  });
+  const livePositionCaveat = getLivePositionCaveat({
+    dataSource: status.dataSource,
+    radialTarget,
+    targetState,
+  });
+  const targetBearing = livePositionVisible ? radialTarget?.theta : undefined;
+  const targetDistanceCm = livePositionVisible && radialTarget ? radialTarget.distanceCm : 0;
+  const wallDistance = livePositionVisible && radialTarget ? radialTarget.wallDistance : 0;
   const visibleVitals = truthfulTargetVisible ? vitalSigns : null;
-  const visibleIdentity = truthfulTargetVisible ? targetIdentity : null;
+  const visibleIdentity = livePositionVisible ? targetIdentity : null;
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -77,22 +102,18 @@ export default function Dashboard() {
             window.location.reload();
           }
           break;
+        case "m":
+          markSyncEvent();
+          break;
       }
     },
-    [status.isProcessing, startProcessing, stopProcessing]
+    [markSyncEvent, status.isProcessing, startProcessing, stopProcessing]
   );
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  const handleDataSourceChange = useCallback(
-    (source: DataSource) => {
-      setDataSource(source);
-    },
-    [setDataSource]
-  );
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -110,9 +131,9 @@ export default function Dashboard() {
         targetState={targetState}
         onStart={startProcessing}
         onStop={stopProcessing}
-        onDataSourceChange={handleDataSourceChange}
         onStartRecording={startRecording}
         onStopRecording={stopRecording}
+        onMarkSyncEvent={markSyncEvent}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLogout={handleLogout}
       />
@@ -122,10 +143,11 @@ export default function Dashboard() {
         <div className="absolute inset-0 z-0">
           <PointCloud3D
             points={pointCloud}
-            radialTarget={truthfulTargetVisible ? radialTarget : null}
-            poseFrame={truthfulTargetVisible ? poseFrame : null}
+            radialTarget={livePositionVisible ? radialTarget : null}
+            poseFrame={volumetricTargetVisible ? poseFrame : null}
             targetState={targetState}
             nodes={nodes}
+            showLivePosition={livePositionVisible}
           />
         </div>
 
@@ -151,6 +173,9 @@ export default function Dashboard() {
                 identity={visibleIdentity} 
                 bearingRad={targetBearing}
                 targetState={targetState ?? null}
+                radialTarget={livePositionVisible ? radialTarget : null}
+                nodes={nodes}
+                presentationCaveat={livePositionCaveat}
               />
               <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                 <DistanceMeter
@@ -158,9 +183,12 @@ export default function Dashboard() {
                   wallDistance={wallDistance}
                   bearingRad={targetBearing}
                   targetState={targetState ?? null}
+                  hasLivePosition={livePositionVisible}
+                  presentationCaveat={livePositionCaveat}
                 />
                 <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
               </div>
+              <NodeFeaturesCard nodeFeatures={nodeFeatures} />
 
               <ResizableWrapper defaultHeight={128} minHeight={112} maxHeight={220}>
                 <AoAHeatmap data={heatmap} className="h-full bg-card/80 backdrop-blur-sm border-white/10" />
@@ -178,7 +206,7 @@ export default function Dashboard() {
             <SheetHeader className="px-4">
               <SheetTitle className="text-left font-bold text-xl">Signal Processing Settings</SheetTitle>
               <SheetDescription className="text-left">
-                Adjust the live operator processing controls and visualization settings for ESP32-S3 and demo scans.
+                Adjust the live operator processing controls and visualization settings for ESP32-S3 scans.
               </SheetDescription>
             </SheetHeader>
             <div className="pb-12 space-y-2">
@@ -191,6 +219,8 @@ export default function Dashboard() {
       <footer className="border-t bg-card px-4 py-2">
         <div className="text-center text-xs text-muted-foreground">
           Press <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">Space</kbd> to start/stop
+          {" | "}
+          <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">M</kbd> to mark sync
           {" | "}
           <kbd className="px-1 py-0.5 bg-muted rounded text-foreground font-mono">R</kbd> to reset
         </div>

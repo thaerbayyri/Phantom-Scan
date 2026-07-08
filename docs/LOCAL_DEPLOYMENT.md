@@ -32,13 +32,13 @@ The classic CSI research platform:
 2. Configure injection/monitor mode
 3. CSI data available at `/dev/csi_debug`
 
-### ESP32
+### ESP32 (this repo's primary hardware path)
 
 Low-cost option with built-in CSI support:
 
-1. Use ESP-IDF with CSI component
-2. Example: https://github.com/espressif/esp-csi
-3. Data streamed via serial/UART
+1. Flash the repo firmware `firmware/esp32-csi-node` (ESP-IDF v5.2 / Docker build)
+2. Provision SSID/password/host-IP/node_id via `firmware/esp32-csi-node/esp-flash.py`
+3. Data streams via **UDP to the dashboard on port 5005** (no serial bridge needed)
 
 ### USRP SDR
 
@@ -55,7 +55,7 @@ Full control with Software Defined Radio:
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd wivi-dashboard
+cd "phantom scan"
 
 # Install dependencies
 npm install
@@ -79,8 +79,13 @@ In the dashboard UI:
 
 ### 4. Run the Capture Script
 
-#### For ESP32-S3 (Serial)
-Ensure your ESP32-S3 is running the ESP-CSI firmware and connected via USB.
+#### For ESP32-S3 (UDP — primary path)
+No capture script is needed: boards flashed with `firmware/esp32-csi-node` and
+provisioned via `esp-flash.py` stream UDP directly to the dashboard's `:5005` ingest.
+Confirm `[UDP] Received N packets in last 5s` in the dashboard console.
+
+The serial capture script below is a legacy/alternate route for other CSI sources
+feeding the HTTP ingest API:
 
 ```bash
 # Install dependencies

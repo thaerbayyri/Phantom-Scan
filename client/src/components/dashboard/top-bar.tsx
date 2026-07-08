@@ -1,14 +1,7 @@
 import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, LogOut, Shield, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { SystemStatus, DataSource, MotionStatus, RecordingStatus, TargetState } from "@shared/schema";
+import type { SystemStatus, MotionStatus, RecordingStatus, TargetState } from "@shared/schema";
 import { ScanController } from "./scan-controller";
 
 interface TopBarProps {
@@ -20,9 +13,9 @@ interface TopBarProps {
   targetState?: TargetState | null;
   onStart: (name?: string) => void;
   onStop: () => void;
-  onDataSourceChange: (source: DataSource) => void;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onMarkSyncEvent: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
 }
@@ -36,20 +29,16 @@ export function TopBar({
   targetState,
   onStart,
   onStop,
-  onDataSourceChange,
   onStartRecording,
   onStopRecording,
+  onMarkSyncEvent,
   onOpenSettings,
   onLogout,
 }: TopBarProps) {
-  const liveModeBadge = status.dataSource === "esp32" && status.isProcessing ? (
+  const liveModeBadge = status.isProcessing ? (
     <Badge variant="default" className="gap-1 bg-green-600 animate-pulse">
       <Wifi className="h-3 w-3" />
       LIVE • ESP32
-    </Badge>
-  ) : status.isProcessing ? (
-    <Badge variant="secondary" className="gap-1">
-      DEMO
     </Badge>
   ) : null;
 
@@ -71,18 +60,12 @@ export function TopBar({
             </>
           )}
           </div>
-          <Select
-            value={status.dataSource}
-            onValueChange={(value) => onDataSourceChange(value as DataSource)}
+          <Badge
+            variant="outline"
+            className="h-8 shrink-0 border-green-500/30 bg-green-500/10 text-xs text-green-300"
           >
-            <SelectTrigger className="h-8 w-28 shrink-0 text-xs" data-testid="select-data-source">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="demo">Demo</SelectItem>
-              <SelectItem value="esp32">ESP32</SelectItem>
-            </SelectContent>
-          </Select>
+            ESP32 ONLY
+          </Badge>
           {liveModeBadge}
         </div>
 
@@ -156,6 +139,18 @@ export function TopBar({
               Record
             </Button>
           )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onMarkSyncEvent}
+            disabled={!recordingStatus.isRecording}
+            className="gap-1.5"
+            title="Mark a live sync event for video / ground-truth alignment"
+          >
+            <Circle className="h-3 w-3" />
+            <span className="hidden xl:inline">Sync</span>
+          </Button>
 
           {/* Download last recording */}
           <Button

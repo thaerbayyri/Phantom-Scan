@@ -1,3 +1,5 @@
+> **HISTORICAL (superseded):** point-in-time record. Current runtime: the TS dashboard (`npm run dev`, :5000) is the sole UDP :5005 ingest — see README.md and RUN.md.
+
 # WiFi-DensePose Integration in Phantom Scan
 
 This document outlines the theoretical foundation and the specific technical integration of the **WiFi-DensePose** architecture within the Phantom Scan system.

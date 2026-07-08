@@ -1,3 +1,5 @@
+> **HISTORICAL (superseded):** point-in-time record. Current runtime: the TS dashboard (`npm run dev`, :5000) is the sole UDP :5005 ingest — see README.md and RUN.md.
+
 # Current State
 
 Generated for the current checkout in `D:\WIFI csi\phanotm\phantom scan`.

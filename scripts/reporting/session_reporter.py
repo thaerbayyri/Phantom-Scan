@@ -18,6 +18,7 @@ import os
 import sys
 import time
 import uuid
+import csv
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
@@ -536,7 +537,6 @@ class SessionReporter:
 
 def compile_case_report(csv_path: str) -> None:
     import os
-    import csv
     print(f"[SessionReporter] Compiling report for {csv_path}")
     if not os.path.exists(csv_path):
         print(f"Error: File not found {csv_path}")
@@ -549,12 +549,12 @@ def compile_case_report(csv_path: str) -> None:
     from scripts.reporting.models import ActivityResult, ActivityLabel
     
     with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
+        reader = csv.DictReader(line for line in f if not line.startswith("#"))
         for row in reader:
             try:
                 ts = float(row.get("timestamp", 0))
-                x = float(row.get("x", 0) or 0.0)
-                z = float(row.get("z", 0) or 0.0)
+                x = float(row.get("x_disp_m", row.get("x", 0)) or 0.0)
+                z = float(row.get("z_disp_m", row.get("z", 0)) or 0.0)
                 speed = float(row.get("speed", 0) or 0.0)
                 label_str = row.get("label", "unknown")
                 distance_cm = float(row.get("distance_cm", 0) or 0.0)

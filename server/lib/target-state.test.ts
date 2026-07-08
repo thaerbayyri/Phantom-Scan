@@ -6,9 +6,31 @@ import {
   emptyTargetState,
   LIVE_TARGET_CLEAR_TIMEOUT_MS,
   LIVE_TARGET_STALE_TIMEOUT_MS,
+  isSampleFresh,
   resolveLiveHoldState,
   resolveSourceMode,
 } from "./target-state";
+
+test("isSampleFresh accepts a sample within the live stale window", () => {
+  const now = 1_000_000;
+  assert.equal(isSampleFresh({ timestamp: now - 100 }, now), true);
+  assert.equal(isSampleFresh({ timestamp: now }, now), true);
+});
+
+test("isSampleFresh drops backlog samples older than the stale window", () => {
+  const now = 1_000_000;
+  // 2 s old — the disconnect-backlog case that painted ghost targets.
+  assert.equal(isSampleFresh({ timestamp: now - 2_000 }, now), false);
+  // Boundary: exactly at the window edge is still fresh.
+  assert.equal(
+    isSampleFresh({ timestamp: now - LIVE_TARGET_STALE_TIMEOUT_MS }, now),
+    true,
+  );
+  assert.equal(
+    isSampleFresh({ timestamp: now - LIVE_TARGET_STALE_TIMEOUT_MS - 1 }, now),
+    false,
+  );
+});
 
 const movingMotion: MotionStatus = {
   motionDetected: true,
@@ -33,8 +55,7 @@ const radialTarget: RadialTarget = {
   wallDistance: 4.6,
 };
 
-test("resolveSourceMode maps demo synthetic and esp32 live", () => {
-  assert.equal(resolveSourceMode("demo"), "synthetic");
+test("resolveSourceMode maps esp32 to live", () => {
   assert.equal(resolveSourceMode("esp32"), "live");
 });
 
@@ -85,17 +106,18 @@ test("buildTargetState honors fused two-node live mode", () => {
   assert.equal(state.source_mode, "live");
 });
 
-test("buildTargetState keeps demo targets synthetic and moving", () => {
+test("buildTargetState keeps fused live targets moving", () => {
   const state = buildTargetState({
-    dataSource: "demo",
+    dataSource: "esp32",
     nowMs: 3_000,
     lastTruthfulUpdateMs: 3_000,
+    nodeMode: "fused_two_node",
     radialTarget,
     motionStatus: movingMotion,
   });
 
   assert.equal(state.state, "moving");
-  assert.equal(state.source_mode, "synthetic");
+  assert.equal(state.source_mode, "live");
   assert.equal(state.node_mode, "fused_two_node");
 });
 
@@ -136,4 +158,17 @@ test("resolveLiveHoldState distinguishes startup, live, stale hold, and cleared"
   assert.equal(resolveLiveHoldState(1_000, 1_000 + LIVE_TARGET_STALE_TIMEOUT_MS - 1), "live");
   assert.equal(resolveLiveHoldState(1_000, 1_000 + LIVE_TARGET_STALE_TIMEOUT_MS), "stale_hold");
   assert.equal(resolveLiveHoldState(1_000, 1_000 + LIVE_TARGET_CLEAR_TIMEOUT_MS), "cleared");
+});
+
+test("bearing_deg uses the compass convention (x=1,z=0 -> 90 = east)", () => {
+  const state = buildTargetState({
+    dataSource: "esp32",
+    nowMs: 10_000,
+    lastTruthfulUpdateMs: 10_000,
+    nodeMode: "fused_two_node",
+    radialTarget: { ...radialTarget, x: 1, z: 0, theta: Math.PI / 2 },
+    motionStatus: movingMotion,
+  });
+  assert.equal(state.target_visible, true);
+  assert.ok(Math.abs((state.bearing_deg ?? 0) - 90) < 1e-9);
 });

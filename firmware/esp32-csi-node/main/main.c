@@ -140,6 +140,11 @@ void app_main(void)
     /* Load runtime config (NVS overrides Kconfig defaults) */
     nvs_config_load(&g_nvs_config);
 
+    /* Cache node_id BEFORE WiFi bring-up: WiFi init has historically clobbered
+     * the runtime config struct, and a corrupted node_id makes the two boards
+     * indistinguishable at the host (source-mismatch rejects one of them). */
+    csi_collector_set_node_id((uint8_t)g_nvs_config.node_id);
+
     ESP_LOGI(TAG, "ESP32-S3 CSI Node (ADR-018) — Node ID: %d", g_nvs_config.node_id);
     headless_baseline = (g_nvs_config.edge_tier == 0);
     if (headless_baseline) {

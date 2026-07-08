@@ -1,19 +1,31 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Ruler } from "lucide-react";
 import type { TargetState } from "@shared/schema";
+import { bearingToCardinal } from "@shared/bearing";
+import type { TargetPresentationCaveat } from "@shared/target-presentation";
 
 interface DistanceMeterProps {
     distanceCm: number;
     wallDistance: number;
     bearingRad?: number;
     targetState?: TargetState | null;
+    hasLivePosition?: boolean;
+    presentationCaveat?: TargetPresentationCaveat | null;
     className?: string;
 }
 
-export function DistanceMeter({ distanceCm, wallDistance, bearingRad, targetState, className = "" }: DistanceMeterProps) {
+export function DistanceMeter({
+    distanceCm,
+    wallDistance,
+    bearingRad,
+    targetState,
+    hasLivePosition = false,
+    presentationCaveat = null,
+    className = "",
+}: DistanceMeterProps) {
     const distanceM = distanceCm / 100;
     const maxRange = 8; // meters
-    const hasTruthfulDistance = Boolean(targetState?.target_visible);
+    const hasTruthfulDistance = hasLivePosition;
 
     // Color gradient: green (far) → orange (mid) → red (close)
     const ratio = Math.min(1, distanceM / maxRange);
@@ -99,7 +111,11 @@ export function DistanceMeter({ distanceCm, wallDistance, bearingRad, targetStat
                     <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-1 rounded-md border border-white/5">
                         <span className="text-primary/60">{hasTruthfulDistance ? `${distanceM.toFixed(2)}m` : "--"}</span>
                         {!hasTruthfulDistance && (
-                            <span className="text-muted-foreground">NO TARGET</span>
+                            <span className="text-muted-foreground">
+                                {targetState?.source_mode === "live" && targetState?.state === "none"
+                                    ? "EMPTY ROOM"
+                                    : "NO TARGET"}
+                            </span>
                         )}
                         {bearingRad !== undefined && (
                             <>
@@ -107,23 +123,21 @@ export function DistanceMeter({ distanceCm, wallDistance, bearingRad, targetStat
                                 <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">Bearing</span>
                                     <span className="font-black text-primary text-sm animate-pulse-slow">
-                                        {(() => {
-                                            const deg = (bearingRad * 180) / Math.PI;
-                                            if (deg >= -22.5 && deg <= 22.5) return "N";
-                                            if (deg > 22.5 && deg <= 67.5) return "NE";
-                                            if (deg > 67.5 && deg <= 112.5) return "E";
-                                            if (deg < -22.5 && deg >= -67.5) return "NW";
-                                            if (deg < -67.5 && deg >= -112.5) return "W";
-                                            if (deg > 112.5 && deg <= 157.5) return "SE";
-                                            if (deg < -112.5 && deg >= -157.5) return "SW";
-                                            return "S";
-                                        })()}
+                                        {bearingToCardinal(bearingRad)}
                                     </span>
                                 </div>
                             </>
                         )}
                     </div>
                 </div>
+
+                {/* 1-D honesty caveat: the cm readout is an on-axis projection */}
+                {hasTruthfulDistance && presentationCaveat && (
+                    <div className="text-center text-[10px] font-mono leading-tight text-amber-500/90">
+                        <div className="uppercase tracking-tight">{presentationCaveat.primary}</div>
+                        <div className="text-amber-500/60">{presentationCaveat.secondary}</div>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

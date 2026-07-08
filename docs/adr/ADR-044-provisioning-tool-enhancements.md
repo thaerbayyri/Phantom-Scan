@@ -1,3 +1,5 @@
+> **Note:** the provisioning script `provision.py` described in this ADR has been renamed to `esp-flash.py` (same NVS `csi_cfg` contract).
+
 # ADR-044: Provisioning Tool Enhancements
 
 **Status**: Proposed

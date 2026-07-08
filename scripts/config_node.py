@@ -53,7 +53,7 @@ def main():
     
     # Step 2: Ensure ESP-IDF's nvs_partition_gen.py is accessible or use a fallback. 
     # For robust scripting without relying on IDF path vars, we would ideally construct the binary manually.
-    # However, mimicking 'scripts/provision.py' logic implies we assume a python binary generator.
+    # However, mimicking 'scripts/esp-flash.py' logic implies we assume a python binary generator.
     print(f"Settings Generated for Node {args.node_id} (Target: {args.target_ip}:{args.target_port}).")
     print(f"Edge tier forced to: 2 (Full Pipeline).")
     

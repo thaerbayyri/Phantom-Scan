@@ -48,19 +48,21 @@ python -m esptool --chip esp32s3 --port COM7 --baud 460800 \
 ### 3. Provision WiFi credentials (no reflash needed)
 
 ```bash
-python scripts/provision.py --port COM7 \
+python esp-flash.py --port COM7 \
   --ssid "YourSSID" --password "YourPass" --target-ip 192.168.1.20
 ```
 
-### 4. Start the sensing server
+### 4. Start the dashboard (this repo's runtime)
 
 ```bash
-cargo run -p wifi-densepose-sensing-server -- --http-port 3000 --source auto
+npm run dev
 ```
+
+The dashboard owns UDP :5005 ingest directly and serves the operator UI.
 
 ### 5. Open the UI
 
-Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
+Navigate to [http://localhost:5000](http://localhost:5000) in your browser.
 
 ### 6. (Optional) Upload a WASM sensing module
 
@@ -151,22 +153,38 @@ All packets are sent over UDP to the configured aggregator. The magic number in 
 | `0xC5110001` | CSI Frame (ADR-018) | ~20 Hz | Variable | Raw I/Q per subcarrier per antenna |
 | `0xC5110002` | Vitals Packet | 1 Hz | 32 bytes | Presence, breathing BPM, heart rate, fall flag, occupancy |
 | `0xC5110004` | WASM Output | Event-driven | Variable | Custom events from WASM modules (u8 type + f32 value) |
+| `0xC5110006` | Feature State (RuView lineage) | 1 Hz | ≥56 bytes | Board-DSP motion, presence, respiration BPM+conf, heart BPM+conf — parsed by the dashboard into the "Board DSP" card |
+| `0xC51100A1` | Heartbeat | 1 Hz | 40 bytes | wifi_connected, seq, drops, send failures, reconnect count |
 
-### ADR-018 Binary Frame Format
+### ADR-018 Binary Frame Format (current, 32-byte header)
+
+This is the layout `csi_serialize_frame()` emits and the dashboard's primary parse
+(`server/lib/udp-server.ts`, schema v1):
 
 ```
 Offset  Size  Field
-0       4     Magic: 0xC5110001
-4       1     Node ID
-5       1     Number of antennas
-6       2     Number of subcarriers (LE u16)
-8       4     Frequency MHz (LE u32)
-12      4     Sequence number (LE u32)
-16      1     RSSI (i8)
-17      1     Noise floor (i8)
-18      2     Reserved
-20      N*2   I/Q pairs (n_antennas * n_subcarriers * 2 bytes)
+0       4     Magic: 0xC5110001 (LE)
+4       1     Schema version (1)
+5       1     Node ID (cached pre-WiFi via csi_collector_set_node_id())
+6       1     Number of antennas
+7       2     Number of subcarriers (LE u16)
+9       4     Frequency MHz (LE u32)
+13      4     Sequence number (LE u32)
+17      1     RSSI (i8)
+18      1     Noise floor (i8)
+19      1     WiFi channel
+20      8     Device timestamp us (LE u64)
+28      4     Device timestamp ms (LE u32)
+32      N*2   I/Q pairs (n_antennas * n_subcarriers * 2 bytes)
 ```
+
+The old 20-byte header (Node ID @4, RSSI @16, I/Q @20) is a **legacy fallback** the
+host still accepts for older senders.
+
+> Note: `main.c` caches the node ID with `csi_collector_set_node_id()` right after
+> `nvs_config_load()`, BEFORE `wifi_init_sta()` — WiFi init has historically clobbered
+> the config struct, and a corrupted node_id makes two boards indistinguishable at the
+> host.
 
 ### Vitals Packet (32 bytes)
 
@@ -285,7 +303,7 @@ All settings can be changed at runtime via Non-Volatile Storage (NVS) without re
 The easiest way to write NVS settings:
 
 ```bash
-python scripts/provision.py --port COM7 \
+python esp-flash.py --port COM7 \
   --ssid "MyWiFi" \
   --password "MyPassword" \
   --target-ip 192.168.1.20
@@ -503,7 +521,7 @@ ESP32-S3 Node                                 Host Machine
 |              |   Tier 3: WASM Dispatch  ---------> (events)             |
 |              +                           |  |     |                     |
 | NVS Config   OTA/WASM HTTP (port 8032)  |  |     v                     |
-| Power Mgmt   POST /ota                  |  |   Web UI (:3000)          |
+| Power Mgmt   POST /ota                  |  |   Web UI (:5000)          |
 |              POST /wasm/upload           |  |   Pose + Vitals + Alerts  |
 +------------------------------------------+  +---------------------------+
 ```
@@ -528,7 +546,7 @@ The firmware is continuously verified by [`.github/workflows/firmware-ci.yml`](.
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | No serial output | Wrong baud rate | Use `115200` in your serial monitor |
-| WiFi won't connect | Wrong SSID/password | Re-run `provision.py` with correct credentials |
+| WiFi won't connect | Wrong SSID/password | Re-run `esp-flash.py` with correct credentials |
 | No UDP frames received | Firewall blocking | Allow inbound UDP on port 5005 (see below) |
 | `idf.py` fails on Windows | Git Bash/MSYS2 incompatibility | Use Docker -- this is the only supported build method on Windows |
 | CSI callback not firing | Promiscuous mode issue | Verify `esp_wifi_set_promiscuous(true)` in `csi_collector.c` |

@@ -32,6 +32,16 @@
 void csi_collector_init(void);
 
 /**
+ * Cache the node ID before WiFi bring-up.
+ *
+ * Must be called right after nvs_config_load(), BEFORE wifi_init_sta():
+ * WiFi init has historically clobbered the runtime config struct, and a
+ * corrupted node_id makes two boards indistinguishable at the host
+ * (which then rejects one of them as a source-mismatch spoof).
+ */
+void csi_collector_set_node_id(uint8_t node_id);
+
+/**
  * Serialize CSI data into ADR-018 binary frame format.
  *
  * @param info   WiFi CSI info from the ESP-IDF callback.
