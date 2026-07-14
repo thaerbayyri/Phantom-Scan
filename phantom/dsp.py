@@ -1,3 +1,10 @@
+"""Per-node CSI DSP for the Python Milestone-1 authority.
+
+SUPERSEDED — live detection now runs in server/lib (the TS dashboard owns
+UDP :5005); kept for reference. This module holds the pure detection math:
+amplitude/phase extraction, clutter suppression, motion energy, cross-node
+correlation, the 1-D on-axis position, and the deterministic human gate.
+"""
 from __future__ import annotations
 
 from collections import deque
@@ -102,6 +109,11 @@ class RespirationBandFilter:
 
 
 def motion_energy(values: Iterable[float]) -> float:
+    """Mean squared deviation of the amplitude window — the motion metric.
+
+    A moving person makes the clutter-removed amplitude fluctuate; an empty
+    room's energy stays near zero (compared against 0.01 in NodeDspPipeline).
+    """
     arr = np.asarray(list(values), dtype=float)
     if arr.size == 0:
         return 0.0
@@ -110,6 +122,11 @@ def motion_energy(values: Iterable[float]) -> float:
 
 
 def cross_node_correlation(left: np.ndarray, right: np.ndarray) -> float:
+    """Pearson correlation of the two nodes' motion histories.
+
+    One real person perturbs both links coherently, so high correlation
+    supports "same target seen by both nodes" (fused mode confidence).
+    """
     if left.size == 0 or right.size == 0:
         return 0.0
     n = min(left.size, right.size)
@@ -127,6 +144,11 @@ def dual_node_on_axis_position(
     right_amplitude: float,
     baseline_m: float = 5.0,
 ) -> dict[str, float | str]:
+    """1-D position on the node baseline from the two perturbation levels.
+
+    balance = right/(left+right): 0 → at the left node, 1 → at the right
+    node (0.5 when silent). Predecessor of node-fusion.ts fuseTwoNodeTarget.
+    """
     total = max(0.0, left_amplitude) + max(0.0, right_amplitude)
     balance = 0.5 if total <= 1e-12 else max(0.0, right_amplitude) / total
     x_m = baseline_m * balance
@@ -143,6 +165,11 @@ def deterministic_human_gate(
     respiration_periodic: bool,
     cardiac_energy_present: bool = False,
 ) -> bool:
+    """Authority verdict for "human present": motion AND periodic respiration.
+
+    Deterministic by design — an AI model may advise but can never originate
+    or flip this decision.
+    """
     return bool(motion_present and respiration_periodic and (cardiac_energy_present or respiration_periodic))
 
 
@@ -163,6 +190,8 @@ class NodeDspPipeline:
         self._history = deque(maxlen=128)
 
     def process(self, frame: CsiFrameV1) -> dict[str, float | int | bool]:
+        """One frame through the per-node chain: clutter-suppress → Hampel →
+        respiration bandpass → windowed motion energy → is_motion (>0.01)."""
         amplitudes = extract_amplitudes(frame.iq_bytes)
         phases = unwrap_phase_series(extract_phases(frame.iq_bytes))
         dynamic = self._clutter.update(amplitudes)

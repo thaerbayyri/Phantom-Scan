@@ -57,6 +57,14 @@ export function computeDFT(data: number[], sampleRate: number): { frequencies: n
     };
 }
 
+/**
+ * Extracts respiration/heart rate from the CSI phase of H1·conj(H2) over a
+ * 10 s window. Supports the presence story: a person standing perfectly
+ * still produces no motion-gate energy, but their chest displacement still
+ * modulates phase in the 0.1–0.5 Hz (breathing) and 0.8–2.0 Hz (heart)
+ * bands. Results are broadcast as `vitalSigns` and shown only while a
+ * target is visible.
+ */
 export class VitalsComputer {
     private phaseBuffer: number[] = [];
     private readonly bufferSize: number;

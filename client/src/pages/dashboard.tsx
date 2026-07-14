@@ -51,6 +51,9 @@ export default function Dashboard() {
     nodeFeatures,
   } = useWebSocket();
 
+  // Presentation gates: every target-related widget below renders ONLY what
+  // these shared predicates allow, so the page cannot show a position, vitals
+  // or identity that the state machine has not vouched for.
   const livePositionVisible = canPresentLiveTargetPosition({
     dataSource: status.dataSource,
     radialTarget,
@@ -70,6 +73,9 @@ export default function Dashboard() {
     radialTarget,
     targetState,
   });
+  // Derived readouts, all zeroed/hidden whenever the position gate is closed:
+  // bearing + distance feed the DistanceMeter gauge; vitals and identity only
+  // show while a truthful target is visible.
   const targetBearing = livePositionVisible ? radialTarget?.theta : undefined;
   const targetDistanceCm = livePositionVisible && radialTarget ? radialTarget.distanceCm : 0;
   const wallDistance = livePositionVisible && radialTarget ? radialTarget.wallDistance : 0;

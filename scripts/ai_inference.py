@@ -378,10 +378,15 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
 
     # ── Classification ──
     # Presence: trust the trained head when available, but require some signal.
+    # ADVISORY ONLY: this AI presence/human verdict is displayed alongside the
+    # deterministic pipeline's decision — it can never originate or flip the
+    # dashboard's target presence (server/lib owns that).
     if presence_prob is not None:
         present = presence_prob > 0.5
     else:
         present = float(features_8d[0]) > -1.5
+    # Moving perturbation (>0.005 temporal delta) reads as human; a present
+    # but statically-perturbing reflector reads as mechanical.
     label = "unknown"
     if present:
         label = "human" if motion_raw > 0.005 else "mechanical"

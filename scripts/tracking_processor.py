@@ -1,3 +1,10 @@
+"""DBSCAN + Kalman target tracker (numpy/sklearn).
+
+LEGACY/REFERENCE — the live pipeline uses the TypeScript port in
+server/lib/tracking.ts; this Python original is kept for offline analysis.
+Flow: cluster point-cloud points -> largest cluster centroid -> constant-
+velocity Kalman filter -> smoothed position/velocity (movement) estimate.
+"""
 import numpy as np
 import time
 from sklearn.cluster import DBSCAN

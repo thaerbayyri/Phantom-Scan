@@ -9,6 +9,11 @@ interface DopplerSpectrogramProps {
     className?: string;
 }
 
+/**
+ * Time × frequency heatmap of the dynamic CSI amplitude — the target's raw
+ * motion signature: vertical energy bands appear while the person moves and
+ * vanish in an empty/still room.
+ */
 export function DopplerSpectrogram({
     frame,
     className = "",

@@ -13,6 +13,11 @@ interface PointCloud3DProps {
   className?: string;
 }
 
+/**
+ * Thin Three.js wrapper for the radar: creates the R3F <Canvas> (camera above
+ * and behind the node axis) with orbit controls, and mounts <RadialScene>,
+ * which does all the actual target/movement rendering.
+ */
 export function PointCloud3D({
   points,
   radialTarget,

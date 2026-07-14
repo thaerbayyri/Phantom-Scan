@@ -1,3 +1,9 @@
+/**
+ * Turns the numeric target (position/balance/trends) into the human-readable
+ * sentences shown on the identity card and top bar: zone ("Near N1",
+ * "Between N1 and N2"), per-node distances, and a motion phrase ("Toward N2",
+ * "Holding at midpoint", "Crossing the midpoint").
+ */
 import type { RadialTarget, SensorNode, TargetState } from "./schema";
 import { bearingToCardinalLong, travelAngleToBearingRad } from "./bearing";
 
@@ -30,6 +36,8 @@ export function summarizeTargetSpatial(
     return null;
   }
 
+  // Straight-line distance from the target to each node anchor, plus which
+  // node the target is currently approaching (from the server-side trend).
   const distances = nodes
     .map((node) => ({
       nodeId: node.node_id,
@@ -43,6 +51,9 @@ export function summarizeTargetSpatial(
   );
   const approaching = nodes.find((node) => node.trend === "approaching");
 
+  // Fused two-node mode: zone comes from the balance value (≤0.2 near N1,
+  // ≥0.8 near N2, else midpoint); the motion phrase prefers the approach
+  // trend, falling back to balance-zone wording when idle.
   if (targetState.node_mode === "fused_two_node" && radialTarget.balance !== undefined && distances.length >= 2) {
     const balanceZone =
       radialTarget.balance <= 0.2
@@ -85,6 +96,8 @@ export function summarizeTargetSpatial(
     return null;
   }
 
+  // Single-node fallback: only a nearest-node distance and a cardinal
+  // direction of travel can be honestly stated.
   return {
     zoneLabel: `Around N${nearest.nodeId}`,
     detailLabel: `${roundDistance(nearest.distanceM)} from N${nearest.nodeId}`,

@@ -14,11 +14,20 @@ interface DirectionalNodeProps {
 // Max trail length
 const TRAIL_LENGTH = 60;
 
+/** 0 at the axis midpoint → 1 at a node; drives the "swelling near a node" visual emphasis in fused mode. */
 function getNearNodeStrength(balance?: number): number {
     if (balance === undefined) return 0;
     return Math.min(1, Math.abs(balance - 0.5) * 2);
 }
 
+/**
+ * THE target marker: glowing sphere + heading arrow + fading motion trail.
+ * Movement is conveyed four ways — the sphere lerps toward each new fused
+ * position, the arrow rotates/scales with travel direction and speed, the
+ * glow pulses fast while `isMoving` (slow "breathing" when idle), and the
+ * trail draws the last 60 positions fading from old to new. Color also
+ * flips cyan (#00e5ff) when moving vs darker teal (#0097a7) when still.
+ */
 export function DirectionalNode({ target }: DirectionalNodeProps) {
     const groupRef = useRef<THREE.Group>(null);
     const arrowRef = useRef<THREE.Group>(null);
@@ -73,6 +82,9 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
         const t = state.clock.elapsedTime;
 
         // ── Smooth position lerp ──
+        // Adaptive follow rate: chase hard when far behind or the target is
+        // fast; settle gently when nearly on top of it so the dot doesn't
+        // jitter with per-frame balance noise.
         targetPos.current.set(target.x, 0.3, target.z);
         const distanceToTarget = groupRef.current.position.distanceTo(targetPos.current);
         const followAlpha =
@@ -112,6 +124,8 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
         }
 
         // ── Update trail ──
+        // Record a new breadcrumb only after ≥2 cm of actual travel, so an
+        // idle target doesn't grow a fake trail from lerp micro-motion.
         const currentPos = groupRef.current.position.clone();
         if (currentPos.distanceTo(lastTrailPoint.current) >= 0.02) {
             trailPositions.current.push(currentPos);
@@ -156,7 +170,8 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
         }
     });
 
-    // Dynamic color based on state
+    // Dynamic color based on state: bright cyan + hot emissive while moving,
+    // dimmer teal while still — the fastest at-a-glance moving/idle cue.
     const nodeColor = target.isMoving ? "#00e5ff" : "#0097a7";
     const emissiveColor = target.isMoving ? "#00e5ff" : "#006064";
     const emissiveIntensity = target.isMoving ? 2.5 : 1.0;

@@ -13,6 +13,10 @@ Output labels:
   - "Human - Falling"
   - "Human - Sitting"
   - "Non-Human/Pet"
+
+POST-SESSION only: session_reporter.py runs this over a finished recording to
+label the target's activity; the live moving/still decision is made in
+server/lib (MotionGate + fusion), not here.
 """
 
 from __future__ import annotations

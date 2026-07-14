@@ -9,6 +9,12 @@ interface VitalsMonitorProps {
     targetState?: TargetState | null;
 }
 
+/**
+ * Heart-rate / respiration readout from the CSI-phase vitals pipeline.
+ * Gated on `target_visible`: shows "NO TARGET" unless the presence state
+ * machine vouches for a target — vitals reinforce presence even when the
+ * person stands perfectly still.
+ */
 export function VitalsMonitor({ vitals, targetState }: VitalsMonitorProps) {
     // Graceful fallback for missing vitals
     const hr = vitals?.heartRateBpm ?? 0;

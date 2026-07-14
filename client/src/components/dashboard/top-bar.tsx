@@ -97,7 +97,8 @@ export function TopBar({
             </Badge>
           )}
 
-          {/* Motion indicator */}
+          {/* Motion indicator: live MotionGate verdict — orange "Motion"
+              badge when this frame's variance beats the threshold. */}
           {status.isProcessing && (
             motionStatus.motionDetected ? (
               <Badge variant="default" className="gap-1 bg-orange-500">
@@ -111,6 +112,8 @@ export function TopBar({
             )
           )}
 
+          {/* Target zone badge: "NONE" until the state machine vouches for a
+              visible target, then the spatial zone ("Near N1", "Between…"). */}
           {status.isProcessing && (
             <Badge variant="outline" className="gap-1 border-cyan-500/30 text-cyan-300">
               Target: {targetState?.target_visible ? (spatialSummary?.zoneLabel ?? targetState.state.toUpperCase()) : "NONE"}

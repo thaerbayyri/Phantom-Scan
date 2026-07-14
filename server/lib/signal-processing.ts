@@ -37,10 +37,15 @@ function powerIterationEigen(
   const A: Complex[][] = R.map(row => row.map(c => ({ ...c })));
 
   for (let k = 0; k < n; k++) {
-    // Initialize random vector
+    // Deterministic dense start vector (seeded LCG per deflation step):
+    // identical input covariance must yield an identical spectrum, so the
+    // AoA display cannot flicker from re-randomized eigenvectors.
+    let seed = (0x9e3779b9 ^ (k * 0x85ebca6b)) >>> 0;
+    const rand = () =>
+      ((seed = (seed * 1664525 + 1013904223) >>> 0) / 0x100000000) - 0.5;
     let v: Complex[] = Array(n).fill(null).map(() => ({
-      re: Math.random() - 0.5,
-      im: Math.random() - 0.5
+      re: rand(),
+      im: rand()
     }));
 
     // Normalize
@@ -327,23 +332,35 @@ export class HampelFilter {
 // ═══════════════════════════════════════════════════════════════════
 // Micro-Doppler Classifier — sliding FFT human/machine discrimination
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * Labels the detected target "human" vs "mechanical" from its motion
+ * signature. Rationale: fans/machines produce fast, strictly periodic
+ * amplitude modulation (high >5 Hz spectral ratio + strong autocorrelation
+ * peak), whereas human movement is slower and aperiodic. Output feeds the
+ * `targetIdentity` broadcast and the radial target's label/humanProb.
+ */
 export class MicroDopplerClassifier {
   private amplitudeBuffer: number[] = [];
   private readonly bufferSize: number;
   private readonly sampleRate: number;
   private lastLabel: "human" | "mechanical" | "unknown" = "unknown";
   private lastHumanProb = 0.5;
+  private lastPeriodicity = 0;
+  private lastHighFreqRatio = 0;
 
   constructor(bufferSize = 40, sampleRate = 20) {
     this.bufferSize = bufferSize;
     this.sampleRate = sampleRate;
   }
 
-  /** Push dynamic amplitude; returns classification. */
+  /** Push dynamic amplitude; returns classification incl. the raw features
+   *  (periodicity, highFreqRatio) shown on the Target Identity card. */
   push(amplitude: number): {
     label: "human" | "mechanical" | "unknown";
     humanProb: number;
     mechanicalProb: number;
+    periodicity: number;
+    highFreqRatio: number;
   } {
     this.amplitudeBuffer.push(amplitude);
     if (this.amplitudeBuffer.length > this.bufferSize * 2) {
@@ -355,6 +372,8 @@ export class MicroDopplerClassifier {
         label: this.lastLabel,
         humanProb: this.lastHumanProb,
         mechanicalProb: 1 - this.lastHumanProb,
+        periodicity: this.lastPeriodicity,
+        highFreqRatio: this.lastHighFreqRatio,
       };
     }
 
@@ -411,14 +430,24 @@ export class MicroDopplerClassifier {
 
     this.lastLabel = label;
     this.lastHumanProb = humanProb;
+    this.lastPeriodicity = autocorrMax;
+    this.lastHighFreqRatio = highFreqRatio;
 
-    return { label, humanProb, mechanicalProb: 1 - humanProb };
+    return {
+      label,
+      humanProb,
+      mechanicalProb: 1 - humanProb,
+      periodicity: autocorrMax,
+      highFreqRatio,
+    };
   }
 
   reset() {
     this.amplitudeBuffer = [];
     this.lastLabel = "unknown";
     this.lastHumanProb = 0.5;
+    this.lastPeriodicity = 0;
+    this.lastHighFreqRatio = 0;
   }
 }
 
@@ -426,6 +455,14 @@ export class MicroDopplerClassifier {
 // ═══════════════════════════════════════════════════════════════════
 // PDP Ranger — IFFT Power Delay Profile distance estimation
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * Estimates target range (cm) and wall distance (m) for the distance gauge.
+ * Method: IFFT of the averaged CSI vector gives a power-delay profile; the
+ * strongest peak's delay bin → time-of-flight distance, the farthest peak →
+ * wall reflection. The PDP estimate is blended with an RSSI path-loss
+ * estimate (weight ∝ peak strength) and EMA-smoothed (α=0.25) so the
+ * readout doesn't jump frame to frame.
+ */
 export class PDPRanger {
   private static readonly C = 3e8;         // Speed of light
   private static readonly BW = 20e6;       // 20MHz Wi-Fi bandwidth
@@ -603,6 +640,12 @@ export class PDPRanger {
 // Background Subtractor — running-average clutter removal
 // H_dynamic(t) = H_current(t) - mean(H_window)
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * First stage of every frame: removes the static room reflection (walls,
+ * furniture) by subtracting the running-average channel, leaving only the
+ * dynamic component caused by a moving/breathing person. All downstream
+ * motion and presence math operates on this residual.
+ */
 export class BackgroundSubtractor {
   private h1Window: Complex[] = [];
   private h2Window: Complex[] = [];
@@ -660,6 +703,14 @@ export class BackgroundSubtractor {
 // Motion Gate — variance-based motion detection
 // Compares variance of amplitude over last k samples against η
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * Produces the per-frame `motionDetected` flag (the "Motion / No Motion"
+ * badge and half of the moving/idle decision in buildTargetState).
+ * Physics: a person disturbing the WiFi channel makes the clutter-removed
+ * amplitude fluctuate; an empty room's variance sits at the noise floor.
+ * The first 100 samples auto-calibrate that floor (threshold = 3σ), so the
+ * gate adapts to each room without manual tuning.
+ */
 export class MotionGate {
   private amplitudeBuffer: number[] = [];
   private readonly bufferSize = 30;

@@ -110,6 +110,11 @@ function buildClearedTargetState(reason: string): TargetState {
   };
 }
 
+/**
+ * One-shot wipe of everything target-related in client state (dot, identity,
+ * vitals, pose, point cloud) used on stop/disconnect/source-change and by the
+ * staleness watchdog, so a dead data path can never leave a ghost on screen.
+ */
 function buildClearedSceneState(
   reason: string,
   opts: { clearNodes?: boolean } = {},
@@ -129,6 +134,13 @@ function buildClearedSceneState(
   };
 }
 
+/**
+ * Single source of live detection state for the whole dashboard. Opens the
+ * /ws socket, routes every server broadcast (radialTarget, targetState,
+ * nodes, motionStatus, vitals, charts…) into React state, auto-reconnects
+ * every 2 s, and runs the 5 s staleness watchdog. Components never talk to
+ * the socket directly — they consume this hook's state.
+ */
 export function useWebSocket() {
   const [state, setState] = useState<WSState>({
     status: defaultStatus,
@@ -333,6 +345,9 @@ export function useWebSocket() {
       // "trackedTarget" messages are intentionally ignored: no client consumer
       // (fused/radial target is the rendered position source).
 
+      // The rendered target position/velocity (fused or single-node). Null
+      // means the server explicitly cleared the target. Also feeds the
+      // staleness watchdog timestamp.
       case "radialTarget":
         lastTargetMsgRef.current = Date.now();
         setState((prev) => ({
@@ -348,6 +363,8 @@ export function useWebSocket() {
         }));
         break;
 
+      // Presence state machine (none/stale/idle/moving/degraded) — the gates
+      // in shared/target-presentation.ts read this to decide what may render.
       case "targetState":
         lastTargetMsgRef.current = Date.now();
         setState((prev) => ({
@@ -377,6 +394,8 @@ export function useWebSocket() {
         }));
         break;
 
+      // Per-node beacons: anchor position, motion glow 0..1, active flag,
+      // target distance to this node, and approach/recede trend.
       case "nodes":
         setState((prev) => ({
           ...prev,

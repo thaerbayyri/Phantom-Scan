@@ -14,6 +14,7 @@ import { MachineStatic } from "./MachineStatic";
 //  Polar Grid — concentric rings + radial spokes
 // ═══════════════════════════════════════════════════════════════════
 
+/** Static radar backdrop: 8 concentric range rings, 12 spokes, meter rings and N/E/S/W compass labels. */
 function PolarGrid() {
     const ringCount = 8;
     const spokeCount = 12;
@@ -82,6 +83,11 @@ function PolarGrid() {
 // Distinct colors per node so N1/N2 are visually separable.
 const NODE_COLORS: Record<number, string> = { 1: "#00ffcc", 2: "#ff7ac6" };
 
+/**
+ * One glowing sphere per ESP32 node anchor. Its pulse amplitude, emissive
+ * intensity and point-light all scale with the node's live `motion` (0..1),
+ * so an operator can see WHICH node currently senses the perturbation.
+ */
 function ESPBeacon({
     position = [0, 0.15, 0],
     color = "#00ffcc",
@@ -222,6 +228,11 @@ function NodeInfluenceRings({ node }: { node: SensorNode }) {
     );
 }
 
+/**
+ * Soft glowing band along the N1–N2 baseline (fused mode only) — visualizes
+ * the 1-D corridor the fused target can occupy; the midpoint ring brightens
+ * (`emphasis`) when the target is crossing the middle zone.
+ */
 function NodeAxisField({
     a,
     b,
@@ -250,6 +261,11 @@ function NodeAxisField({
     );
 }
 
+/**
+ * The MOVEMENT arrow: a line from the target in its direction of travel,
+ * length ∝ speed (0.6–1.8 m), rendered only while `isMoving` is true (and
+ * gated upstream by canPresentAxisMotionVector's 0.05 m/s speed floor).
+ */
 function TargetMotionVector({ target }: { target: RadialTarget }) {
     const geometry = useMemo(() => {
         const length = Math.max(0.6, Math.min(1.8, 0.6 + target.speed * 2.5));
@@ -375,6 +391,12 @@ interface RadialSceneProps {
     showLivePosition?: boolean;
 }
 
+/**
+ * The radar scene: grid + node beacons + axis + the target dot and motion
+ * arrow. `canRenderTarget` is the final render gate — the page-level
+ * presentation gate (showLivePosition) AND a non-none/stale state must both
+ * hold before any target geometry is mounted.
+ */
 export function RadialScene({
     radialTarget,
     points,
@@ -392,7 +414,13 @@ export function RadialScene({
         targetState.state !== "none" &&
         targetState.state !== "stale"
     );
-    const canRenderConfidentHuman = false;
+    // Human skeleton overlay: rendered when the target is presentable AND the
+    // micro-Doppler classifier commits to "human" (label requires humanProb
+    // > 0.65; the JSX below applies the label check). Uses the AI poseFrame
+    // skeleton when streaming, else HumanMesh's procedural wireframe figure.
+    // The abstract dot stays underneath as the authoritative position anchor.
+    const canRenderConfidentHuman = canRenderTarget;
+    // Mechanical (fan/machine) volumetric overlay remains disabled.
     const canRenderVolumetricOverlay = false;
     const spatialSummary = useMemo(
         () => summarizeTargetSpatial(radialTarget, nodes, targetState),

@@ -12,6 +12,12 @@ interface DistanceMeterProps {
     className?: string;
 }
 
+/**
+ * Range readout: SVG half-circle gauge of the target distance (green far →
+ * red close over an 8 m range), a wall-reflection tick, and the compass
+ * bearing (cardinal) of the target. Blanked whenever hasLivePosition is
+ * false so a cleared target can't keep showing a distance.
+ */
 export function DistanceMeter({
     distanceCm,
     wallDistance,

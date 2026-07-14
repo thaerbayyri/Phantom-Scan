@@ -11,6 +11,9 @@ interface NodeFeaturesCardProps {
  * Firmware DSP metrics (RuView 0xC5110006 feature-state, 1 Hz per node).
  * Board-computed presence/motion/vitals shown verbatim for cross-checking
  * against the host-DSP estimates — the two pipelines are independent.
+ * With current firmware the resp/heart confidences are real autocorrelation
+ * peak ratios computed on the board (0 = no periodic signal, 1 = strong);
+ * legacy 0xC5110002 firmware reports a fixed 100% for any estimate.
  */
 export function NodeFeaturesCard({ nodeFeatures, className = "" }: NodeFeaturesCardProps) {
     return (
@@ -25,7 +28,7 @@ export function NodeFeaturesCard({ nodeFeatures, className = "" }: NodeFeaturesC
             <CardContent className="flex flex-col gap-2 px-5 pb-5 pt-1">
                 {nodeFeatures.length === 0 ? (
                     <div className="text-xs font-mono text-muted-foreground">
-                        no feature-state packets (boards silent or firmware without 0xC5110006)
+                        no board DSP packets (boards silent, or firmware sending neither 0xC5110002 vitals nor 0xC5110006 feature-state)
                     </div>
                 ) : (
                     nodeFeatures.map((nf) => (
@@ -60,6 +63,11 @@ export function NodeFeaturesCard({ nodeFeatures, className = "" }: NodeFeaturesC
                                     </span>{" "}
                                     <span className="text-[10px]">({(nf.hr_conf * 100).toFixed(0)}%)</span>
                                 </span>
+                                {nf.rssi !== undefined && (
+                                    <span>
+                                        rssi <span className="text-foreground">{nf.rssi} dBm</span>
+                                    </span>
+                                )}
                             </div>
                         </div>
                     ))

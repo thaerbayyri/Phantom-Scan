@@ -1,3 +1,9 @@
+"""Python Milestone-1 detection authority (UDP :5005 → derived frames).
+
+SUPERSEDED — live detection now runs in server/lib (the TS dashboard owns
+UDP :5005); kept for reference. Running this alongside the dashboard causes
+an EADDRINUSE collision on :5005.
+"""
 from __future__ import annotations
 
 import argparse
@@ -106,6 +112,8 @@ class PhantomRuntime:
         self.source_guard = SourcePinningGuard()
 
     def current_mode(self) -> RuntimeMode:
+        """fused_two_node when BOTH nodes are fresh, else degraded_single_node
+        (same freshness rule the TS pipeline later adopted)."""
         now_ns = time.time_ns()
         active_nodes = [
             node_id
@@ -122,6 +130,8 @@ class PhantomRuntime:
         packet: CsiFrameV1 | HeartbeatV1 | InvalidPacket,
         raw_data: bytes | None = None,
     ) -> dict[str, Any] | None:
+        """Ingest one UDP packet: source-pin check → buffer → per-node DSP →
+        derived (fused) frame. Returns the derived frame for CSI packets."""
         if self.ingest_paused:
             return None
 
@@ -162,6 +172,9 @@ class PhantomRuntime:
         return None
 
     def _build_derived_frame(self, node_id: int, node_metrics: dict[str, Any]) -> dict[str, Any]:
+        """Fusion step: when both nodes are healthy, combine their latest
+        metrics into cross-node correlation + a 1-D on-axis position
+        (mode="fused"); otherwise emit single-node metrics (mode="degraded")."""
         now_ns = time.time_ns()
         healthy_nodes = {
             nid: state

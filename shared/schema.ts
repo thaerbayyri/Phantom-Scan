@@ -84,11 +84,12 @@ export const vitalSignsSchema = z.object({
 });
 export type VitalSigns = z.infer<typeof vitalSignsSchema>;
 
-// Motion status
+// Motion status — per-frame output of the variance MotionGate, broadcast
+// every frame and shown as the "Motion / No Motion" badge in the top bar.
 export const motionStatusSchema = z.object({
-  motionDetected: z.boolean(),
-  variance: z.number(),
-  threshold: z.number(),
+  motionDetected: z.boolean(), // variance > threshold this frame
+  variance: z.number(),        // amplitude variance over the 30-sample window
+  threshold: z.number(),       // active gate (auto-calibrated 3σ or manual)
 });
 export type MotionStatus = z.infer<typeof motionStatusSchema>;
 
@@ -119,7 +120,11 @@ export const processingConfigSchema = z.object({
   clutterRemovalEnabled: z.boolean().default(true),
   clutterWindowSize: z.number().min(10).max(200).default(50),
   motionGateEnabled: z.boolean().default(false),
+  // Manual override for the MotionGate (moving/still); when the gate is
+  // disabled the auto-calibrated 3σ floor is used instead.
   motionThreshold: z.number().min(0).max(1).default(0.05),
+  // Presence gate for two-node fusion: max(motion1, motion2) must clear this
+  // for a target to exist at all (see node-fusion.ts DEFAULT_MOTION_THRESHOLD).
   fusedTargetMotionThreshold: z.number().min(0).max(1).default(0.12),
 });
 export type ProcessingConfig = z.infer<typeof processingConfigSchema>;
@@ -210,6 +215,12 @@ export const radialTargetSchema = z.object({
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 
+// Target presence/movement state machine (built in server/lib/target-state.ts):
+//   none     — empty room / nothing detectable
+//   stale    — last detection aged past 1.5 s; position no longer trusted
+//   idle     — target present (two-node) but not moving
+//   moving   — target present (two-node) and in motion
+//   degraded — only one node live; presence evidence but untrustworthy position
 export const targetStateSchema = z.object({
   state: z.enum(["none", "stale", "idle", "moving", "degraded"]),
   source_mode: z.enum(["live", "replay", "synthetic"]),
@@ -275,6 +286,7 @@ export const nodeFeatureStateSchema = z.object({
   hr_bpm: z.number(),            // heartbeat estimate (beats/min)
   hr_conf: z.number(),           // heartbeat confidence 0..1
   age_ms: z.number(),            // ms since the packet was received (server clock)
+  rssi: z.number().optional(),   // board-reported RSSI dBm (0xC5110002 only)
 });
 export type NodeFeatureState = z.infer<typeof nodeFeatureStateSchema>;
 

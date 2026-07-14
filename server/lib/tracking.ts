@@ -88,6 +88,12 @@ export class DBSCAN {
 
 // ── Kalman Filter ───────────────────────────────────────────────────
 
+/**
+ * 6-state constant-velocity Kalman filter [x,y,z,vx,vy,vz] that smooths the
+ * noisy cluster centroid into a stable target track. Its velocity estimate is
+ * where the target's `speed`/`isMoving` and heading come from, so movement
+ * shown on the radar is filtered physics, not raw frame-to-frame jitter.
+ */
 export class KalmanFilter {
     // State: [x, y, z, vx, vy, vz]
     private x: number[];
@@ -280,6 +286,13 @@ export class TrackingProcessor {
         this.pointBuffer = [];
     }
 
+    /**
+     * One tracking step per frame: buffer the newest AoA point-cloud points,
+     * DBSCAN-cluster them, pick the highest-energy cluster as the target,
+     * feed its amplitude-weighted centroid to the Kalman filter, and derive
+     * speed (m/s), isMoving (speed > 0.1) and heading. Coasts through up to
+     * 10 consecutive misses (~0.5 s) before declaring the target lost (null).
+     */
     public process(newPoints: PointCloudPoint[]): TrackedTarget | null {
         // Add new points to buffer
         this.pointBuffer.push(...newPoints);

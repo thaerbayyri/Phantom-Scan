@@ -10,6 +10,15 @@ const HEARTBEAT_MAGIC_LE = 0xc51100a1;
 /** RuView firmware rv_feature_state packet (1 Hz per node, board-side DSP). */
 const FEATURE_STATE_MAGIC_LE = 0xc5110006;
 const FEATURE_STATE_MIN_SIZE = 56;
+/** This repo's own firmware vitals packet (edge_vitals_pkt_t, 32 bytes). */
+const EDGE_VITALS_MAGIC_LE = 0xc5110002;
+const EDGE_VITALS_SIZE = 32;
+/** Firmware XOR+RLE compressed CSI (edge tier >= 2). Not decoded here: the
+ *  raw 0xC5110001 stream already feeds the pipeline, so these are counted
+ *  and skipped instead of warned about. */
+const EDGE_COMPRESSED_MAGIC_LE = 0xc5110003;
+/** Full rv_feature_state size incl. trailing CRC32 (bytes 56..59). */
+const FEATURE_STATE_FULL_SIZE = 60;
 const LEGACY_HEADER_SIZE = 20;
 const ADR018_HEADER_SIZE = 32;
 
@@ -28,6 +37,12 @@ type ParsedCsiPacket = {
     iqData: Buffer;
 };
 
+/**
+ * Anti-spoof guard for the detection input: pins each node_id to the first
+ * source IP that used it, so a rogue/duplicate sender cannot inject fake CSI
+ * (and thus fake presence/motion) under an already-claimed node identity.
+ * Allows legitimate rebinds after 10 s of silence (device reboot + new DHCP IP).
+ */
 export class SourcePinningGuard {
     /** A pinned source goes stale after this much silence; a new IP may then
      *  claim the node (device reboot + DHCP renumber), which is NOT a spoof. */
@@ -153,7 +168,53 @@ export type ParsedFeatureState = {
     respConf: number;
     hrBpm: number;
     hrConf: number;
+    /** Board-reported RSSI (dBm). Only the 0xC5110002 vitals packet carries
+     *  it; rv_feature_state packets leave it undefined. */
+    rssi?: number;
 };
+
+export type PacketKind =
+    | "csi"
+    | "heartbeat"
+    | "vitals"
+    | "feature_state"
+    | "compressed"
+    | "unknown";
+
+/** Classify a datagram by its leading magic (LE u32). Pure helper so the
+ *  dispatch in startUDPServer is unit-testable. */
+export function classifyPacketMagic(msg: Buffer): PacketKind {
+    if (msg.length < 4) {
+        return "unknown";
+    }
+    switch (msg.readUInt32LE(0)) {
+        case MAGIC_NUMBER_LE:
+            return "csi";
+        case HEARTBEAT_MAGIC_LE:
+            return "heartbeat";
+        case EDGE_VITALS_MAGIC_LE:
+            return "vitals";
+        case FEATURE_STATE_MAGIC_LE:
+            return "feature_state";
+        case EDGE_COMPRESSED_MAGIC_LE:
+            return "compressed";
+        default:
+            return "unknown";
+    }
+}
+
+/** IEEE 802.3 CRC32 (poly 0xEDB88320, init/final-xor 0xFFFFFFFF) — matches
+ *  the firmware's rv_feature_state_finalize bit-by-bit implementation. */
+export function crc32IEEE(buf: Buffer, length: number): number {
+    let crc = 0xffffffff;
+    for (let i = 0; i < length; i++) {
+        crc ^= buf[i];
+        for (let bit = 0; bit < 8; bit++) {
+            crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
 
 /**
  * Parse a RuView rv_feature_state packet (magic 0xC5110006, ≥56 bytes LE).
@@ -168,6 +229,15 @@ export function parseFeatureStatePacket(msg: Buffer): ParsedFeatureState | null 
     if (msg.readUInt32LE(0) !== FEATURE_STATE_MAGIC_LE) {
         return null;
     }
+    // Full 60-byte packets carry a trailing CRC32 over bytes 0..55; reject on
+    // mismatch (corrupted datagram). 56-59 byte packets predate the CRC and
+    // stay accepted for backward compatibility.
+    if (msg.length >= FEATURE_STATE_FULL_SIZE) {
+        const expected = msg.readUInt32LE(FEATURE_STATE_FULL_SIZE - 4);
+        if (crc32IEEE(msg, FEATURE_STATE_FULL_SIZE - 4) !== expected) {
+            return null;
+        }
+    }
     return {
         nodeId: msg.readUInt8(4),
         motion: msg.readFloatLE(16),
@@ -179,6 +249,45 @@ export function parseFeatureStatePacket(msg: Buffer): ParsedFeatureState | null 
     };
 }
 
+/**
+ * Parse this repo's own firmware vitals packet (magic 0xC5110002, 32 bytes LE;
+ * edge_vitals_pkt_t in firmware/esp32-csi-node/main/edge_processing.h):
+ * node_id u8 @4; flags u8 @5 (bit0 presence, bit1 fall, bit2 motion);
+ * breathing u16 @6 (BPM*100); heart u32 @8 (BPM*10000); rssi i8 @12;
+ * motion_energy f32 @16; presence_score f32 @20; timestamp_ms u32 @24.
+ * Mapped onto the same ParsedFeatureState the RuView 0xC5110006 packet
+ * produces, so either firmware populates the dashboard's Board DSP card.
+ */
+export function parseEdgeVitalsPacket(msg: Buffer): ParsedFeatureState | null {
+    if (msg.length < EDGE_VITALS_SIZE) {
+        return null;
+    }
+    if (msg.readUInt32LE(0) !== EDGE_VITALS_MAGIC_LE) {
+        return null;
+    }
+    const respBpm = msg.readUInt16LE(6) / 100;
+    const hrBpm = msg.readUInt32LE(8) / 10000;
+    return {
+        nodeId: msg.readUInt8(4),
+        motion: msg.readFloatLE(16),
+        presence: msg.readFloatLE(20),
+        rssi: msg.readInt8(12),
+        respBpm,
+        // edge_vitals_pkt_t carries no confidence fields: report full
+        // confidence for a non-zero (sanity-clamped on the board) estimate.
+        respConf: respBpm > 0 ? 1 : 0,
+        hrBpm,
+        hrConf: hrBpm > 0 ? 1 : 0,
+    };
+}
+
+/**
+ * Parse a raw CSI frame (magic 0xC5110001) into header fields + IQ payload.
+ * Supports the ADR-018 32-byte header (schema v1: seq/freq/noise/channel/
+ * device timestamps) and falls back to the legacy 20-byte header. Heartbeats
+ * (0xC51100A1) and malformed/short packets return null and are ignored —
+ * only valid CSI ever reaches the detection pipeline.
+ */
 export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
     if (msg.length < 4) {
         return null;
@@ -192,6 +301,7 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
         return null;
     }
 
+    // Preferred path: ADR-018 32-byte header, schema version 1.
     if (msg.length >= ADR018_HEADER_SIZE) {
         const schemaVersion = msg.readUInt8(4);
         if (schemaVersion === 1) {
@@ -232,6 +342,7 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
         }
     }
 
+    // Legacy fallback: 20-byte header (older firmware without ADR-018 fields).
     if (msg.length < LEGACY_HEADER_SIZE) {
         return null;
     }
@@ -259,6 +370,14 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
     };
 }
 
+/**
+ * Sole ESP32 ingest for the live pipeline. Binds UDP :5005, validates each
+ * datagram (magic + source pinning), extracts the per-subcarrier amplitude
+ * vector and the max-power subcarrier as scalar h1/h2, then hands the
+ * CSISample to signalServer.ingestSample — the start of every presence/
+ * movement decision. Accepted raw packets are also mirrored to the Python
+ * AI sidecar on :5006 (advisory classification only).
+ */
 export function startUDPServer() {
     // Singleton ingest: do NOT set reuseAddr. On Windows SO_REUSEADDR lets a
     // stale/second listener silently share :5005 with non-deterministic delivery,
@@ -283,15 +402,54 @@ export function startUDPServer() {
     });
 
     let packetCount = 0;
+    let compressedFrameCount = 0;
     let lastLogTime = Date.now();
+    let lastUnknownMagicLogMs = 0;
 
     server.on("message", (msg, rinfo) => {
+        const kind = classifyPacketMagic(msg);
+
         // Firmware DSP feature-state (RuView 0xC5110006): independent 1 Hz
         // stream shown alongside host-DSP metrics — never fused with them.
-        if (msg.length >= 4 && msg.readUInt32LE(0) === FEATURE_STATE_MAGIC_LE) {
+        if (kind === "feature_state") {
             const feat = parseFeatureStatePacket(msg);
             if (feat && sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
                 signalServer.ingestNodeFeatureState(feat);
+            }
+            return;
+        }
+
+        // This repo's own firmware vitals (0xC5110002): same role as the
+        // RuView feature-state — board-side presence/motion/vitals for the
+        // Board DSP card, never fused with the host target math.
+        if (kind === "vitals") {
+            const feat = parseEdgeVitalsPacket(msg);
+            if (feat && sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
+                signalServer.ingestNodeFeatureState(feat);
+            }
+            return;
+        }
+
+        // Compressed CSI (0xC5110003, edge tier >= 2): expected traffic, not
+        // decoded — the raw stream carries the same frames. Count for the
+        // periodic stats line instead of warning.
+        if (kind === "compressed") {
+            compressedFrameCount++;
+            return;
+        }
+
+        // Diagnosability: surface unexpected packet types (≤1 log / 10 s) so
+        // "Board DSP card empty" is distinguishable between silent boards and
+        // firmware speaking an unknown protocol.
+        if (kind === "unknown") {
+            const magic = msg.length >= 4 ? msg.readUInt32LE(0) : 0;
+            const nowMs = Date.now();
+            if (nowMs - lastUnknownMagicLogMs > 10_000) {
+                lastUnknownMagicLogMs = nowMs;
+                console.warn(
+                    `[UDP] unknown packet magic 0x${magic.toString(16)} (${msg.length} B) from ` +
+                        `${rinfo.address}:${rinfo.port} — not CSI/heartbeat/vitals/feature-state/compressed`,
+                );
             }
             return;
         }
@@ -364,6 +522,8 @@ export function startUDPServer() {
             }
         }
 
+        // One CSISample per packet: scalar h1/h2 (dominant subcarrier) feed the
+        // legacy DSP chain; `amplitudes` (full vector) feeds two-node fusion.
         const sample: CSISample = {
             timestamp: Date.now(),
             h1: bestH1,
@@ -378,8 +538,11 @@ export function startUDPServer() {
         packetCount++;
         const now = Date.now();
         if (now - lastLogTime > 5000) {
-            console.log(`[UDP] Received ${packetCount} packets in last 5s`);
+            const compressedNote =
+                compressedFrameCount > 0 ? ` (${compressedFrameCount} compressed skipped)` : "";
+            console.log(`[UDP] Received ${packetCount} packets${compressedNote} in last 5s`);
             packetCount = 0;
+            compressedFrameCount = 0;
             lastLogTime = now;
         }
     });

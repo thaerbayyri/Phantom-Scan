@@ -9,6 +9,13 @@ interface AoASpectrumProps {
   className?: string;
 }
 
+/**
+ * MUSIC pseudo-spectrum for the current frame. Derived visualization: with
+ * single-antenna boards there is no spatial aperture, so this is computed
+ * over a time-sample buffer (synthetic aperture) — useful as a stable signal
+ * signature, not a physically calibrated bearing. In fused two-node mode the
+ * server treats the peak angle as display-only.
+ */
 export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
   // Honest empty state: never synthesize a fake spectrum — an operator must be
   // able to trust that a visible curve is real data.
@@ -28,7 +35,7 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
       <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>
         <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
           <Radio className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm">AoA Spectrum (MUSIC)</CardTitle>
+          <CardTitle className="text-sm">AoA Spectrum (MUSIC — derived)</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-1 items-center justify-center px-2 pb-2 pt-0">
           <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground/60">
@@ -43,7 +50,7 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
     <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>
       <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
         <Radio className="h-4 w-4 text-chart-1" />
-        <CardTitle className="text-sm">AoA Spectrum (MUSIC)</CardTitle>
+        <CardTitle className="text-sm">AoA Spectrum (MUSIC — derived)</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 px-2 pb-2 pt-0">
         <Plot

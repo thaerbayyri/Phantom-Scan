@@ -5,6 +5,10 @@ Pipeline: Raw CSI → Hampel → DWT → Phase Sanitize → Background Sub → S
           → PDP Range → AoA → DBSCAN → Kalman
 
 Requires: numpy, pywt, scikit-learn
+
+OFFLINE/REFERENCE — full-fidelity Python version of the detection chain for
+CSV/recorded-data analysis. The live loop runs the TypeScript equivalents in
+server/lib/signal-processing.ts and tracking.ts.
 """
 
 import math

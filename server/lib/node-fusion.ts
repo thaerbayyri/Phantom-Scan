@@ -139,6 +139,9 @@ export function computeNodeMotionFromMatrix(frames: number[][]): NodeMotion {
     return { mean: 0, absStd: 0, motion: 0 };
   }
 
+  // Per-subcarrier temporal std: for each subcarrier j, measure how much its
+  // amplitude varied across the window, then average the k stds into absStd —
+  // the raw (unsaturated) perturbation that feeds the balance ratio.
   let stdSum = 0;
   for (let j = 0; j < k; j++) {
     let m = 0;
@@ -153,6 +156,9 @@ export function computeNodeMotionFromMatrix(frames: number[][]): NodeMotion {
   }
   const absStd = stdSum / k;
 
+  // Baseline amplitude (mean over subcarriers, then over frames) — normalizes
+  // absStd so `motion` is a relative perturbation comparable across nodes with
+  // different RSSI/gain. `|| 1.0` guards divide-by-zero on silent input.
   let base = 0;
   for (const f of usable) {
     let s = 0;
@@ -221,6 +227,9 @@ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
   const r1 = Number.isFinite(input.r1) ? Math.max(0, input.r1) : 0;
   const r2 = Number.isFinite(input.r2) ? Math.max(0, input.r2) : 0;
 
+  // PRESENCE GATE: someone is "present" only if at least one node's saturated
+  // motion clears the calibrated threshold AND there is real perturbation
+  // energy (r1+r2 > EPS). Failing either → null → the UI shows an empty room.
   const present = Math.max(input.motion1, input.motion2) >= threshold && r1 + r2 > EPS;
   if (!present) {
     return null;
@@ -232,12 +241,16 @@ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
   const r1p = Math.pow(r1, p);
   const r2p = Math.pow(r2, p);
   const balance = r1p + r2p > EPS ? r2p / (r1p + r2p) : 0.5;
+  // Place the target on the straight N1–N2 line by linear interpolation of the
+  // (display-biased) balance: 0 → exactly at node 1, 1 → exactly at node 2.
   const biasedBalance = biasBalanceTowardNearestNode(balance);
   const n1 = input.anchors[1];
   const n2 = input.anchors[2];
   const x = n1.x + (n2.x - n1.x) * biasedBalance;
   const z = n1.z + (n2.z - n1.z) * biasedBalance;
 
+  // Distance to the nearest anchor is the only physically meaningful range in
+  // this 1-D geometry (feeds the "distance" readout on the dashboard).
   const d1 = Math.hypot(x - n1.x, z - n1.z);
   const d2 = Math.hypot(x - n2.x, z - n2.z);
 

@@ -112,7 +112,10 @@ export class SignalProcessingServer {
   };
 
   // Processing engines
-  private heatmapAccumulator = new HeatmapAccumulator();
+  // Time × subcarrier amplitude waterfall (index grid 0..63): real CSI data,
+  // unlike the MUSIC pseudo-spectrum which has no spatial meaning on
+  // single-antenna boards.
+  private heatmapAccumulator = new HeatmapAccumulator(0, 63, 64);
   private backgroundSubtractor = new BackgroundSubtractor(50);
   private motionGate = new MotionGate();
   private dopplerComputer = new DopplerComputer();
@@ -646,6 +649,14 @@ export class SignalProcessingServer {
 
   // ── Main processing pipeline ───────────────────────────────────
 
+  /**
+   * The ~20 FPS detection loop (one queued hardware sample per tick).
+   * Full stage order: live-gap/freshness guards → background subtraction →
+   * MotionGate → vitals phase → Doppler → MUSIC AoA → point cloud →
+   * DBSCAN+Kalman tracking → micro-Doppler classification → PDP ranging →
+   * two-node fusion (presence gate) → buildTargetState → WebSocket broadcasts.
+   * Everything the frontend renders about the target originates here.
+   */
   private processFrame() {
     if (!this.status.isProcessing || this.isStopping) {
       return;
@@ -688,6 +699,8 @@ export class SignalProcessingServer {
       return;
     }
 
+    // Bound the backlog: keep only the newest 1000 samples so a burst can
+    // never make the pipeline lag arbitrarily far behind real time.
     if (this.hardwareSampleQueue.length > 1000) {
       this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
       this.nextHardwareQueueIndex = Math.min(
@@ -782,9 +795,18 @@ export class SignalProcessingServer {
 
       this.broadcast("isarFrame", isarFrame);
 
-      // Update heatmap
-      this.heatmapAccumulator.addSpectrum(estimate.timestamp, spectrum);
-      this.broadcast("heatmap", this.heatmapAccumulator.getData());
+      // Heatmap: time × subcarrier amplitude waterfall from the real
+      // per-subcarrier vector (dB). Skipped when a packet carried no vector.
+      if (sample.amplitudes && sample.amplitudes.length > 0) {
+        this.heatmapAccumulator.addSpectrum(
+          estimate.timestamp,
+          sample.amplitudes.map((a, i) => ({
+            angle: i,
+            power: 20 * Math.log10(Math.max(a, 1e-3)),
+          })),
+        );
+        this.broadcast("heatmap", this.heatmapAccumulator.getData());
+      }
 
       // ── 6. Point cloud from spectrum ──
       const pointCloud: {
@@ -805,10 +827,9 @@ export class SignalProcessingServer {
           pointCloud.push({
             x: -dist * Math.sin(thetaRad),
             z: dist * Math.cos(thetaRad),
-            y:
-              dynamicAmplitude *
-              Math.sin(this.status.framesProcessed * 0.05) *
-              0.3,
+            // Single-antenna CSI carries no elevation information — points
+            // stay on the ground plane instead of a fabricated sine wobble.
+            y: 0,
             amplitude: Math.pow(10, sp.power / 20),
             timestamp: estimate.timestamp,
           });
@@ -899,10 +920,16 @@ export class SignalProcessingServer {
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
       }
 
+      // MOVING/STILL decision for this frame: `isMoving` comes from the
+      // variance MotionGate; `projectedMotion` is a separate speed gate that
+      // only controls whether the heading arrow is allowed to rotate (lower
+      // 0.035 m/s bar in fused mode because axis velocity is already damped).
       const projectedMotion = speed > (fused ? 0.035 : 0.05);
       const isMoving = motionResult.motionDetected;
 
-      // Direction of travel (smooth)
+      // Direction of travel (smooth): exponential blend of the travel angle
+      // (30% per frame) with wrap-around handling so the arrow turns smoothly
+      // instead of snapping between noisy instantaneous headings.
       if (projectedMotion && speed > 0.02) {
         const rawAngle = Math.atan2(targetVz, targetVx);
         const angleDiff = rawAngle - this.radialAngle;
@@ -961,7 +988,8 @@ export class SignalProcessingServer {
       }
 
       // ── Report data accumulation ──
-      this.reportFrameCount++;
+      // (reportFrameCount is incremented once per processed frame at the end
+      // of processFrame — counting here too double-counted ISAR frames.)
       this.reportDistances.push(pdpResult.distanceCm);
       this.reportSpeeds.push(speed);
       this.reportPositionsX.push(radX);
@@ -1107,11 +1135,44 @@ export class SignalProcessingServer {
     if (this.status.framesProcessed % 20 === 0) {
       this.broadcast("status", this.status);
 
-      // Calculate and broadcast vitals
-      const vitals = this.vitalsComputer.computeVitals();
+      // Calculate and broadcast vitals. With single-antenna boards h2 is a
+      // duplicate of h1, so the host phase (H1·conj(H2)) is identically zero
+      // and host vitals can never become reliable — fall back to the
+      // board-computed firmware vitals when they are fresh and confident.
+      let vitals = this.vitalsComputer.computeVitals();
+      if (!vitals.vitalsReliable) {
+        const board = this.boardVitalsFallback();
+        if (board) vitals = board;
+      }
       this.currentVitalSigns = vitals;
       this.broadcast("vitalSigns", vitals);
     }
+  }
+
+  /**
+   * Best fresh board-DSP vitals (0xC5110002/0xC5110006 packets) as a
+   * VitalSigns substitute when the host-side phase pipeline cannot deliver
+   * (single-antenna hardware). Returns null when no board reports confident
+   * vitals within the freshness window.
+   */
+  private boardVitalsFallback(): VitalSigns | null {
+    // 0.3 floor: with real board confidences (autocorr peak ratios from the
+    // new firmware) a noise-floor estimate must not surface as "reliable"
+    // vitals. Old firmware reports conf 1 for any estimate, which passes.
+    const feats = this.buildNodeFeatureStates().filter(
+      (f) =>
+        (f.resp_conf >= 0.3 && f.resp_bpm > 0) ||
+        (f.hr_conf >= 0.3 && f.hr_bpm > 0),
+    );
+    if (feats.length === 0) return null;
+    const best = feats.reduce((a, b) =>
+      b.resp_conf + b.hr_conf > a.resp_conf + a.hr_conf ? b : a,
+    );
+    return {
+      heartRateBpm: Math.round(best.hr_bpm),
+      respirationRateRpm: Math.round(best.resp_bpm),
+      vitalsReliable: true,
+    };
   }
 
   // ── Messaging ──────────────────────────────────────────────────
@@ -1144,6 +1205,13 @@ export class SignalProcessingServer {
     this.sendToClient(clientId, "nodeFeatures", this.buildNodeFeatureStates());
   }
 
+  /**
+   * Called when no fresh sample is available this tick (node silent/unplugged).
+   * Applies the hold lifecycle: keep broadcasting the last target while it is
+   * live/stale_hold (≤5 s), wipe every target artifact once "cleared", or
+   * report an empty "awaiting_live_samples" state when nothing was ever seen.
+   * Prevents a disconnected node from painting a frozen ghost target.
+   */
   private handleLiveGap() {
     const nowMs = Date.now();
     const holdState = resolveLiveHoldState(this.lastTruthfulTargetUpdateMs || null, nowMs);
@@ -1209,6 +1277,12 @@ export class SignalProcessingServer {
     this.broadcast("targetDebug", this.currentTargetDebug);
   }
 
+  /**
+   * Full scene wipe: null out and broadcast-null every target-related channel
+   * (point cloud, tracked/radial target, identity, pose, vitals) and publish an
+   * empty TargetState carrying `reason`, so every client removes the target at
+   * the same instant instead of each aging it out independently.
+   */
   private clearTargetArtifacts(reason: string) {
     this.clearFusedSnapshot();
     this.pointCloudHistory = [];
@@ -1240,6 +1314,7 @@ export class SignalProcessingServer {
     this.updateTargetDebug();
   }
 
+  /** Node IDs whose last UDP packet is ≤1.5 s old — the definition of a "live" node. */
   private activeHardwareNodeIds(nowMs = Date.now()): number[] {
     const active: number[] = [];
     for (const [nodeId, lastSeenMs] of Array.from(this.hardwareNodeLastSeenMs.entries())) {
@@ -1250,6 +1325,7 @@ export class SignalProcessingServer {
     return active.sort((a, b) => a - b);
   }
 
+  /** fused_two_node only when BOTH boards are live; otherwise single_node (UI shows "degraded"). */
   private resolveLiveNodeMode(): TargetState["node_mode"] {
     return this.activeHardwareNodeIds().length >= 2
       ? "fused_two_node"
@@ -1287,6 +1363,11 @@ export class SignalProcessingServer {
     return computeNodeMotionFromMatrix(win.map((s) => s.amps));
   }
 
+  /**
+   * Run the two-node detector for this tick: per-node motion from the 1.5 s
+   * amplitude windows → fuseTwoNodeTarget (presence gate + balance position).
+   * Returns null for an empty room; maxMotion doubles as position confidence.
+   */
   private computeFusedTarget(): (FusedTarget & { maxMotion: number }) | null {
     const m1 = this.nodeMotionFor(1);
     const m2 = this.nodeMotionFor(2);
@@ -1313,6 +1394,9 @@ export class SignalProcessingServer {
     if (this.prevFusedX !== null && this.prevFusedMs > 0) {
       const dt = (now - this.prevFusedMs) / 1000;
       if (dt > 0) {
+        // Near the endpoints the biased balance compresses displacement, which
+        // under-reports speed; boost velocity up to +35% as |balance-0.5|→0.5
+        // so approach/recede trends still trigger close to a node.
         const endpointStrength = Math.min(1, Math.abs(balance - 0.5) * 2);
         const endpointBoost = 1 + Math.pow(endpointStrength, 0.8) * 0.35;
         velMps = ((x - this.prevFusedX) / dt) * endpointBoost;
@@ -1385,6 +1469,7 @@ export class SignalProcessingServer {
       respConf: number;
       hrBpm: number;
       hrConf: number;
+      rssi?: number;
     }
   >();
   /** A silent board's firmware metrics must not persist past this age. */
@@ -1398,8 +1483,12 @@ export class SignalProcessingServer {
     respConf: number;
     hrBpm: number;
     hrConf: number;
+    rssi?: number;
   }): void {
     this.nodeFeatureStates.set(feat.nodeId, { rxMs: Date.now(), ...feat });
+    if (feat.rssi !== undefined) {
+      this.nodeLastRssi.set(feat.nodeId, feat.rssi);
+    }
     // 1 Hz per node on the wire — broadcasting on receipt is cheap and keeps
     // the card live even when the processing tick is idle.
     this.broadcast("nodeFeatures", this.buildNodeFeatureStates());
@@ -1420,6 +1509,7 @@ export class SignalProcessingServer {
         hr_bpm: s.hrBpm,
         hr_conf: s.hrConf,
         age_ms: age,
+        ...(s.rssi !== undefined ? { rssi: s.rssi } : {}),
       });
     }
     return out.sort((a, b) => a.node_id - b.node_id);
@@ -1535,6 +1625,13 @@ export class SignalProcessingServer {
   }
 
   // Hardware ingestion methods
+
+  /**
+   * Entry point for every parsed CSI sample from udp-server.ts. Queues it for
+   * processFrame, stamps the node as "seen" (drives active/fused-mode logic),
+   * appends its amplitude vector to the per-node motion window, and forwards
+   * the raw sample to any connected AI sidecar client.
+   */
   ingestSample(sample: CSISample): void {
     // Forward raw sample to the AI inference client
     this.broadcastToAI("rawSample", sample);

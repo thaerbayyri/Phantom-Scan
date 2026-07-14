@@ -63,9 +63,13 @@ app.use((req, res, next) => {
 
 (async () => {
   const auth = initializeAuth(app);
+  // Wire the detection pipeline: signalServer hosts the /ws WebSocket that
+  // streams target presence/motion state to the dashboard clients.
   signalServer.initialize(httpServer, auth);
   await registerRoutes(httpServer, app, auth);
 
+  // Start the sole ESP32 CSI ingest (UDP :5005) in-process — every
+  // presence/movement decision begins with packets received here.
   const { startUDPServer } = await import("./lib/udp-server");
   startUDPServer();
   log("local UDP ingest enabled on 5005 for ESP32-S3 live mode", "udp");

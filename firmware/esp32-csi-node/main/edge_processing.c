@@ -8,18 +8,22 @@
  *   2. Phase unwrapping (continuous phase)
  *   3. Welford variance tracking per subcarrier
  *   4. Top-K subcarrier selection by variance
- *   5. Biquad IIR bandpass → breathing (0.1-0.5 Hz), heart rate (0.8-2.0 Hz)
- *   6. Zero-crossing BPM estimation
+ *   5. Biquad IIR bandpass → breathing (0.1-0.5 Hz), heart rate (0.8-2.0 Hz),
+ *      re-tuned to the measured (EMA) CSI sample rate
+ *   6. BPM estimation — breathing: zero-crossing; heart rate: autocorrelation
+ *      with breathing-harmonic rejection + median smoothing
  *   7. Presence detection (adaptive or fixed threshold)
  *   8. Fall detection (phase acceleration)
  *   9. Multi-person vitals via subcarrier group clustering
  *  10. Delta compression (XOR + RLE) for bandwidth reduction
- *  11. Vitals packet broadcast (magic 0xC5110002)
+ *  11. Feature-state broadcast (magic 0xC5110006, with real confidences;
+ *      the 0xC5110002 vitals struct remains internal for display/WASM)
  */
 
 #include "edge_processing.h"
 #include "wasm_runtime.h"
 #include "stream_sender.h"
+#include "rv_feature_state.h"
 
 #include <math.h>
 #include <string.h>
@@ -212,6 +216,127 @@ static float estimate_bpm_zero_crossing(const float *history, uint16_t len,
 }
 
 /* ======================================================================
+ * Autocorrelation Periodicity Estimation (ported from RuView)
+ * ====================================================================== */
+
+/*
+ * Static scratch for building contiguous signal buffers from the filtered
+ * rings. Lives in .bss instead of the DSP task stack: two 256-float buffers
+ * are ~2 KB, which the 8 KB task stack cannot spare on top of the autocorr
+ * call chain.
+ */
+static float s_scratch_br[EDGE_PHASE_HISTORY_LEN];
+static float s_scratch_hr[EDGE_PHASE_HISTORY_LEN];
+
+/**
+ * Dominant periodicity in a band via autocorrelation. More robust than
+ * zero-crossing for the heart-rate band, where breathing harmonics alias:
+ * a 0.25 Hz breathing 3rd harmonic sits at ~45 BPM inside the HR band, so
+ * candidates within 8% of a breathing harmonic (k=1..6) are rejected.
+ *
+ * @param sig            Band-filtered signal (contiguous, oldest..newest).
+ * @param len            Number of samples.
+ * @param fs             Measured sample rate in Hz.
+ * @param bpm_lo         Low edge of the search band (BPM).
+ * @param bpm_hi         High edge of the search band (BPM).
+ * @param reject_br_hz   Breathing fundamental (Hz) whose harmonics are
+ *                       rejected; pass 0 to disable (fundamental search).
+ * @param out_peak_ratio Optional: receives best/r0 (autocorr peak ratio,
+ *                       the confidence basis) when a peak is accepted,
+ *                       0 otherwise. May be NULL.
+ * @return Dominant rate in BPM within the band, or 0 if no confident peak.
+ */
+static float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
+                                            float bpm_lo, float bpm_hi,
+                                            float reject_br_hz,
+                                            float *out_peak_ratio)
+{
+    if (out_peak_ratio) *out_peak_ratio = 0.0f;
+    if (len < 32 || fs <= 0.0f || bpm_hi <= bpm_lo) return 0.0f;
+
+    int lag_min = (int)(fs * 60.0f / bpm_hi);
+    int lag_max = (int)(fs * 60.0f / bpm_lo);
+    if (lag_min < 2) lag_min = 2;
+    if (lag_max >= (int)len) lag_max = (int)len - 1;
+    if (lag_max <= lag_min + 1) return 0.0f;
+
+    const float br_hz = reject_br_hz;
+
+    float r0 = 0.0f;
+    for (uint16_t i = 0; i < len; i++) r0 += sig[i] * sig[i];
+    if (r0 <= 1e-6f) return 0.0f;
+
+    float best = -1.0f;
+    int   best_lag = 0;
+
+    for (int lag = lag_min; lag <= lag_max; lag++) {
+        float f = fs / (float)lag;  /* candidate frequency (Hz) */
+
+        /* Reject candidates within 8% of a breathing harmonic k*f_br (k=1..6). */
+        if (br_hz > 0.0f) {
+            bool harmonic = false;
+            for (int k = 1; k <= 6; k++) {
+                float h = (float)k * br_hz;
+                if (fabsf(f - h) < 0.08f * h) { harmonic = true; break; }
+            }
+            if (harmonic) continue;
+        }
+
+        float acc = 0.0f;
+        for (int i = 0; i + lag < (int)len; i++) acc += sig[i] * sig[i + lag];
+        if (acc > best) { best = acc; best_lag = lag; }
+    }
+
+    if (best_lag == 0) return 0.0f;
+    /* Require a real periodicity, not a noise peak. */
+    if (best / r0 < 0.2f) return 0.0f;
+
+    /* Parabolic interpolation around best_lag for sub-sample period resolution. */
+    float lag_ref = (float)best_lag;
+    {
+        float a = 0.0f, c = 0.0f;
+        for (int i = 0; i + (best_lag - 1) < (int)len; i++) a += sig[i] * sig[i + best_lag - 1];
+        for (int i = 0; i + (best_lag + 1) < (int)len; i++) c += sig[i] * sig[i + best_lag + 1];
+        float denom = a - 2.0f * best + c;
+        if (fabsf(denom) > 1e-6f) {
+            float delta = 0.5f * (a - c) / denom;
+            if (delta > -1.0f && delta < 1.0f) lag_ref += delta;
+        }
+    }
+
+    if (out_peak_ratio) *out_peak_ratio = best / r0;
+    return fs / lag_ref * 60.0f;
+}
+
+/* Median smoother for the emitted heart rate. The per-frame autocorr estimate
+ * still has occasional single-frame outliers (startup transient before the
+ * filters re-tune, momentary harmonic mis-locks); a median over the last few
+ * VALID estimates stops the reported HR from jumping between frames without
+ * lagging real changes much. Only valid (in-range) estimates are pushed, so
+ * out-of-range/zero results never pollute the window. */
+#define HR_SMOOTH_N 13
+static float   s_hr_ring[HR_SMOOTH_N];
+static uint8_t s_hr_ring_n;
+static uint8_t s_hr_ring_idx;
+
+static float hr_smooth_push(float hr)
+{
+    s_hr_ring[s_hr_ring_idx] = hr;
+    s_hr_ring_idx = (uint8_t)((s_hr_ring_idx + 1) % HR_SMOOTH_N);
+    if (s_hr_ring_n < HR_SMOOTH_N) s_hr_ring_n++;
+
+    float tmp[HR_SMOOTH_N];
+    for (uint8_t i = 0; i < s_hr_ring_n; i++) tmp[i] = s_hr_ring[i];
+    for (uint8_t i = 1; i < s_hr_ring_n; i++) {       /* insertion sort, tiny N */
+        float v = tmp[i];
+        int j = (int)i - 1;
+        while (j >= 0 && tmp[j] > v) { tmp[j + 1] = tmp[j]; j--; }
+        tmp[j + 1] = v;
+    }
+    return tmp[s_hr_ring_n / 2];
+}
+
+/* ======================================================================
  * DSP Pipeline State
  * ====================================================================== */
 
@@ -251,6 +376,24 @@ static bool     s_presence_detected;
 static bool     s_fall_detected;
 static int8_t   s_latest_rssi;
 static uint32_t s_frame_count;
+
+/** Vitals confidences: autocorr peak ratio mapped to 0..1 (see step 7). */
+static float s_resp_conf;
+static float s_hr_conf;
+
+/** Presence threshold in effect (configured / calibrated / default) — kept
+ *  so the vitals motion flag uses the same machinery as presence. */
+static float s_presence_threshold_active;
+
+/** Feature-state (0xC5110006) sequence counter. */
+static uint16_t s_feature_state_seq;
+
+/** Measured CSI sample rate (EMA over inter-frame dt) and the fs the biquads
+ *  were last designed at. The callback rate is variable (~13-19 Hz with
+ *  self-ping); a fixed assumed fs mis-scales every BPM estimate. */
+static float    s_sample_rate_hz;
+static float    s_filter_design_fs;
+static uint32_t s_last_frame_ts_us;
 
 /** Previous phase velocity for fall detection (acceleration). */
 static float s_prev_phase_velocity;
@@ -324,6 +467,12 @@ static void update_top_k(uint16_t n_subcarriers)
  * Adaptive Presence Calibration
  * ====================================================================== */
 
+/*
+ * Learns the empty-room noise floor: accumulates motion energy over the
+ * first EDGE_CALIB_FRAMES frames, then fixes the presence threshold at
+ * mean + EDGE_CALIB_SIGMA_MULT * sigma (floored at 0.01) — the room must be
+ * empty during boot calibration for presence detection to be meaningful.
+ */
 static void calibration_update(float motion)
 {
     if (s_calibrated) return;
@@ -513,20 +662,24 @@ static void update_multi_person_vitals(const uint8_t *iq_data, uint16_t n_sc,
 
         /* Estimate BPM when we have enough history. */
         if (pv->history_len >= 64) {
-            /* Build contiguous buffer for zero-crossing. */
-            float br_buf[EDGE_PHASE_HISTORY_LEN];
-            float hr_buf[EDGE_PHASE_HISTORY_LEN];
+            /* Build contiguous buffers (static scratch — persons are
+             * processed sequentially on the single DSP task). */
             uint16_t buf_len = pv->history_len;
 
             for (uint16_t i = 0; i < buf_len; i++) {
                 uint16_t ri = (pv->history_idx + EDGE_PHASE_HISTORY_LEN
                                - buf_len + i) % EDGE_PHASE_HISTORY_LEN;
-                br_buf[i] = s_person_br_filt[p][ri];
-                hr_buf[i] = s_person_hr_filt[p][ri];
+                s_scratch_br[i] = s_person_br_filt[p][ri];
+                s_scratch_hr[i] = s_person_hr_filt[p][ri];
             }
 
-            float br = estimate_bpm_zero_crossing(br_buf, buf_len, sample_rate);
-            float hr = estimate_bpm_zero_crossing(hr_buf, buf_len, sample_rate);
+            float br = estimate_bpm_zero_crossing(s_scratch_br, buf_len, sample_rate);
+            float br_rob = estimate_periodicity_autocorr(s_scratch_br, buf_len,
+                                                         sample_rate, 6.0f, 40.0f,
+                                                         0.0f, NULL);
+            float hr = estimate_periodicity_autocorr(s_scratch_hr, buf_len,
+                                                     sample_rate, 45.0f, 180.0f,
+                                                     br_rob / 60.0f, NULL);
 
             /* Sanity clamp. */
             if (br >= 6.0f && br <= 40.0f) pv->breathing_bpm = br;
@@ -544,7 +697,14 @@ static void update_multi_person_vitals(const uint8_t *iq_data, uint16_t n_sc,
  * Vitals Packet Sending
  * ====================================================================== */
 
-static void send_vitals_packet(void)
+/*
+ * Refresh the internal 0xC5110002 vitals snapshot consumed by
+ * edge_get_vitals() (display/WASM). NOT sent on the wire anymore — the
+ * 0xC5110006 feature-state below is the wire format, carrying the same
+ * metrics plus real confidence fields (the server would otherwise fabricate
+ * 100% confidence for this packet's estimates).
+ */
+static void update_vitals_state(void)
 {
     edge_vitals_pkt_t pkt;
     memset(&pkt, 0, sizeof(pkt));
@@ -555,7 +715,9 @@ static void send_vitals_packet(void)
     pkt.flags = 0;
     if (s_presence_detected) pkt.flags |= 0x01;
     if (s_fall_detected)     pkt.flags |= 0x02;
-    if (s_motion_energy > 0.01f) pkt.flags |= 0x04;
+    /* Motion bit uses the same threshold machinery as presence (configured /
+     * calibrated / default) instead of an unrelated hardcoded constant. */
+    if (s_motion_energy > s_presence_threshold_active) pkt.flags |= 0x04;
 
     pkt.breathing_rate = (uint16_t)(s_breathing_bpm * 100.0f);
     pkt.heartrate = (uint32_t)(s_heartrate_bpm * 10000.0f);
@@ -575,8 +737,42 @@ static void send_vitals_packet(void)
     /* Update thread-safe copy. */
     s_latest_pkt = pkt;
     s_pkt_valid = true;
+}
 
-    /* Send over UDP. */
+/*
+ * Send the 0xC5110006 rv_feature_state packet — the board's wire format for
+ * DSP results. motion/presence carry the same raw values as the internal
+ * vitals snapshot so dashboard readings stay continuous across firmware
+ * versions; confidences are real autocorr peak ratios (see step 7).
+ */
+static void send_feature_state_packet(void)
+{
+    rv_feature_state_t pkt;
+    memset(&pkt, 0, sizeof(pkt));
+
+    pkt.motion_score     = s_motion_energy;
+    pkt.presence_score   = s_presence_score;
+    pkt.respiration_bpm  = s_breathing_bpm;
+    pkt.respiration_conf = s_resp_conf;
+    pkt.heartbeat_bpm    = s_heartrate_bpm;
+    pkt.heartbeat_conf   = s_hr_conf;
+    pkt.anomaly_score    = s_fall_detected ? 1.0f : 0.0f;
+    pkt.env_shift_score  = 0.0f;
+    pkt.node_coherence   = 0.0f;
+
+    pkt.quality_flags = 0;
+    if (s_presence_detected)     pkt.quality_flags |= RV_QFLAG_PRESENCE_VALID;
+    if (s_breathing_bpm > 0.0f)  pkt.quality_flags |= RV_QFLAG_RESPIRATION_VALID;
+    if (s_heartrate_bpm > 0.0f)  pkt.quality_flags |= RV_QFLAG_HEARTBEAT_VALID;
+    if (s_fall_detected)         pkt.quality_flags |= RV_QFLAG_ANOMALY_TRIGGERED;
+    if (!s_calibrated && s_cfg.presence_thresh == 0.0f) {
+        pkt.quality_flags |= RV_QFLAG_CALIBRATING;
+    }
+
+    rv_feature_state_finalize(&pkt, g_nvs_config.node_id,
+                              s_feature_state_seq++,
+                              (uint64_t)esp_timer_get_time(), 0);
+
     stream_sender_send((const uint8_t *)&pkt, sizeof(pkt));
 }
 
@@ -584,6 +780,14 @@ static void send_vitals_packet(void)
  * Main DSP Pipeline (runs on Core 1)
  * ====================================================================== */
 
+/*
+ * Board-side presence/motion pipeline, one CSI frame per call. Independent of
+ * the host DSP: results ride the 1 Hz rv_feature_state packet and are shown
+ * side-by-side on the dashboard's Board DSP card, never fused with the host
+ * target math. Steps: phase extract/unwrap -> per-subcarrier Welford variance
+ * -> top-K subcarrier pick -> breathing/heart bandpass -> zero-crossing BPM ->
+ * motion energy (phase variance) -> presence threshold -> fall detection.
+ */
 static void process_frame(const edge_ring_slot_t *slot)
 {
     uint16_t n_subcarriers = slot->iq_len / 2;
@@ -592,8 +796,39 @@ static void process_frame(const edge_ring_slot_t *slot)
     s_frame_count++;
     s_latest_rssi = slot->rssi;
 
-    /* Assumed CSI sample rate (~20 Hz for typical ESP32 CSI). */
-    const float sample_rate = 20.0f;
+    /* Measure the REAL CSI sample rate from inter-frame timestamps. The
+     * callback rate is variable (self-ping + ambient traffic, ~13-19 Hz);
+     * a fixed assumed fs both scales BPM wrong (true ~87 BPM can read ~45)
+     * and detunes the bandpass filters. EMA-smooth and clamp to a plausible
+     * band. */
+    if (s_last_frame_ts_us != 0 && slot->timestamp_us > s_last_frame_ts_us) {
+        float dt = (float)(slot->timestamp_us - s_last_frame_ts_us) * 1e-6f;
+        if (dt > 0.02f && dt < 0.5f) {   /* 2-50 Hz plausible; reject gaps/hops */
+            float inst = 1.0f / dt;
+            s_sample_rate_hz += 0.05f * (inst - s_sample_rate_hz);
+            if (s_sample_rate_hz < 8.0f)  s_sample_rate_hz = 8.0f;
+            if (s_sample_rate_hz > 30.0f) s_sample_rate_hz = 30.0f;
+        }
+    }
+    s_last_frame_ts_us = slot->timestamp_us;
+
+    /* Re-tune the biquads if the measured rate has drifted from their design
+     * fs, so the breathing (0.1-0.5 Hz) and HR (0.8-2.0 Hz) passbands stay in
+     * real Hz. biquad_bandpass_design resets delay state, so only redesign on
+     * real drift (>15%) — the estimation windows average over the one-time
+     * transient. */
+    if (fabsf(s_sample_rate_hz - s_filter_design_fs) > 0.15f * s_filter_design_fs) {
+        biquad_bandpass_design(&s_bq_breathing, s_sample_rate_hz, 0.1f, 0.5f);
+        biquad_bandpass_design(&s_bq_heartrate, s_sample_rate_hz, 0.8f, 2.0f);
+        for (uint8_t pp = 0; pp < EDGE_MAX_PERSONS; pp++) {
+            biquad_bandpass_design(&s_person_bq_br[pp], s_sample_rate_hz, 0.1f, 0.5f);
+            biquad_bandpass_design(&s_person_bq_hr[pp], s_sample_rate_hz, 0.8f, 2.0f);
+        }
+        s_filter_design_fs = s_sample_rate_hz;
+        ESP_LOGI(TAG, "Biquads re-tuned to measured fs=%.1f Hz", s_sample_rate_hz);
+    }
+
+    const float sample_rate = s_sample_rate_hz;
 
     /* --- Step 1-2: Phase extraction + unwrapping per subcarrier --- */
     float phases[EDGE_MAX_SUBCARRIERS];
@@ -638,29 +873,49 @@ static void process_frame(const edge_ring_slot_t *slot)
     s_breathing_filtered[filt_idx] = br_val;
     s_heartrate_filtered[filt_idx] = hr_val;
 
-    /* --- Step 7: BPM estimation (zero-crossing) --- */
+    /* --- Step 7: BPM estimation ---
+     * Breathing: zero-crossing on the band-filtered signal, plus a robust
+     * autocorrelation estimate whose fundamental drives HR harmonic
+     * rejection (a breathing harmonic otherwise aliases into the HR band).
+     * Heart rate: autocorrelation periodicity search with harmonic
+     * rejection, median-smoothed over the last HR_SMOOTH_N valid estimates.
+     * Confidences are the autocorr peak ratios mapped linearly from the
+     * acceptance floor (0.2) to saturation (0.8). */
     if (s_history_len >= 64) {
-        /* Build contiguous buffers from ring. */
-        float br_buf[EDGE_PHASE_HISTORY_LEN];
-        float hr_buf[EDGE_PHASE_HISTORY_LEN];
+        /* Build contiguous buffers from ring (static scratch, .bss). */
         uint16_t buf_len = s_history_len;
 
         for (uint16_t i = 0; i < buf_len; i++) {
             uint16_t ri = (s_history_idx + EDGE_PHASE_HISTORY_LEN
                            - buf_len + i) % EDGE_PHASE_HISTORY_LEN;
-            br_buf[i] = s_breathing_filtered[ri];
-            hr_buf[i] = s_heartrate_filtered[ri];
+            s_scratch_br[i] = s_breathing_filtered[ri];
+            s_scratch_hr[i] = s_heartrate_filtered[ri];
         }
 
-        float br_bpm = estimate_bpm_zero_crossing(br_buf, buf_len, sample_rate);
-        float hr_bpm = estimate_bpm_zero_crossing(hr_buf, buf_len, sample_rate);
+        float br_ratio = 0.0f, hr_ratio = 0.0f;
+        float br_bpm = estimate_bpm_zero_crossing(s_scratch_br, buf_len, sample_rate);
+        /* Robust breathing period (autocorr) drives HR harmonic rejection. */
+        float br_rob = estimate_periodicity_autocorr(s_scratch_br, buf_len, sample_rate,
+                                                     6.0f, 40.0f, 0.0f, &br_ratio);
+        float hr_bpm = estimate_periodicity_autocorr(s_scratch_hr, buf_len, sample_rate,
+                                                     45.0f, 180.0f, br_rob / 60.0f,
+                                                     &hr_ratio);
 
         /* Sanity clamp: breathing 6-40 BPM, heart rate 40-180 BPM. */
         if (br_bpm >= 6.0f && br_bpm <= 40.0f) s_breathing_bpm = br_bpm;
-        if (hr_bpm >= 40.0f && hr_bpm <= 180.0f) s_heartrate_bpm = hr_bpm;
+        if (hr_bpm >= 40.0f && hr_bpm <= 180.0f) s_heartrate_bpm = hr_smooth_push(hr_bpm);
+
+        /* Confidence: clamp((ratio - 0.2) / 0.6, 0, 1); 0 when no peak. */
+        float rc = (br_ratio - 0.2f) / 0.6f;
+        float hc = (hr_ratio - 0.2f) / 0.6f;
+        s_resp_conf = (rc < 0.0f) ? 0.0f : (rc > 1.0f) ? 1.0f : rc;
+        s_hr_conf   = (hc < 0.0f) ? 0.0f : (hc > 1.0f) ? 1.0f : hc;
     }
 
-    /* --- Step 8: Motion energy (variance of recent phases) --- */
+    /* --- Step 8: Motion energy (variance of recent phases) ---
+     * A moving person perturbs the multipath channel, so the primary
+     * subcarrier's phase jitters; its variance over the last <=20 samples
+     * (~1 s) is the board's motion metric. */
     if (s_history_len >= 10) {
         float sum = 0.0f, sum2 = 0.0f;
         uint16_t window = (s_history_len < 20) ? s_history_len : 20;
@@ -676,7 +931,10 @@ static void process_frame(const edge_ring_slot_t *slot)
         if (s_motion_energy < 0.0f) s_motion_energy = 0.0f;
     }
 
-    /* --- Step 9: Presence detection --- */
+    /* --- Step 9: Presence detection ---
+     * Presence = motion energy above a threshold that is either configured
+     * (presence_thresh), learned from the empty room (mean + k*sigma via
+     * calibration_update), or a 0.05 default until calibration finishes. */
     s_presence_score = s_motion_energy;
 
     /* Adaptive calibration: learn ambient noise level from first N frames. */
@@ -690,6 +948,7 @@ static void process_frame(const edge_ring_slot_t *slot)
     } else if (threshold == 0.0f) {
         threshold = 0.05f;  /* Default until calibrated. */
     }
+    s_presence_threshold_active = threshold;
     s_presence_detected = (s_presence_score > threshold);
 
     /* --- Step 10: Fall detection (phase acceleration) --- */
@@ -715,11 +974,12 @@ static void process_frame(const edge_ring_slot_t *slot)
         send_compressed_frame(slot->iq_data, slot->iq_len, slot->channel);
     }
 
-    /* --- Step 13: Send vitals packet at configured interval --- */
+    /* --- Step 13: Refresh vitals snapshot + send feature-state packet --- */
     int64_t now_us = esp_timer_get_time();
     int64_t interval_us = (int64_t)s_cfg.vital_interval_ms * 1000;
     if ((now_us - s_last_vitals_send_us) >= interval_us) {
-        send_vitals_packet();
+        update_vitals_state();
+        send_feature_state_packet();
         s_last_vitals_send_us = now_us;
 
         if ((s_frame_count % 200) == 0) {
@@ -872,6 +1132,21 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     s_pkt_valid = false;
     memset(&s_runtime_stats, 0, sizeof(s_runtime_stats));
 
+    /* Reset vitals confidence / feature-state / HR smoother state. */
+    s_resp_conf = 0.0f;
+    s_hr_conf = 0.0f;
+    s_presence_threshold_active = 0.05f;
+    s_feature_state_seq = 0;
+    s_hr_ring_n = 0;
+    s_hr_ring_idx = 0;
+
+    /* Reset measured sample-rate state (init estimate 15 Hz; biquads are
+     * designed at 20 Hz below and re-tune once the measured rate drifts
+     * >15% from that design fs). */
+    s_sample_rate_hz = 15.0f;
+    s_filter_design_fs = 20.0f;
+    s_last_frame_ts_us = 0;
+
     /* Reset calibration state. */
     s_calibrated = false;
     s_calib_sum = 0.0f;
@@ -885,8 +1160,8 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
         s_persons[p].active = false;
     }
 
-    /* Design biquad bandpass filters.
-     * Sampling rate ~20 Hz (typical ESP32 CSI callback rate). */
+    /* Design biquad bandpass filters at the initial 20 Hz assumption; they
+     * are re-designed in process_frame once the measured rate drifts >15%. */
     const float fs = 20.0f;
     biquad_bandpass_design(&s_bq_breathing, fs, 0.1f, 0.5f);
     biquad_bandpass_design(&s_bq_heartrate, fs, 0.8f, 2.0f);

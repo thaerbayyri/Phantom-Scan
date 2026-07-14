@@ -7,6 +7,10 @@ Transform of CSI frequency-domain data to estimate absolute target distance.
     Distance = (ToF × C) / 2
 
 where C = speed of light (3 × 10⁸ m/s).
+
+POST-SESSION twin of the live PDPRanger (server/lib/signal-processing.ts):
+used by session_reporter.py to recompute distances for the recorded-session
+report, not in the live loop.
 """
 
 from __future__ import annotations

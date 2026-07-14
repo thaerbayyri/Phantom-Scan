@@ -26,6 +26,11 @@ Usage:
     python scripts/ruview-dashboard-bridge.py
     python scripts/ruview-dashboard-bridge.py --udp-port 5005 --http-port 3000 --ws-port 3001
 Then open  http://localhost:3000/  and select the "WiFi Sensing" tab.
+
+LEGACY/REFERENCE — the live dashboard now runs this motion math natively in
+server/lib/node-fusion.ts (computeNodeMotionFromMatrix is a faithful port of
+compute_update below). Don't run this together with the dashboard: both bind
+UDP :5005.
 """
 from __future__ import annotations
 
@@ -190,6 +195,12 @@ def _pvar(xs):
 
 
 def compute_update(state: State) -> dict:
+    """Per-node motion from a 3 s window of per-subcarrier amplitude frames.
+
+    THE ORIGINAL of the TS detector math: per-subcarrier temporal std ->
+    abs_std (raw, for localization balance) and motion = min(1, abs_std/base*4)
+    (saturated, for display/threshold). Ported 1:1 to node-fusion.ts.
+    """
     now = time.time()
     nodes, node_features = [], []
     all_rssi, all_mean_amp = [], []

@@ -13,7 +13,13 @@ interface TargetIdentityCardProps {
     className?: string;
 }
 
-export function TargetIdentityCard({
+/**
+ * Presence/identity readout card: HUMAN/MECHANICAL badge with probability
+ * bars (from the micro-Doppler classifier), the raw presence state
+ * (none/idle/moving/degraded), nearest-node badge, and the spatial/motion
+ * sentence from summarizeTargetSpatial — plus the honesty caveat banner.
+ */
+ export function TargetIdentityCard({
     identity,
     targetState,
     radialTarget,
