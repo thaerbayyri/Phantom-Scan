@@ -111,7 +111,7 @@ def test_serial(port: str = "COM5", baud: int = 115200, duration: int = 10):
 
     if not wifi_connected:
         print("  ⚠  WiFi not connected. Check your SSID/password in nvs_config.c")
-        print("     Current config: SSID='Thaer_2.4Ghz', target_ip='192.168.1.155'")
+        print("     Check the NVS-provisioned SSID/target_ip (see firmware/esp32-csi-node/PROVISIONING.md)")
 
     return line_count > 0
 
@@ -233,7 +233,7 @@ def test_udp(host: str = "0.0.0.0", port: int = 5005, duration: int = 15):
 
     if total_packets == 0:
         print("  ⚠  No UDP packets received. Checklist:")
-        print("     1. Is ESP32 connected to WiFi 'Thaer_2.4Ghz'?")
+        print("     1. Is ESP32 connected to the NVS-provisioned WiFi network?")
         print("     2. Is target_ip set to THIS PC's IP (192.168.1.155)?")
         print("     3. Is Windows Firewall blocking UDP port 5005?")
         print("        → Run: New-NetFirewallRule -DisplayName 'Phantom CSI' "

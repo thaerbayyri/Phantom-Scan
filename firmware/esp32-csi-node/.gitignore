@@ -1,0 +1,5 @@
+# Local build/config artifacts that carry real Wi-Fi credentials (PS-AUDIT-012).
+# Credentials are provisioned into NVS at flash time via esp-flash.py — see PROVISIONING.md.
+sdkconfig
+sdkconfig.old
+nvs_node*.bin

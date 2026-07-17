@@ -49,7 +49,7 @@ Deliberately NOT touched: the gated `poseFrame`/HumanMesh volumetric chain (off 
 
 ## Live hardware verification
 
-Environment: two ESP32-S3 boards, `Thaer_2.4Ghz`, host 192.168.1.155, dashboard `npm run dev` on :5000.
+Environment: two ESP32-S3 boards, operator's 2.4 GHz network (SSID redacted, PS-AUDIT-012), host 192.168.1.155, dashboard `npm run dev` on :5000.
 
 - **Node identity confirmed from boot banners** (serial DTR/RTS reset): **COM5 = node_id 1**
   (IP 192.168.1.133), **COM6 = node_id 2** (IP 192.168.1.238). Boot log shows

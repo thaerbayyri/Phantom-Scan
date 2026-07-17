@@ -210,7 +210,7 @@ The following screenshots document the live operator dashboard during a real two
 | node_id (NVS, cached before WiFi start) | 1 | 2 |
 | Serial port during flashing | COM5 | COM6 |
 | DHCP address in verified session | 192.168.1.133 | 192.168.1.238 |
-| Network | Thaer_2.4Ghz (2.4 GHz) | Thaer_2.4Ghz (2.4 GHz) |
+| Network | operator 2.4 GHz WLAN (SSID redacted) | operator 2.4 GHz WLAN (SSID redacted) |
 | Stream target | laptop-IP:5005 (UDP) | laptop-IP:5005 (UDP) |
 | Firmware send rate | 50 Hz cap, ~41-43 pkt/s observed | 50 Hz cap, ~41-43 pkt/s observed |
 
