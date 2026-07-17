@@ -40,6 +40,12 @@ This repo is being stabilized for a **realistic two-node ESP32-S3 deployment**. 
 
 There are two runtime tracks in this repository.
 
+> **Runtime authority (ADR-051, PS-AUDIT-001):** the Node/TS server is THE AUTHORITY for
+> Milestone-1 live operation. It is the only process that may bind UDP :5005 and the only
+> publisher of derived frames (WebSocket `/ws` on :5000). The Python `phantom/` package is
+> reference/replay/test tooling only; its live mode and the `:8789 /api/sensing/frame` API
+> are retired from live use. See `docs/adr/ADR-051-runtime-authority.md`.
+
 ### 1. Live dashboard path (authoritative for live mode)
 
 The active live path is the Node/TS host, and it is the **sole owner of UDP :5005**:
@@ -57,7 +63,7 @@ The old authority-follower compatibility stub has been **removed**; nothing read
 
 The Python package (`phantom.protocol`, `phantom.ingest`, `phantom.recording`, `phantom.dsp`, `phantom.runtime`, `phantom.api`) remains the replay/recording/DSP toolkit and test target.
 
-Its live mode also binds :5005, so `npm run dev` (`script/dev-full.cjs`) **does not start it by default** — set `PHANTOM_USE_AUTHORITY=1` only if you intentionally want the Python authority to own :5005 instead of the dashboard (never run both; the port clash silently starves the dashboard).
+Its live mode also binds :5005 and is **retired from live operation** (ADR-051): `npm run dev` (`script/dev-full.cjs`) does not start it, and the `PHANTOM_USE_AUTHORITY=1` escape hatch is deprecated — never run it alongside the dashboard (the port clash silently starves the dashboard; a hard live-bind guard lands with PS-AUDIT-008 remediation).
 
 ---
 
