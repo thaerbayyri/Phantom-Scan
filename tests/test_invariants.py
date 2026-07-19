@@ -7,10 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_dual_node_equal_balance_midpoint():
-    result = dual_node_on_axis_position(10.0, 10.0, baseline_m=5.0)
+    result = dual_node_on_axis_position(10.0, 10.0, baseline_m=3.0)
     assert result["dimensionality"] == "1D-on-axis"
     assert result["balance"] == 0.5
-    assert abs(float(result["x_m"]) - 2.5) < 1e-9
+    assert abs(float(result["x_m"]) - 0.0) < 1e-9
 
 
 def test_f1_ai_perturbations_do_not_change_deterministic_human_gate():

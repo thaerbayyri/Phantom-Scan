@@ -9,6 +9,7 @@ import { auditLogger, type AuditDetailsInput } from "../audit/logger";
 
 const SESSION_COOKIE_NAME = "phantom.sid";
 const SESSION_SECRET_ENV = "PHANTOM_SESSION_SECRET";
+const BOOTSTRAP_TOKEN_ENV = "PHANTOM_BOOTSTRAP_TOKEN";
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_BLOCK_MS = 15 * 60 * 1000;
@@ -200,6 +201,24 @@ function getRateLimitKey(req: Request, username: string) {
   return `${req.ip || "unknown"}:${username.toLowerCase()}`;
 }
 
+function isLoopbackAddress(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.replace(/^::ffff:/i, "").toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
+}
+
+function canBootstrapOperator(req: Request) {
+  if (isLoopbackAddress(req.ip)) {
+    return true;
+  }
+  const expectedToken = process.env[BOOTSTRAP_TOKEN_ENV];
+  const suppliedToken =
+    typeof req.body?.bootstrapToken === "string" ? req.body.bootstrapToken : "";
+  return Boolean(expectedToken) && suppliedToken === expectedToken;
+}
+
 function getRateLimitState(key: string, now: number) {
   const current = rateLimitState.get(key);
   if (!current) {
@@ -344,6 +363,20 @@ export function initializeAuth(app: Express): AuthService {
     }
 
     if (operatorState.missing) {
+      if (!canBootstrapOperator(req)) {
+        await auditLogger.log({
+          event_type: "operator_bootstrap_failure",
+          success: false,
+          username,
+          req,
+          details: { reason: "bootstrap_forbidden", bootstrap_token_env: BOOTSTRAP_TOKEN_ENV },
+        });
+        return res.status(403).json({
+          error:
+            "Initial operator bootstrap is restricted to loopback or a valid bootstrap token.",
+        });
+      }
+
       const bootstrapSeed = generateOperatorSeed(username, password);
       writeOperatorSeed(bootstrapSeed);
 

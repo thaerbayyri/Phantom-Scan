@@ -97,20 +97,42 @@ class SourceBindingRejection:
         }
 
 
+@dataclass(slots=True)
+class SourceMissingRejection:
+    node_id: int
+    packet_kind: str
+    host_rx_ns: int
+
+    def to_record(self) -> dict[str, object]:
+        return {
+            "record_type": "security_event",
+            "event_type": "node_source_missing",
+            "node_id": self.node_id,
+            "packet_kind": self.packet_kind,
+            "host_rx_ns": self.host_rx_ns,
+        }
+
+
 class SourcePinningGuard:
     """Binds each node id to its first observed UDP source for a session."""
 
     def __init__(self) -> None:
         self.bindings: dict[int, tuple[str, int]] = {}
-        self.rejections: list[SourceBindingRejection] = []
+        self.rejections: list[SourceBindingRejection | SourceMissingRejection] = []
 
     def check(
         self, packet: CsiFrameV1 | HeartbeatV1
-    ) -> SourceBindingRejection | None:
+    ) -> SourceBindingRejection | SourceMissingRejection | None:
         source_ip = packet.source_ip
         source_port = packet.source_port
         if not source_ip or source_port <= 0:
-            return None
+            rejection = SourceMissingRejection(
+                node_id=packet.node_id,
+                packet_kind="csi_frame" if isinstance(packet, CsiFrameV1) else "heartbeat",
+                host_rx_ns=packet.host_rx_ns,
+            )
+            self.rejections.append(rejection)
+            return rejection
 
         existing = self.bindings.get(packet.node_id)
         if existing is None:
@@ -138,7 +160,6 @@ class UdpPacketSource:
         self.bind_host = bind_host
         self.bind_port = bind_port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((bind_host, bind_port))
         self.sock.settimeout(0.25)
 

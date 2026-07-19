@@ -11,8 +11,8 @@ def make_csi(
     seq: int,
     device_ts_us: int,
     host_rx_ns: int,
-    source_ip: str = "",
-    source_port: int = 0,
+    source_ip: str = "10.0.0.11",
+    source_port: int = 5005,
 ) -> CsiFrameV1:
     return CsiFrameV1(
         schema_version=1,
@@ -38,8 +38,8 @@ def make_heartbeat(
     node_id: int,
     seq: int,
     host_rx_ns: int,
-    source_ip: str = "",
-    source_port: int = 0,
+    source_ip: str = "10.0.0.11",
+    source_port: int = 5005,
 ) -> HeartbeatV1:
     return HeartbeatV1(
         schema_version=1,
@@ -134,6 +134,15 @@ def test_jsonl_roundtrip_replay(tmp_path: Path):
     replay_runtime.stop_session()
     assert outputs
     assert outputs[-1]["mode"] in {"degraded", "fused"}
+
+
+def test_live_runtime_rejects_missing_source_info(tmp_path: Path):
+    runtime = PhantomRuntime(RuntimeConfig(output_dir=str(tmp_path), stale_timeout_ns=10_000_000_000))
+    runtime.start_session()
+    derived = runtime.ingest_packet(make_csi(1, 1, 1_000_000, 2_000_000, "", 0))
+    assert derived is None
+    assert runtime.status()["source_pinning_rejections"] == 1
+    runtime.stop_session()
 
 
 def test_device_timestamp_preferred_over_host_timestamp():

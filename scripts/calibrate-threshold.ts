@@ -7,6 +7,7 @@
  *
  * Usage:
  *   npx tsx scripts/calibrate-threshold.ts --seconds 120
+ *   PHANTOM_ALLOW_LEGACY_CSI=1 npx tsx scripts/calibrate-threshold.ts --seconds 120
  *
  * Run twice per MEASUREMENT_PLAN / REAL_TEST_REPORT:
  *   1. Empty room  -> threshold = mean + k*sigma (start k=4)
@@ -21,6 +22,9 @@ const secondsArg = process.argv.indexOf("--seconds");
 const SECONDS = secondsArg >= 0 ? parseInt(process.argv[secondsArg + 1], 10) : 120;
 const PORT = parseInt(process.env.UDP_PORT || "5005", 10);
 const WINDOW_MS = 3000;
+const ALLOW_LEGACY_CSI =
+  process.env.PHANTOM_ALLOW_LEGACY_CSI === "1" ||
+  process.env.PHANTOM_ALLOW_LEGACY_CSI === "true";
 
 const windows = new Map<number, { t: number; amps: number[] }[]>();
 const samples: number[] = [];
@@ -37,7 +41,7 @@ sock.on("error", (err: NodeJS.ErrnoException) => {
 });
 
 sock.on("message", (msg) => {
-  const parsed = parseCsiPacket(msg);
+  const parsed = parseCsiPacket(msg, { allowLegacy: ALLOW_LEGACY_CSI });
   if (!parsed) return;
   const nodeId = parsed.nodeId;
   if (nodeId !== 1 && nodeId !== 2) return;

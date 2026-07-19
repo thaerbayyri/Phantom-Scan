@@ -81,7 +81,7 @@ class HampelFilter:
 
 @dataclass(slots=True)
 class RespirationBandFilter:
-    sample_rate_hz: float = 20.0
+    sample_rate_hz: float = 5.0
     low_hz: float = 0.1
     high_hz: float = 0.5
     window_size: int = 128
@@ -142,16 +142,17 @@ def cross_node_correlation(left: np.ndarray, right: np.ndarray) -> float:
 def dual_node_on_axis_position(
     left_amplitude: float,
     right_amplitude: float,
-    baseline_m: float = 5.0,
+    baseline_m: float = 3.0,
 ) -> dict[str, float | str]:
     """1-D position on the node baseline from the two perturbation levels.
 
     balance = right/(left+right): 0 → at the left node, 1 → at the right
-    node (0.5 when silent). Predecessor of node-fusion.ts fuseTwoNodeTarget.
+    node (0.5 when silent). The canonical geometry is centered, so x spans
+    [-baseline/2, +baseline/2] with the midpoint at x=0.
     """
     total = max(0.0, left_amplitude) + max(0.0, right_amplitude)
     balance = 0.5 if total <= 1e-12 else max(0.0, right_amplitude) / total
-    x_m = baseline_m * balance
+    x_m = baseline_m * (balance - 0.5)
     return {
         "x_m": float(x_m),
         "balance": float(balance),
@@ -170,24 +171,26 @@ def deterministic_human_gate(
     Deterministic by design — an AI model may advise but can never originate
     or flip this decision.
     """
-    return bool(motion_present and respiration_periodic and (cardiac_energy_present or respiration_periodic))
+    return bool(motion_present and respiration_periodic)
 
 
 @dataclass(slots=True)
 class NodeDspPipeline:
     clutter_alpha: float = 0.05
     hampel_window: int = 7
-    sample_rate_hz: float = 20.0
+    sample_rate_hz: float = 5.0
     _clutter: StaticClutterSuppressor = field(init=False, repr=False)
     _hampel: HampelFilter = field(init=False, repr=False)
     _resp: RespirationBandFilter = field(init=False, repr=False)
     _history: deque[float] = field(init=False, repr=False)
+    _dynamic_history: deque[float] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._clutter = StaticClutterSuppressor(alpha=self.clutter_alpha)
         self._hampel = HampelFilter(window_size=self.hampel_window)
         self._resp = RespirationBandFilter(sample_rate_hz=self.sample_rate_hz)
         self._history = deque(maxlen=128)
+        self._dynamic_history = deque(maxlen=128)
 
     def process(self, frame: CsiFrameV1) -> dict[str, float | int | bool]:
         """One frame through the per-node chain: clutter-suppress → Hampel →
@@ -199,6 +202,7 @@ class NodeDspPipeline:
         filtered = self._hampel.push(mean_dynamic)
         resp_value = self._resp.push(filtered)
         self._history.append(filtered)
+        self._dynamic_history.append(filtered)
         energy = motion_energy(self._history)
         return {
             "node_id": frame.node_id,
@@ -211,3 +215,6 @@ class NodeDspPipeline:
             "sample_count": len(self._history),
             "is_motion": energy > 0.01,
         }
+
+    def dynamic_history(self) -> list[float]:
+        return list(self._dynamic_history)

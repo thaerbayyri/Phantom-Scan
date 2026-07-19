@@ -1,6 +1,7 @@
 import dgram from "dgram";
 import { signalServer } from "./websocket";
 import type { CSISample } from "@shared/schema";
+import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
 
 const UDP_PORT = parseInt(process.env.UDP_PORT || "5005", 10);
 const UDP_HOST = "0.0.0.0";
@@ -37,6 +38,43 @@ type ParsedCsiPacket = {
     iqData: Buffer;
 };
 
+type ParseCsiPacketOptions = {
+    allowLegacy?: boolean;
+};
+
+type StaticSourcePins = Map<number, string>;
+
+type SequenceMetadata = {
+    seq?: number;
+    deviceTsUs?: bigint;
+    deviceTsMs?: number;
+};
+
+function parseStaticSourcePins(envValue: string | undefined): StaticSourcePins {
+    if (!envValue) {
+        return new Map();
+    }
+
+    try {
+        const parsed = JSON.parse(envValue) as Record<string, unknown>;
+        const pins = new Map<number, string>();
+        for (const [nodeIdRaw, sourceIp] of Object.entries(parsed)) {
+            const nodeId = Number.parseInt(nodeIdRaw, 10);
+            if (!Number.isFinite(nodeId) || typeof sourceIp !== "string" || !sourceIp) {
+                continue;
+            }
+            pins.set(nodeId, sourceIp);
+        }
+        return pins;
+    } catch (error) {
+        console.warn(
+            `[UDP] Failed to parse PHANTOM_STATIC_NODE_SOURCES; expected JSON like ` +
+                `{"1":"10.0.0.11","2":"10.0.0.12"}. Ignoring static pins. Error: ${String(error)}`,
+        );
+        return new Map();
+    }
+}
+
 /**
  * Anti-spoof guard for the detection input: pins each node_id to the first
  * source IP that used it, so a rogue/duplicate sender cannot inject fake CSI
@@ -51,6 +89,8 @@ export class SourcePinningGuard {
     static readonly WARN_INTERVAL_MS = 5_000;
     /** Bounded security-event history. */
     static readonly MAX_EVENTS = 200;
+
+    private readonly staticPins: StaticSourcePins;
 
     private bindings = new Map<
         number,
@@ -67,12 +107,24 @@ export class SourcePinningGuard {
         packet_kind: "csi_frame" | "feature_state";
     }> = [];
 
+    constructor(staticPins: StaticSourcePins = new Map()) {
+        this.staticPins = staticPins;
+    }
+
     check(
         nodeId: number,
         source: { address: string; port: number },
         nowMs: number = Date.now(),
         packetKind: "csi_frame" | "feature_state" = "csi_frame",
     ): boolean {
+        const staticallyPinnedIp = this.staticPins.get(nodeId);
+        if (staticallyPinnedIp && staticallyPinnedIp !== source.address) {
+            return this.reject(nodeId, source, packetKind, {
+                ip: staticallyPinnedIp,
+                port: this.bindings.get(nodeId)?.port ?? 0,
+            }, nowMs);
+        }
+
         const existing = this.bindings.get(nodeId);
         if (!existing) {
             this.bindings.set(nodeId, {
@@ -96,7 +148,10 @@ export class SourcePinningGuard {
         // window, this is a legitimate reconnect (DHCP renumber) — rebind.
         // A conflicting IP while the pinned source is still actively sending
         // is the real spoof signal and stays rejected.
-        if (nowMs - existing.lastAcceptedMs > SourcePinningGuard.STALE_BINDING_MS) {
+        if (
+            !staticallyPinnedIp &&
+            nowMs - existing.lastAcceptedMs > SourcePinningGuard.STALE_BINDING_MS
+        ) {
             console.log(
                 `[UDP] node ${nodeId} source rebound after silence: ` +
                     `${existing.address}:${existing.port} -> ${source.address}:${source.port}`,
@@ -107,12 +162,28 @@ export class SourcePinningGuard {
             return true;
         }
 
+        return this.reject(
+            nodeId,
+            source,
+            packetKind,
+            { ip: existing.address, port: existing.port },
+            nowMs,
+        );
+    }
+
+    private reject(
+        nodeId: number,
+        source: { address: string; port: number },
+        packetKind: "csi_frame" | "feature_state",
+        expectedSource: { ip: string; port: number },
+        nowMs: number,
+    ): boolean {
         this.rejectionCount++;
         const event = {
             record_type: "security_event" as const,
             event_type: "node_source_mismatch" as const,
             node_id: nodeId,
-            expected_source: { ip: existing.address, port: existing.port },
+            expected_source: expectedSource,
             actual_source: { ip: source.address, port: source.port },
             packet_kind: packetKind,
         };
@@ -157,6 +228,79 @@ export class SourcePinningGuard {
         packet_kind: "csi_frame" | "feature_state";
     }> {
         return [...this.securityEvents];
+    }
+}
+
+export class PacketOrderGuard {
+    private states = new Map<
+        number,
+        {
+            lastSeq?: number;
+            lastDeviceTsUs?: bigint;
+            lastDeviceTsMs?: number;
+            gapCount: number;
+            replayCount: number;
+            outOfOrderCount: number;
+        }
+    >();
+
+    check(nodeId: number, meta: SequenceMetadata): boolean {
+        if (meta.seq === undefined) {
+            return true;
+        }
+
+        const current = this.states.get(nodeId);
+        if (!current) {
+            this.states.set(nodeId, {
+                lastSeq: meta.seq,
+                lastDeviceTsUs: meta.deviceTsUs,
+                lastDeviceTsMs: meta.deviceTsMs,
+                gapCount: 0,
+                replayCount: 0,
+                outOfOrderCount: 0,
+            });
+            return true;
+        }
+
+        const delta = (meta.seq - (current.lastSeq ?? 0)) >>> 0;
+        if (delta === 0) {
+            current.replayCount++;
+            return false;
+        }
+        if (delta >= 0x80000000) {
+            current.outOfOrderCount++;
+            return false;
+        }
+
+        if (
+            meta.deviceTsUs !== undefined &&
+            current.lastDeviceTsUs !== undefined &&
+            meta.deviceTsUs <= current.lastDeviceTsUs
+        ) {
+            current.replayCount++;
+            return false;
+        }
+        if (
+            meta.deviceTsUs === undefined &&
+            meta.deviceTsMs !== undefined &&
+            current.lastDeviceTsMs !== undefined &&
+            meta.deviceTsMs <= current.lastDeviceTsMs
+        ) {
+            current.replayCount++;
+            return false;
+        }
+
+        if (delta > 1) {
+            current.gapCount += delta - 1;
+        }
+        current.lastSeq = meta.seq;
+        if (meta.deviceTsUs !== undefined) {
+            current.lastDeviceTsUs = meta.deviceTsUs;
+        }
+        if (meta.deviceTsMs !== undefined) {
+            current.lastDeviceTsMs = meta.deviceTsMs;
+        }
+        return true;
     }
 }
 
@@ -283,12 +427,16 @@ export function parseEdgeVitalsPacket(msg: Buffer): ParsedFeatureState | null {
 
 /**
  * Parse a raw CSI frame (magic 0xC5110001) into header fields + IQ payload.
- * Supports the ADR-018 32-byte header (schema v1: seq/freq/noise/channel/
- * device timestamps) and falls back to the legacy 20-byte header. Heartbeats
- * (0xC51100A1) and malformed/short packets return null and are ignored —
- * only valid CSI ever reaches the detection pipeline.
+ * Live ingest accepts only the ADR-018 32-byte header (schema v1:
+ * seq/freq/noise/channel/device timestamps). The superseded legacy 20-byte
+ * header is available only to explicit offline compatibility tooling via
+ * `allowLegacy` / `PHANTOM_ALLOW_LEGACY_CSI`. Heartbeats (0xC51100A1) and
+ * malformed/short packets return null and are ignored.
  */
-export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
+export function parseCsiPacket(
+    msg: Buffer,
+    options: ParseCsiPacketOptions = {},
+): ParsedCsiPacket | null {
     if (msg.length < 4) {
         return null;
     }
@@ -342,7 +490,12 @@ export function parseCsiPacket(msg: Buffer): ParsedCsiPacket | null {
         }
     }
 
-    // Legacy fallback: 20-byte header (older firmware without ADR-018 fields).
+    if (!options.allowLegacy) {
+        return null;
+    }
+
+    // Compatibility-only fallback: 20-byte header (older firmware without
+    // ADR-018 fields). Never enabled on the live authority path.
     if (msg.length < LEGACY_HEADER_SIZE) {
         return null;
     }
@@ -385,7 +538,10 @@ export function startUDPServer() {
     // operator sees the clash (handled below) rather than losing packets quietly.
     const server = dgram.createSocket("udp4");
     const pyForwardSocket = dgram.createSocket("udp4");
-    const sourceGuard = new SourcePinningGuard();
+    const sourceGuard = new SourcePinningGuard(
+        parseStaticSourcePins(process.env.PHANTOM_STATIC_NODE_SOURCES),
+    );
+    const packetOrderGuard = new PacketOrderGuard();
 
     server.on("error", (err: NodeJS.ErrnoException) => {
         if (err.code === "EADDRINUSE") {
@@ -458,7 +614,21 @@ export function startUDPServer() {
         if (!parsed) {
             return;
         }
+        const hardwareId = mapRuntimeNodeIdToHardwareId(parsed.nodeId);
+        if (hardwareId === undefined) {
+            console.warn(`[UDP] rejecting CSI packet for unmapped runtime node_id=${parsed.nodeId} (PS-AUDIT-005)`);
+            return;
+        }
         if (!sourceGuard.check(parsed.nodeId, rinfo)) {
+            return;
+        }
+        if (
+            !packetOrderGuard.check(parsed.nodeId, {
+                seq: parsed.seq,
+                deviceTsUs: parsed.deviceTsUs,
+                deviceTsMs: parsed.deviceTsMs,
+            })
+        ) {
             return;
         }
 
@@ -530,6 +700,7 @@ export function startUDPServer() {
             h2: bestH2,
             rssi: parsed.rssi,
             nodeId: parsed.nodeId,
+            hardwareId,
             amplitudes,
         };
 

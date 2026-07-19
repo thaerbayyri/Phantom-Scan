@@ -95,7 +95,7 @@ test("load path accepts operator files with npm banner noise before JSON", async
   }
 });
 
-test("initializeAuth bootstraps first operator on first sign-in when seed file is missing", async () => {
+test("initializeAuth bootstraps first operator on loopback when seed file is missing", async () => {
   resetAuthStateForTests();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "phantom-bootstrap-"));
   const seedPath = path.join(tempDir, "operator.json");
@@ -141,6 +141,44 @@ test("initializeAuth bootstraps first operator on first sign-in when seed file i
     const storedSeed = JSON.parse(fs.readFileSync(seedPath, "utf-8"));
     assert.equal(storedSeed.username, "operator");
     assert.equal(verifyOperatorSeedPassword("secret-pass", storedSeed), true);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    delete process.env.PHANTOM_OPERATOR_SEED_PATH;
+    delete process.env.PHANTOM_SESSION_SECRET;
+    resetAuthStateForTests();
+  }
+});
+
+test("initializeAuth rejects first-operator bootstrap from non-loopback without token", async () => {
+  resetAuthStateForTests();
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "phantom-bootstrap-denied-"));
+  const seedPath = path.join(tempDir, "operator.json");
+
+  process.env.PHANTOM_OPERATOR_SEED_PATH = seedPath;
+  process.env.PHANTOM_SESSION_SECRET = "bootstrap-test-secret";
+
+  const app = express();
+  app.set("trust proxy", 1);
+  const server = createServer(app);
+  app.use(express.json());
+  initializeAuth(app);
+
+  try {
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    assert(address && typeof address === "object");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Forwarded-For": "10.0.0.77",
+      },
+      body: JSON.stringify({ username: "operator", password: "secret-pass" }),
+    });
+    assert.equal(login.status, 403);
+    assert.equal(fs.existsSync(seedPath), false);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     delete process.env.PHANTOM_OPERATOR_SEED_PATH;

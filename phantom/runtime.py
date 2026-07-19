@@ -69,7 +69,7 @@ class PhantomRuntime:
         self.writer = JsonlSessionWriter.create(
             output_dir=self.config.output_dir,
             expected_nodes=list(self.config.expected_nodes),
-            dsp_config={"sample_rate_hz": 20.0, "pipeline": "deterministic_m1"},
+            dsp_config={"sample_rate_hz": 5.0, "pipeline": "deterministic_m1"},
             ml_mode=self.ml_status["mode"],
             host_info={
                 "udp_host": self.config.udp_host,
@@ -144,11 +144,12 @@ class PhantomRuntime:
         if packet.node_id not in self.node_buffers:
             return None
 
-        rejection = self.source_guard.check(packet)
-        if rejection is not None:
-            if self.writer:
-                self.writer.write(rejection.to_record())
-            return None
+        if not self.replay_mode:
+            rejection = self.source_guard.check(packet)
+            if rejection is not None:
+                if self.writer:
+                    self.writer.write(rejection.to_record())
+                return None
 
         if raw_data and self.config.forward_ai_enabled:
             self.forward_socket.sendto(
@@ -195,15 +196,17 @@ class PhantomRuntime:
             timing_alignment_ns = abs(
                 left.authoritative_timestamp_ns - right.authoritative_timestamp_ns
             )
+            left_pipeline = self.node_pipelines[left.node_id]
+            right_pipeline = self.node_pipelines[right.node_id]
             fused = {
                 "cross_node_correlation": cross_node_correlation(
-                    np_array([left_metrics["dynamic_mean"]]),
-                    np_array([right_metrics["dynamic_mean"]]),
+                    np_array(left_pipeline.dynamic_history()),
+                    np_array(right_pipeline.dynamic_history()),
                 ),
                 "on_axis_position": dual_node_on_axis_position(
-                    float(left_metrics["mean_amplitude"]),
-                    float(right_metrics["mean_amplitude"]),
-                    baseline_m=5.0,
+                    float(left_metrics["motion_energy"]),
+                    float(right_metrics["motion_energy"]),
+                    baseline_m=3.0,
                 ),
                 "timing_alignment_ns": timing_alignment_ns,
                 "source_seqs": {
@@ -384,6 +387,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.command == "live":
+        if os.environ.get("PHANTOM_ALLOW_RETIRED_LIVE_AUTH") not in {"1", "true", "TRUE"}:
+            print(
+                "Retired Python live authority is disabled by default (PS-AUDIT-008). "
+                "Set PHANTOM_ALLOW_RETIRED_LIVE_AUTH=1 only for explicit offline compatibility work.",
+            )
+            return 2
         api = None
         if not args.no_api:
             from .api import RuntimeApiServer

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   classifyPacketMagic,
   crc32IEEE,
+  PacketOrderGuard,
   parseCsiPacket,
   parseEdgeVitalsPacket,
   parseFeatureStatePacket,
@@ -90,8 +91,13 @@ test("parseCsiPacket ignores committed heartbeat fixture", () => {
   assert.equal(parsed, null);
 });
 
-test("parseCsiPacket routes legacy packets after ADR-018 check", () => {
+test("parseCsiPacket rejects legacy 20-byte packets in live mode", () => {
   const parsed = parseCsiPacket(buildLegacyPacket());
+  assert.equal(parsed, null);
+});
+
+test("parseCsiPacket accepts legacy 20-byte packets only in compat mode", () => {
+  const parsed = parseCsiPacket(buildLegacyPacket(), { allowLegacy: true });
   assert(parsed);
   assert.equal(parsed.nodeId, 2);
   assert.equal(parsed.numAntennas, 1);
@@ -159,6 +165,40 @@ test("SourcePinningGuard bounds the security-event history", () => {
   }
   assert.equal(guard.getRejectionCount(), 250);
   assert.equal(guard.getSecurityEvents().length, SourcePinningGuard.MAX_EVENTS);
+});
+
+test("SourcePinningGuard rejects a foreign IP before first frame when statically pinned", () => {
+  const guard = new SourcePinningGuard(new Map([[1, "10.0.0.11"]]));
+  assert.equal(guard.check(1, { address: "10.0.0.99", port: 5005 }, 1_000), false);
+  assert.equal(guard.check(1, { address: "10.0.0.11", port: 5005 }, 1_500), true);
+  assert.deepEqual(guard.getBindings()["1"], { address: "10.0.0.11", port: 5005 });
+});
+
+test("SourcePinningGuard rejects a foreign IP after silence when statically pinned", () => {
+  const guard = new SourcePinningGuard(new Map([[2, "10.0.0.20"]]));
+  assert.equal(guard.check(2, { address: "10.0.0.20", port: 5005 }, 1_000), true);
+  const later = 1_000 + SourcePinningGuard.STALE_BINDING_MS + 30_000;
+  assert.equal(guard.check(2, { address: "10.0.0.99", port: 5005 }, later), false);
+  assert.equal(guard.check(2, { address: "10.0.0.20", port: 6001 }, later + 1), true);
+  assert.deepEqual(guard.getBindings()["2"], { address: "10.0.0.20", port: 6001 });
+});
+
+test("PacketOrderGuard accepts in-order packets, rejects replay/out-of-order, and accepts rollover", () => {
+  const guard = new PacketOrderGuard();
+
+  assert.equal(guard.check(1, { seq: 10, deviceTsUs: 1_000n, deviceTsMs: 1 }), true);
+  assert.equal(guard.check(1, { seq: 11, deviceTsUs: 2_000n, deviceTsMs: 2 }), true);
+  assert.equal(guard.check(1, { seq: 11, deviceTsUs: 2_000n, deviceTsMs: 2 }), false);
+  assert.equal(guard.check(1, { seq: 9, deviceTsUs: 900n, deviceTsMs: 0 }), false);
+
+  assert.equal(
+    guard.check(2, { seq: 0xffff_fffe, deviceTsUs: 9_000n, deviceTsMs: 9 }),
+    true,
+  );
+  assert.equal(
+    guard.check(2, { seq: 1, deviceTsUs: 10_000n, deviceTsMs: 10 }),
+    true,
+  );
 });
 
 function buildFeatureStatePacket(nodeId: number): Buffer {

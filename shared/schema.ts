@@ -15,6 +15,9 @@ export const csiSampleSchema = z.object({
   rssi: z.number().optional(),
   subcarrierIndex: z.number().optional(),
   nodeId: z.number().optional(),
+  // Canonical hardware identity carried alongside the runtime node id at the
+  // authority ingest boundary (PS-AUDIT-005 mapping layer).
+  hardwareId: z.number().optional(),
   // Per-subcarrier amplitudes (antenna 0) for this frame. Feeds the RuView-style
   // per-subcarrier temporal-std motion energy that drives two-node balance —
   // the scalar h1 alone (max-power subcarrier, index jumps per frame) is too
@@ -22,6 +25,23 @@ export const csiSampleSchema = z.object({
   amplitudes: z.array(z.number()).optional(),
 });
 export type CSISample = z.infer<typeof csiSampleSchema>;
+
+// Canonical hardware IDs (single source of truth, PS-AUDIT-005). The wire
+// protocol keeps the runtime node id as u8 (1/2); the live authority maps it
+// immediately to these stable board identities.
+export const CANONICAL_NODE_HARDWARE_IDS: Record<number, number> = {
+  1: 29052,
+  2: 44260,
+};
+
+export const HARDWARE_ID_TO_RUNTIME_NODE_ID: Record<number, number> = {
+  29052: 1,
+  44260: 2,
+};
+
+export function mapRuntimeNodeIdToHardwareId(nodeId: number): number | undefined {
+  return CANONICAL_NODE_HARDWARE_IDS[nodeId];
+}
 
 // Channel estimates after processing
 export const channelEstimateSchema = z.object({
