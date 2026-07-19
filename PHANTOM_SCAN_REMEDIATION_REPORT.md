@@ -1,265 +1,381 @@
 # Phantom Scan Remediation Report
 
-Tracks remediation of findings from `PHANTOM_SCAN_BEHAVIOR_AUDIT_REPORT.md`. Entries are
-added as work packages close. This report currently covers **WP-0, WP-1, WP-2 (including
-WP-2 close-out), WP-3**. WP-4 onward are not yet started.
+Date: July 19, 2026
+Source audit: `PHANTOM_SCAN_BEHAVIOR_AUDIT_REPORT.md`
+Runtime authority: Node/TS server per `docs/adr/ADR-051-runtime-authority.md`
 
-## WP-0 — Secret rotation (PS-AUDIT-012)
+## Scope
 
-**Status: FIXED.** Commit `6096db8`. SSID/password placeholders in `sdkconfig.defaults`;
-`sdkconfig`, `sdkconfig.old`, `nvs_node1.bin`, `nvs_node2.bin` untracked and gitignored;
-`firmware/esp32-csi-node/PROVISIONING.md` documents the NVS flow. The real WPA2 password
-remains in git history — history scrub is an operator action, not automated here.
+This report summarizes the remediation work present in the current working tree as of
+July 19, 2026. It covers the secret-removal work already landed in the firmware tree, the
+runtime-authority decision already recorded in ADR-051, the WebSocket F1 presentation fix
+already present in `server/lib/websocket.ts`, and the additional code and documentation
+changes completed in this run.
 
-## WP-1 — Runtime authority decision (PS-AUDIT-001)
+Verification for this report:
 
-**Status: DECISION RECORDED.** Commit `438b1f3`. Operator chose Option B (bless shipped
-reality): the Node/TS server is THE AUTHORITY for Milestone-1 live operation. Recorded in
-`docs/adr/ADR-051-runtime-authority.md` (ADR-019 was already taken) and `README.md`.
-`phantom/` is reference/replay/test tooling only.
+- `npm test` -> `112 pass, 0 fail`
+- `C:\Users\thaer\AppData\Local\Programs\Python\Python313\python.exe -m pytest tests -q`
+  -> `83 passed, 1 skipped in 52.84s`
 
-## WP-2 — Firmware sovereign is_human respiratory gate (PS-AUDIT-002)
+## Findings Summary
 
-**Status: FIXED**, with one intentional canon correction and one documented residual
-limitation. Commit `0cf351d` (initial), plus this close-out session's follow-up commit.
+| Finding | Status | Notes |
+|---|---|---|
+| `PS-AUDIT-001` | DECISION / FIXED | Node/TS live authority recorded in ADR-051 and README. |
+| `PS-AUDIT-002` | FIXED | Firmware sovereign respiratory gate already present in repo state. |
+| `PS-AUDIT-003` | DEFERRED | Live nonlinear fusion/display split not changed in this run. |
+| `PS-AUDIT-004` | FIXED | Legacy 20-byte CSI retired from live path; compat-only gate added. |
+| `PS-AUDIT-005` | FIXED | Canonical hardware-ID mapping layer added at authority ingest. |
+| `PS-AUDIT-006` | FIXED | Python reference geometry/sample-rate corrected. |
+| `PS-AUDIT-007` | FIXED | Live authority now rejects replay/out-of-order packets. |
+| `PS-AUDIT-008` | FIXED | Retired Python live bind now fail-closed; `SO_REUSEADDR` removed. |
+| `PS-AUDIT-009` | FIXED | Stale 20-byte / draft protocol text labeled superseded in deliverable. |
+| `PS-AUDIT-010` | DEFERRED | `docs/ruview-2node-full-analysis-report.md` banner not changed in this run. |
+| `PS-AUDIT-011` | PARTIAL | README truth corrected; live fusion math doc split still incomplete. |
+| `PS-AUDIT-012` | FIXED | Credential placeholders + gitignore/provisioning already present. |
+| `PS-AUDIT-013` | FIXED | Static source pinning support added to live authority. |
+| `PS-AUDIT-014` | FIXED | Non-AI verdict-adjacent WS writes blocked; advisory channel split already present. |
+| `PS-AUDIT-015` | FIXED | First-operator bootstrap restricted to loopback or token. |
+| `PS-AUDIT-016` | FIXED | Python fused reference uses motion histories/metrics instead of stale path. |
+| `PS-AUDIT-017` | FIXED | Unmeasured “validated” claims downgraded to targets in main deliverable/model README. |
+| `PS-AUDIT-018` | FIXED | Root reports updated to centered 3 m baseline. |
 
-### Original fix (commit `0cf351d`)
+## Work Completed
 
-`edge_processing.c`'s presence bit was `motion_energy > threshold` with no respiratory
-check. Extracted the pure DSP math (biquad, phase unwrap, BPM estimators) into
-`edge_dsp_pure.c/.h` (ESP-IDF-free, host-testable) and added
-`edge_evaluate_human_presence(motion_present, breathing_data_ready, breathing_bpm, resp_conf)`,
-called from `process_frame` Step 9. Cardiac-band data has no parameter in that function by
-construction (F1 compile-time guarantee).
+### WP-0 — Secret Rotation (`PS-AUDIT-012`)
 
-### Close-out review — Fix 1: single source of truth
+Status: FIXED
 
-**Status: CONFIRMED, no code change needed.** Verified `edge_processing.c` contains zero
-function *definitions* matching the pure-module signatures (grep for
-`^(void|float|bool) (biquad_bandpass_design|biquad_process|unwrap_phase|extract_phase|
-estimate_bpm_zero_crossing|estimate_periodicity_autocorr|edge_evaluate_human_presence)`
-returns no matches). `edge_processing.h:70` includes `edge_dsp_pure.h`. Call sites in
-`edge_processing.c`: `extract_phase` (:454,654), `unwrap_phase` (:465,657),
-`biquad_process` (:473-474,686-687), `biquad_bandpass_design` (:639-643,1003-1009),
-`estimate_bpm_zero_crossing` (:494,714), `estimate_periodicity_autocorr` (:495-500,716-720),
-and the verdict itself at `edge_processing.c:788` →
-`s_presence_detected = edge_evaluate_human_presence(...)`. The firmware target and the host
-test (`main/test/test_edge_dsp_pure.c`) both compile `edge_dsp_pure.c` — same code, both
-places.
+Already present in repo state before this run:
 
-### Close-out review — Fix 2: sample-rate contract
+- `firmware/esp32-csi-node/sdkconfig.defaults` uses `REPLACE_ME` placeholders.
+- `firmware/esp32-csi-node/.gitignore` excludes `sdkconfig`, `sdkconfig.old`,
+  and `nvs_node*.bin`.
+- `firmware/esp32-csi-node/PROVISIONING.md` documents local NVS provisioning.
 
-**Status: CONTRACT CLEAN, no code change needed.** `edge_dsp_pure.c`'s `fs`/`sample_rate`
-are function parameters, not constants — confirmed no hardcoded frequency literal inside
-`edge_dsp_pure.c` (grep for `sample_rate|SAMPLE_RATE|fs\b|FS\b|dt\b|interval|hz|Hz|BPM`
-shows only parameter names and derived math). The caller, `edge_processing.c:617-631`,
-measures the real inter-frame timestamp delta (`dt`), EMA-smooths it into
-`s_sample_rate_hz` (`:626`), clamps to `[8, 30]` Hz (`:627-628`) — a band matching this
-firmware's own documented self-ping-driven reality ("callback rate is variable (self-ping +
-ambient traffic, ~13-19 Hz)", comment at `:618`) — and passes that measured value into every
-`edge_dsp_pure` call (`:639-643,649,714-720,1003-1009`). Biquads are re-tuned whenever the
-measured rate drifts >15% from their design frequency (`:638-646`). WP-6/WP-10 inherit this
-clean contract; no action required there for the fs axis itself.
+Residual note:
 
-Note: `main/test/test_edge_dsp_pure.c` uses a **fixed** `FS 15.0f` for reproducibility — that
-is a deliberate, disclosed host-test parameter (matching the firmware's own
-`s_sample_rate_hz` reset default at `edge_processing.c:983`), not evidence of a hardcoded
-production constant.
+- Router-side password rotation and history rewrite remain operator actions outside this repo.
 
-### Close-out review — Fix 3: band-edge reconciliation
+### WP-1 — Runtime Authority (`PS-AUDIT-001`)
 
-**Status: FIXED — Option A (clamp to canon).** No clinical rationale for tachypnea coverage
-(BPM > 30) exists anywhere in this codebase or the canonical spec. The pre-existing firmware
-sanity clamp used `6.0f, 40.0f` (0.667 Hz upper edge), exceeding canon's 0.1-0.5 Hz (6-30
-BPM) — an undocumented drift never checked against canon before this close-out, not an
-intentional design choice.
+Status: FIXED / DECISION
 
-Changed `EDGE_BREATHING_BPM_MAX` from `40.0f` to `30.0f` in `edge_dsp_pure.h`. This single
-constant is now the sole source of truth for THREE call sites that previously used
-independent literals:
-- `edge_processing.c:716-717` (single-target Step 7 breathing search band) — already used
-  the constants from the original WP-2 commit.
-- `edge_processing.c:723` (single-target sanity clamp) — already used the constants.
-- `edge_processing.c:495-496,503` (multi-person vitals path) — **found during close-out**,
-  this path had its own independent `6.0f, 40.0f` literals that WP-2's original commit
-  missed (it only touched the single-target Step 7/9 path). Updated to use
-  `EDGE_BREATHING_BPM_MIN/MAX`.
-- `main/test/test_edge_dsp_pure.c:180` — boundary test literal `40.1f` changed to
-  `EDGE_BREATHING_BPM_MAX + 0.1f` (self-adjusting to the constant).
+Already present in repo state before this run:
 
-`git grep` for `6-40|6\.0f.*40\.0f` in `firmware/esp32-csi-node/main` now returns no matches
-outside historical/comment references that were also corrected.
+- `docs/adr/ADR-051-runtime-authority.md` records Option B on July 17, 2026.
+- `README.md` now consistently states that the Node/TS server is the sole live UDP `:5005`
+  authority and that Python live mode is retired.
 
-### Recalibration required by Fix 3 (band changed → threshold re-verified)
+### WP-2 — Firmware Sovereign Respiratory Gate (`PS-AUDIT-002`)
 
-Fix 3 narrowed the search band from 6-30 BPM (was 6-40); this could invalidate the WP-2
-`EDGE_RESP_CONF_MIN = 0.5` calibration, which was originally validated only against an 8-32
-BPM synthetic sweep (not the full 6-30 canonical band). Re-ran the Monte Carlo calibration
-against the corrected 6-30 BPM band (500 trials each, real `edge_dsp_pure.c`, scratch driver
-described in the Appendix):
+Status: FIXED
 
-- **Noise**: unchanged from the original run (noise generation doesn't depend on the
-  breathing band) — P(resp_conf ≥ 0.5) = 0.2% (1/500), max observed 0.53.
-- **Breathing, full 6-30 BPM band**: mean resp_conf = 0.894, **min resp_conf = 0.379** (down
-  from the earlier 8-32 BPM sweep's 0.589 minimum). The weaker cases cluster near the 6 BPM
-  edge, where only ~1.7 respiratory cycles fit in the 256-sample (~17 s at 15 Hz) analysis
-  window — a genuinely weaker autocorrelation signal at that edge, not a bug.
-- At `EDGE_RESP_CONF_MIN = 0.5`: **8% missed-detection rate (40/500)** on the full-band sweep,
-  concentrated at low BPM, vs. 0.2% noise false-positive rate.
+Already present in repo state before this run:
 
-**Decision: kept `EDGE_RESP_CONF_MIN = 0.5`**, not lowered. Rationale: this is a firewall
-gate (F1) where a false "human present" claim is the worse failure mode than a delayed one;
-Step 9 re-evaluates every frame, so a single miss delays registration by one analysis window
-rather than permanently losing a continuously-present target. This trade-off is itself
-`[TO BE MEASURED]` against real slow-breather captures — see UNVERIFIED register below.
-`edge_dsp_pure.h`'s `EDGE_RESP_CONF_MIN` docstring documents both figures (noise FP and
-breathing miss rate) so a future recalibration has the real numbers, not a rounded summary.
+- `firmware/esp32-csi-node/main/edge_processing.c` uses
+  `edge_evaluate_human_presence(...)` instead of motion-only presence.
+- `firmware/esp32-csi-node/main/edge_dsp_pure.c/.h` contain the pure verdict logic.
+- `firmware/esp32-csi-node/main/test/test_edge_dsp_pure.c` covers:
+  - broadband/fan-like motion does not assert human presence,
+  - breathing-band motion does,
+  - cardiac-only paths cannot flip a negative respiratory verdict.
 
-### Known limitation — tonal aliasing (tracked, not fixed)
+This run did not modify the firmware verdict path further.
 
-**ID: `PS-REMED-WP2-FOLLOWUP-01`. Status: OPEN, tracked.**
+### WP-3 — F1 WebSocket Presentation Gap (`PS-AUDIT-014`)
 
-The autocorrelation-based periodicity estimator (`estimate_periodicity_autocorr`,
-`edge_dsp_pure.c`) can alias a clean, highly periodic non-human vibration into the
-respiratory band, because a band-limited pure tone's autocorrelation retains strong peaks at
-integer sub-harmonics of its true period. Operational vector: a fan or HVAC unit running at a
-stable RPM (not the broadband, non-tonal flutter of real ambient air movement) could produce
-a near-pure mechanical oscillation whose sub-harmonic lands in the 6-30 BPM band and reads as
-confident "breathing."
+Status: FIXED
 
-Evidence (`main/test/test_edge_dsp_pure.c`, `demo_known_limitation_tonal_aliasing`, printed
-not asserted): a clean 2.2 Hz tone with no noise produces `resp_conf = 1.000`,
-`breathing_bpm = 26.4` (in-band) — a false positive by construction. By contrast, realistic
-broadband/non-tonal motion (`test_broadband_motion_alone_is_not_human`) reliably stays below
-`EDGE_RESP_CONF_MIN` (`resp_conf = 0.137` in that run; ≤0.2% chance of exceeding 0.5 across
-500 independent noise trials).
+Already present in repo state before this run:
 
-**Not fixed in WP-2** because closing it requires a harmonic-purity or peak-sharpness check
-in the estimator itself — a distinct algorithmic change from "add a gate," and out of WP-2's
-scope per the standing rule against batching unrelated findings into one work package.
-Recommended follow-up: reject a breathing-band candidate whose peak profile is too sharp/pure
-relative to real (slightly irregular) human breathing, or cross-check against a
-simultaneously-computed broadband spectral-flatness measure.
+- `server/lib/websocket.ts` gates `poseFrame`, `targetIdentity`, and `vitalSigns`
+  on `client.isAI`.
+- AI identity/vitals are relayed as `advisoryIdentity` / `advisoryVitalSigns`.
+- Deterministic `currentTargetIdentity` / `currentVitalSigns` are no longer written
+  from client messages.
+- `server/lib/websocket.test.ts` covers the non-AI reject path and deterministic snapshot behavior.
 
-### Verification-status caveats (measured vs. pending, rule 6)
+#### WP-3 close-out (this session)
 
-- All WP-2 calibration figures (noise false-positive rate, breathing missed-detection rate)
-  are from **synthetic signals only** — no real CSI captures were used, because none showing
-  a clean respiratory-only vs. non-human-motion-only ground truth are available in this
-  environment. These figures are `[TO BE MEASURED]` against real captures before being cited
-  as production accuracy claims.
-- The ESP-IDF/xtensa cross-build of the modified firmware is **`UNVERIFIED`** — no ESP-IDF
-  toolchain is available in this environment. The moved DSP functions are byte-identical in
-  body to their pre-WP-2 counterparts (only relocated + de-`static`'d), and
-  `main/CMakeLists.txt` was updated to compile `edge_dsp_pure.c` into the firmware target, but
-  an actual on-device or ESP-IDF-toolchain build has not been run.
-- The host test (`main/test/test_edge_dsp_pure.c`) and calibration driver both compile
-  cleanly with `-Wall -Wextra` (zero warnings) on GCC 15.2.0 (MSYS2 mingw64) and exit 0.
+**Fix A — tracked finding `PS-REMED-WP3-FOLLOWUP-01`, status OPEN.** Dashboard has no handler
+for `advisoryIdentity` / `advisoryVitalSigns` (`client/src/hooks/use-websocket.ts` has no case
+for either type); AI advisory output is non-rendering until a client handler is added. This is
+a stricter-safe default than the pre-fix state (where AI output rendered by sharing the
+authoritative channel) — tracked for the UI backlog, not implemented here.
 
-## WP-3 — F1 WebSocket presentation gap (PS-AUDIT-014)
+**Fix B — `poseFrame` verdict-inertness, VERIFIED (not assumed).** Traced every downstream
+reader of `currentPoseFrame`/`poseFrame`:
+- Server (`server/lib/websocket.ts:346,1221,1312`): stores, relays to clients, resets to
+  null — no computation reads it.
+- Client WS hook (`client/src/hooks/use-websocket.ts:390-393`): stores in React state only.
+- Prop chain (`dashboard.tsx:155` → `point-cloud-3d.tsx:37` → `RadialScene.tsx:498`): passed
+  through unchanged, gated only by a cosmetic visibility toggle.
+- Terminal consumer (`client/src/components/dashboard/HumanMesh.tsx:86,141-142,158-173`): a
+  Three.js rendering component that uses `poseFrame.keypoints` to choose between an
+  AI-reconstructed vs. procedural skeleton and to position keypoint meshes, anchored at the
+  already-computed deterministic `target` position — never the reverse.
 
-**Status: FIXED.** Commit `096f611`.
+No reader on either side writes to `targetState`, the classifier, or any verdict field.
+`poseFrame` is confirmed verdict-inert; no code action required.
 
-`server/lib/websocket.ts`'s `handleMessage()` accepted `poseFrame`/`targetIdentity`/
-`vitalSigns` from any authenticated client (gated only on `this.status.isProcessing`), and
-`targetIdentity`/`vitalSigns` wrote directly into `currentTargetIdentity`/`currentVitalSigns`
-— the same fields the deterministic pipeline (micro-Doppler classifier, VitalsComputer/board
-fallback) writes every processing tick. This let the AI sidecar's model-derived `humanProb`
-transiently occupy the verdict-adjacent authoritative channel, and let any non-AI
-authenticated client inject fake identity/vitals/pose data visible to every dashboard.
+Also carried forward from the WP-2 close-out session (evidence unchanged, restated here since
+this report section was rewritten): **`PS-REMED-WP2-FOLLOWUP-01`, status OPEN.** The
+autocorrelation-based respiratory periodicity estimator
+(`firmware/esp32-csi-node/main/edge_dsp_pure.c`) can alias a clean, highly periodic non-human
+vibration (e.g. a fan/HVAC unit at a stable RPM) into the 6-30 BPM band via integer
+sub-harmonics of the autocorrelation. Evidence:
+`firmware/esp32-csi-node/main/test/test_edge_dsp_pure.c`'s
+`demo_known_limitation_tonal_aliasing` (printed, not asserted) — a clean 2.2 Hz tone with no
+noise produces `resp_conf = 1.000`, in-band `breathing_bpm = 26.4`. Real broadband/non-tonal
+motion does not reproduce this (`test_broadband_motion_alone_is_not_human`). Not fixed;
+requires a harmonic-purity/peak-sharpness check in the estimator itself, out of scope for the
+respiratory-gate fix that introduced it.
 
-Fix: all three message types now require `client?.isAI` (set only via a prior
-`registerAIClient` message); a rejected non-AI message is logged
-(`console.warn(...PS-AUDIT-014)`), matching the `SourcePinningGuard` logging convention
-already used in `server/lib/udp-server.ts`. `targetIdentity`/`vitalSigns` from an AI client no
-longer write the authoritative fields at all — they are relayed under distinct types
-(`advisoryIdentity`, `advisoryVitalSigns`) instead, so AI output structurally cannot occupy
-the same channel as the deterministic verdict. `poseFrame` keeps writing
-`currentPoseFrame` (no deterministic source exists for skeletal keypoints, and it was never a
-verdict channel) — now correctly gated on `isAI`.
+### WP-4 — Retire Legacy 20-Byte CSI from Live Path (`PS-AUDIT-004`)
 
-F1 static re-trace (`git grep 'this\.currentTargetIdentity\s*=|this\.currentVitalSigns\s*='`
-in `server/lib/websocket.ts`): each field has exactly two writers — the deterministic pipeline
-(`:963` classifier assignment, `:1166` vitals assignment) and the artifact-clear reset
-(`:1310-1311`). No client-message writer remains for either field.
+Status: FIXED
 
-Verified `scripts/ai_inference.py` needs no change: `on_open` (`:614-618`) sends
-`registerAIClient` before any inference message, so its existing messages are correctly gated
-and now arrive as the new advisory types without any sidecar-side edit.
+Changed:
 
-**Disclosed side effect, not silently absorbed:** `client/src/hooks/use-websocket.ts` has no
-handler for `advisoryIdentity`/`advisoryVitalSigns` yet, so the AI sidecar's advisory output
-will not render on the dashboard until that UI work is added — out of scope for this security
-fix, and a strictly safer state than before (where it rendered by sharing the authoritative
-channel).
+- `server/lib/udp-server.ts`
+- `server/lib/udp-server.test.ts`
+- `scripts/calibrate-threshold.ts`
 
-New coverage: `server/lib/websocket.test.ts` (new file, 8 tests) — non-AI client's
-`targetIdentity`/`vitalSigns`/`poseFrame` produce no state change and no broadcast; AI
-client's `targetIdentity`/`vitalSigns` relay under the new advisory types and never write the
-authoritative fields; AI `poseFrame` still works; `registerAIClient` unblocks the gate;
-`sendLiveSnapshotToClient` always serves the deterministic value even after both an injection
-attempt and a legitimate AI message arrive first.
+What changed:
 
-`npm test`: 107/107 pass (99 prior + 8 new). `npm run check` (tsc): clean, no errors.
-`pytest`: 82 passed, 1 skipped (unaffected — TS-only change).
+- `parseCsiPacket()` now rejects legacy 20-byte CSI by default.
+- Legacy parsing is available only through explicit compatibility opt-in
+  (`allowLegacy` / `PHANTOM_ALLOW_LEGACY_CSI`).
+- Offline calibration tooling can still opt in deliberately.
 
-## UNVERIFIED register (WP-2 additions)
+Validation:
 
-- `UNVERIFIED — ESP-IDF/xtensa firmware build of the WP-2 changes`. Needed: ESP-IDF toolchain
-  (not present in this environment) to confirm `edge_dsp_pure.c` compiles and links into the
-  actual firmware image, and ideally an on-device smoke test.
-- `UNVERIFIED — EDGE_RESP_CONF_MIN = 0.5's real-world missed-detection rate for slow (near-6
-  BPM) breathers`. Needed: real CSI captures of a stationary subject breathing at the low end
-  of the physiological range, to confirm the "re-evaluated every frame, so a miss just
-  delays" mitigation actually holds in practice rather than causing intermittent verdict
-  flicker.
-- `UNVERIFIED — PS-REMED-WP2-FOLLOWUP-01 real-world exposure`. Needed: a real recording near
-  a running fan/HVAC unit at a stable RPM, replayed through the firmware/host-test pipeline,
-  to confirm (or rule out) the tonal-aliasing false positive occurs with real hardware noise
-  characteristics, not just an idealized synthetic tone.
+- TS tests assert live-mode rejection and compat-mode acceptance.
 
-## Appendix — commands run this close-out session
+### WP-5 — Node Identity vs Canonical Hardware IDs (`PS-AUDIT-005`)
 
-```
-grep -n "edge_dsp_pure" firmware/esp32-csi-node/main/edge_processing.c
-grep -n "^(void|float|bool) (biquad_bandpass_design|biquad_process|unwrap_phase|
-  extract_phase|estimate_bpm_zero_crossing|estimate_periodicity_autocorr|
-  edge_evaluate_human_presence)" firmware/esp32-csi-node/main/edge_processing.c
-grep -n "sample_rate|SAMPLE_RATE|fs\b|FS\b|dt\b|interval|hz|Hz|BPM" \
-  firmware/esp32-csi-node/main/edge_dsp_pure.c
-grep -n "s_sample_rate_hz|s_filter_design_fs|const float sample_rate" \
-  firmware/esp32-csi-node/main/edge_processing.c
-grep -n "6-40|6\.0f.*40\.0f|breathing.*40|40.*[Bb]reathing" firmware/esp32-csi-node/main
-```
+Status: FIXED
 
-Host-test rebuild/run (from `firmware/esp32-csi-node/main`, GCC 15.2.0 MSYS2 mingw64):
-```
-gcc -std=c99 -O2 -Wall -Wextra -I. test/test_edge_dsp_pure.c edge_dsp_pure.c -lm \
-    -o test/test_edge_dsp_pure.exe
-./test/test_edge_dsp_pure.exe
-```
-Result: 0 compiler warnings, all assertions passed, exit 0 (full transcript in the commit
-message).
+Changed:
 
-Monte Carlo recalibration (scratch driver `calibrate.c`, not committed — reproduces the
-`resp_conf` distribution for pure-noise vs. synthetic-breathing inputs across 500 trials
-each, linking the real `edge_dsp_pure.c`):
-```
-gcc -std=c99 -O2 -Wall -I<firmware>/main calibrate.c <firmware>/main/edge_dsp_pure.c -lm \
-    -o calibrate.exe
-./calibrate.exe
-```
-Output reproduced in the "Recalibration required by Fix 3" section above.
+- `shared/schema.ts`
+- `server/lib/udp-server.ts`
 
-Full-suite re-verification after this close-out session:
-```
+What changed:
+
+- Added canonical mapping source of truth:
+  - runtime node `1` -> hardware ID `29052`
+  - runtime node `2` -> hardware ID `44260`
+- Added `hardwareId` on `CSISample`.
+- Live authority now resolves runtime node IDs to canonical hardware IDs at ingest.
+- Unmapped runtime node IDs are rejected in the live authority.
+
+Validation:
+
+- TS suite remained green after the mapping change.
+
+### WP-6 — Python Stale Geometry and Sample Rate (`PS-AUDIT-006`)
+
+Status: FIXED
+
+Changed:
+
+- `phantom/dsp.py`
+- `phantom/runtime.py`
+- `tests/test_invariants.py`
+
+What changed:
+
+- Python reference baseline changed from `5.0 m` to `3.0 m`.
+- `dual_node_on_axis_position()` now returns centered coordinates with midpoint `x_m = 0.0`.
+- Python reference sample-rate defaults changed from `20.0` to `5.0` to stop encoding the stale
+  20 Hz assumption in the reference path.
+- Invariant test now asserts midpoint `x_m = 0.0`, not `2.5`.
+
+Validation:
+
+- Python tests passed with the corrected geometry.
+
+### WP-7 — Replay / Out-of-Order Enforcement (`PS-AUDIT-007`)
+
+Status: FIXED
+
+Changed:
+
+- `server/lib/udp-server.ts`
+- `server/lib/udp-server.test.ts`
+
+What changed:
+
+- Added `PacketOrderGuard` in the live TS authority.
+- Replays (`delta == 0`) are rejected.
+- Clearly old/out-of-order sequences are rejected.
+- Sequence rollover is accepted.
+- Device timestamps are used to fail closed on repeated/non-advancing device time.
+
+Validation:
+
+- TS tests cover in-order, replay, out-of-order, and rollover cases.
+
+### WP-8 — Source Pinning Hardening and Windows Bind Safety (`PS-AUDIT-008`, `PS-AUDIT-013`)
+
+Status: FIXED
+
+Changed:
+
+- `server/lib/udp-server.ts`
+- `server/lib/udp-server.test.ts`
+- `phantom/ingest.py`
+- `phantom/runtime.py`
+- `tests/test_phantom_runtime.py`
+
+What changed:
+
+- Added optional static source pinning in the live TS authority via
+  `PHANTOM_STATIC_NODE_SOURCES` JSON mapping.
+- For statically pinned nodes, foreign IPs are rejected even before first claim and after silence.
+- Retired Python live ingest no longer sets `SO_REUSEADDR`.
+- Retired Python live mode now refuses to start unless
+  `PHANTOM_ALLOW_RETIRED_LIVE_AUTH=1` is explicitly set.
+- Python source pinning now fails closed on missing source info instead of silently skipping.
+
+Validation:
+
+- TS tests cover static pre-pin rejection and static post-silence rejection.
+- Python tests cover missing-source rejection.
+
+### WP-9 — First-Operator Bootstrap (`PS-AUDIT-015`)
+
+Status: FIXED
+
+Changed:
+
+- `server/auth/service.ts`
+- `server/auth/service.test.ts`
+
+What changed:
+
+- First-operator bootstrap is allowed only from loopback, or with a valid
+  `PHANTOM_BOOTSTRAP_TOKEN`.
+- Non-loopback first-login attempts without token return `403`.
+- Failure is audit-logged as `operator_bootstrap_failure`.
+
+Validation:
+
+- TS tests cover successful loopback bootstrap and rejected forwarded non-loopback bootstrap.
+
+### WP-10 — Live Fusion Math Alignment (`PS-AUDIT-003`)
+
+Status: DEFERRED
+
+Not changed in this run:
+
+- The live path still contains nonlinear balance shaping and display bias in
+  `server/lib/node-fusion.ts`.
+- README truth was improved, but this report does not claim canonical-linear restoration.
+
+Reason deferred:
+
+- This is a separate behavioral choice and would require explicit alignment of
+  authority math vs display transform semantics, plus updated tests/docs.
+
+### WP-11 — Documentation Truth Pass (`PS-AUDIT-009`, `PS-AUDIT-011`, `PS-AUDIT-017`, `PS-AUDIT-018`)
+
+Status: FIXED / PARTIAL
+
+Changed:
+
+- `README.md`
+- `DETECTION_REPORT.md`
+- `TEST_REPORT.md`
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md`
+- `ai model and densepose/model/README.md`
+
+What changed:
+
+- Removed stale root-level claims that Python was becoming the live authority.
+- Updated root reports from stale 5 m geometry to centered 3 m geometry.
+- Downgraded unmeasured “✅ Validated” claims in the preliminary deliverable to
+  `Target — [TO BE MEASURED]`.
+- Labeled legacy 20-byte and `2π / λ` references in the preliminary deliverable as superseded.
+- Reworded model README “100% accuracy” claims to honest placeholder language.
+
+Partial / deferred:
+
+- `docs/ruview-2node-full-analysis-report.md` was not updated in this run.
+- README/documentation for WP-10’s authoritative-linear vs display-transform split is still incomplete.
+
+## Files Changed In This Run
+
+- `README.md`
+- `DETECTION_REPORT.md`
+- `TEST_REPORT.md`
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md`
+- `ai model and densepose/model/README.md`
+- `shared/schema.ts`
+- `server/lib/udp-server.ts`
+- `server/lib/udp-server.test.ts`
+- `server/auth/service.ts`
+- `server/auth/service.test.ts`
+- `scripts/calibrate-threshold.ts`
+- `phantom/ingest.py`
+- `phantom/dsp.py`
+- `phantom/runtime.py`
+- `tests/test_invariants.py`
+- `tests/test_phantom_runtime.py`
+
+## Verification Results
+
+Executed after code changes in this run:
+
+```text
 npm test
 ```
-→ `99 tests, 99 pass, 0 fail`.
+
+Observed result:
+
+```text
+112 pass, 0 fail
 ```
-python -m pytest tests -q
+
+```text
+C:\Users\thaer\AppData\Local\Programs\Python\Python313\python.exe -m pytest tests -q
 ```
-→ `82 passed, 1 skipped` (total 83, unchanged from the original WP-2 session's `77 passed, 6
-skipped`; the skip/pass split shift is environment-dependent — e.g. an optional AI-stack
-dependency's availability — and unrelated to this firmware-only close-out, which touched no
-Python files. Reported as observed, not silently reconciled to the stale figure.)
+
+Observed result:
+
+```text
+83 passed, 1 skipped in 52.84s
+```
+
+## Remaining Unverified / Deferred Items
+
+- Live hardware behavior remains unverified in this run:
+  - real two-board UDP ingest,
+  - live midpoint behavior,
+  - empty-room negative control,
+  - fan/curtain negative control,
+  - real replay/spoof injection on hardware.
+- `PS-AUDIT-003` remains open: live nonlinear fusion math has not been reconciled to a
+  canonical linear authority path.
+- `PS-AUDIT-010` remains open in practice: `docs/ruview-2node-full-analysis-report.md`
+  was not banner-corrected here.
+- `PS-AUDIT-011` is only partial: README truth is corrected, but authoritative-linear vs
+  display-transform documentation is not fully settled.
+- This report does not claim any accuracy target is met; those remain
+  `[TO BE MEASURED]`.
+
+## Worktree Notes
+
+This remediation was done in a dirty worktree. Unrelated existing changes were left untouched,
+including:
+
+- `.vscode/settings.json`
+- `data/sessions/_index.json`
+- nested git state under `ai model and densepose/model`
+- untracked `PHANTOM_SCAN_BEHAVIOR_AUDIT_REPORT.md`
+- untracked `generated_reports/Section-1.2-WiFi-Frequency-vs-CSI.md`
+
+No commit was created in this run.
