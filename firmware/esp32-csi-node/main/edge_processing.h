@@ -63,13 +63,11 @@ typedef struct {
     uint32_t queue_high_watermark;
 } edge_runtime_stats_t;
 
-/* ---- Biquad IIR filter state ---- */
-typedef struct {
-    float b0, b1, b2;  /**< Numerator coefficients. */
-    float a1, a2;       /**< Denominator coefficients (a0 = 1). */
-    float x1, x2;       /**< Input delay line. */
-    float y1, y2;       /**< Output delay line. */
-} edge_biquad_t;
+/* edge_biquad_t and the pure DSP math (biquad design/process, phase
+ * unwrap/extract, BPM estimators, and the sovereign human-presence verdict)
+ * live in edge_dsp_pure.h — kept ESP-IDF-free so they can be host-tested
+ * (see main/test/test_edge_dsp_pure.c, PS-AUDIT-002). */
+#include "edge_dsp_pure.h"
 
 /* ---- Welford running statistics ---- */
 typedef struct {

@@ -87,67 +87,10 @@ static inline bool ring_pop(edge_ring_slot_t *out)
     return true;
 }
 
-/* ======================================================================
- * Biquad IIR Filter
- * ====================================================================== */
-
-/**
- * Design a 2nd-order Butterworth bandpass biquad.
- *
- * @param bq   Output biquad state.
- * @param fs   Sampling frequency (Hz).
- * @param f_lo Low cutoff frequency (Hz).
- * @param f_hi High cutoff frequency (Hz).
- */
-static void biquad_bandpass_design(edge_biquad_t *bq, float fs,
-                                   float f_lo, float f_hi)
-{
-    float w0 = 2.0f * M_PI * (f_lo + f_hi) / 2.0f / fs;
-    float bw = 2.0f * M_PI * (f_hi - f_lo) / fs;
-    float alpha = sinf(w0) * sinhf(logf(2.0f) / 2.0f * bw / sinf(w0));
-
-    float a0_inv = 1.0f / (1.0f + alpha);
-    bq->b0 =  alpha * a0_inv;
-    bq->b1 =  0.0f;
-    bq->b2 = -alpha * a0_inv;
-    bq->a1 = -2.0f * cosf(w0) * a0_inv;
-    bq->a2 =  (1.0f - alpha) * a0_inv;
-
-    bq->x1 = bq->x2 = 0.0f;
-    bq->y1 = bq->y2 = 0.0f;
-}
-
-static inline float biquad_process(edge_biquad_t *bq, float x)
-{
-    float y = bq->b0 * x + bq->b1 * bq->x1 + bq->b2 * bq->x2
-            - bq->a1 * bq->y1 - bq->a2 * bq->y2;
-    bq->x2 = bq->x1;
-    bq->x1 = x;
-    bq->y2 = bq->y1;
-    bq->y1 = y;
-    return y;
-}
-
-/* ======================================================================
- * Phase Extraction and Unwrapping
- * ====================================================================== */
-
-/** Extract phase (radians) from an I/Q pair at byte offset. */
-static inline float extract_phase(const uint8_t *iq, uint16_t idx)
-{
-    int8_t i_val = (int8_t)iq[idx * 2];
-    int8_t q_val = (int8_t)iq[idx * 2 + 1];
-    return atan2f((float)q_val, (float)i_val);
-}
-
-/** Unwrap phase to maintain continuity (avoid 2*pi jumps). */
-static inline float unwrap_phase(float prev, float curr)
-{
-    float diff = curr - prev;
-    if (diff > M_PI)       diff -= 2.0f * M_PI;
-    else if (diff < -M_PI) diff += 2.0f * M_PI;
-    return prev + diff;
-}
+/* Biquad IIR filter design/process, phase extraction/unwrap, and the BPM
+ * estimators used below now live in edge_dsp_pure.c (ESP-IDF-free, so they
+ * are host-testable — see main/test/test_edge_dsp_pure.c, PS-AUDIT-002).
+ * edge_processing.h pulls in their declarations via edge_dsp_pure.h. */
 
 /* ======================================================================
  * Welford Running Statistics
@@ -174,51 +117,6 @@ static inline double welford_variance(const edge_welford_t *w)
     return (w->count > 1) ? (w->m2 / (double)(w->count - 1)) : 0.0;
 }
 
-/* ======================================================================
- * Zero-Crossing BPM Estimation
- * ====================================================================== */
-
-/**
- * Estimate BPM from a filtered signal using positive zero-crossings.
- *
- * @param history     Signal buffer (filtered phase).
- * @param len         Number of samples.
- * @param sample_rate Sampling rate in Hz.
- * @return Estimated BPM, or 0 if insufficient crossings.
- */
-static float estimate_bpm_zero_crossing(const float *history, uint16_t len,
-                                        float sample_rate)
-{
-    if (len < 4) return 0.0f;
-
-    uint16_t crossings[128];
-    uint16_t n_cross = 0;
-
-    for (uint16_t i = 1; i < len && n_cross < 128; i++) {
-        if (history[i - 1] <= 0.0f && history[i] > 0.0f) {
-            crossings[n_cross++] = i;
-        }
-    }
-
-    if (n_cross < 2) return 0.0f;
-
-    /* Average period from consecutive crossings. */
-    float total_period = 0.0f;
-    for (uint16_t i = 1; i < n_cross; i++) {
-        total_period += (float)(crossings[i] - crossings[i - 1]);
-    }
-    float avg_period_samples = total_period / (float)(n_cross - 1);
-
-    if (avg_period_samples < 1.0f) return 0.0f;
-
-    float freq_hz = sample_rate / avg_period_samples;
-    return freq_hz * 60.0f;  /* Hz to BPM. */
-}
-
-/* ======================================================================
- * Autocorrelation Periodicity Estimation (ported from RuView)
- * ====================================================================== */
-
 /*
  * Static scratch for building contiguous signal buffers from the filtered
  * rings. Lives in .bss instead of the DSP task stack: two 256-float buffers
@@ -227,86 +125,6 @@ static float estimate_bpm_zero_crossing(const float *history, uint16_t len,
  */
 static float s_scratch_br[EDGE_PHASE_HISTORY_LEN];
 static float s_scratch_hr[EDGE_PHASE_HISTORY_LEN];
-
-/**
- * Dominant periodicity in a band via autocorrelation. More robust than
- * zero-crossing for the heart-rate band, where breathing harmonics alias:
- * a 0.25 Hz breathing 3rd harmonic sits at ~45 BPM inside the HR band, so
- * candidates within 8% of a breathing harmonic (k=1..6) are rejected.
- *
- * @param sig            Band-filtered signal (contiguous, oldest..newest).
- * @param len            Number of samples.
- * @param fs             Measured sample rate in Hz.
- * @param bpm_lo         Low edge of the search band (BPM).
- * @param bpm_hi         High edge of the search band (BPM).
- * @param reject_br_hz   Breathing fundamental (Hz) whose harmonics are
- *                       rejected; pass 0 to disable (fundamental search).
- * @param out_peak_ratio Optional: receives best/r0 (autocorr peak ratio,
- *                       the confidence basis) when a peak is accepted,
- *                       0 otherwise. May be NULL.
- * @return Dominant rate in BPM within the band, or 0 if no confident peak.
- */
-static float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
-                                            float bpm_lo, float bpm_hi,
-                                            float reject_br_hz,
-                                            float *out_peak_ratio)
-{
-    if (out_peak_ratio) *out_peak_ratio = 0.0f;
-    if (len < 32 || fs <= 0.0f || bpm_hi <= bpm_lo) return 0.0f;
-
-    int lag_min = (int)(fs * 60.0f / bpm_hi);
-    int lag_max = (int)(fs * 60.0f / bpm_lo);
-    if (lag_min < 2) lag_min = 2;
-    if (lag_max >= (int)len) lag_max = (int)len - 1;
-    if (lag_max <= lag_min + 1) return 0.0f;
-
-    const float br_hz = reject_br_hz;
-
-    float r0 = 0.0f;
-    for (uint16_t i = 0; i < len; i++) r0 += sig[i] * sig[i];
-    if (r0 <= 1e-6f) return 0.0f;
-
-    float best = -1.0f;
-    int   best_lag = 0;
-
-    for (int lag = lag_min; lag <= lag_max; lag++) {
-        float f = fs / (float)lag;  /* candidate frequency (Hz) */
-
-        /* Reject candidates within 8% of a breathing harmonic k*f_br (k=1..6). */
-        if (br_hz > 0.0f) {
-            bool harmonic = false;
-            for (int k = 1; k <= 6; k++) {
-                float h = (float)k * br_hz;
-                if (fabsf(f - h) < 0.08f * h) { harmonic = true; break; }
-            }
-            if (harmonic) continue;
-        }
-
-        float acc = 0.0f;
-        for (int i = 0; i + lag < (int)len; i++) acc += sig[i] * sig[i + lag];
-        if (acc > best) { best = acc; best_lag = lag; }
-    }
-
-    if (best_lag == 0) return 0.0f;
-    /* Require a real periodicity, not a noise peak. */
-    if (best / r0 < 0.2f) return 0.0f;
-
-    /* Parabolic interpolation around best_lag for sub-sample period resolution. */
-    float lag_ref = (float)best_lag;
-    {
-        float a = 0.0f, c = 0.0f;
-        for (int i = 0; i + (best_lag - 1) < (int)len; i++) a += sig[i] * sig[i + best_lag - 1];
-        for (int i = 0; i + (best_lag + 1) < (int)len; i++) c += sig[i] * sig[i + best_lag + 1];
-        float denom = a - 2.0f * best + c;
-        if (fabsf(denom) > 1e-6f) {
-            float delta = 0.5f * (a - c) / denom;
-            if (delta > -1.0f && delta < 1.0f) lag_ref += delta;
-        }
-    }
-
-    if (out_peak_ratio) *out_peak_ratio = best / r0;
-    return fs / lag_ref * 60.0f;
-}
 
 /* Median smoother for the emitted heart rate. The per-frame autocorr estimate
  * still has occasional single-frame outliers (startup transient before the
@@ -896,13 +714,18 @@ static void process_frame(const edge_ring_slot_t *slot)
         float br_bpm = estimate_bpm_zero_crossing(s_scratch_br, buf_len, sample_rate);
         /* Robust breathing period (autocorr) drives HR harmonic rejection. */
         float br_rob = estimate_periodicity_autocorr(s_scratch_br, buf_len, sample_rate,
-                                                     6.0f, 40.0f, 0.0f, &br_ratio);
+                                                     EDGE_BREATHING_BPM_MIN,
+                                                     EDGE_BREATHING_BPM_MAX,
+                                                     0.0f, &br_ratio);
         float hr_bpm = estimate_periodicity_autocorr(s_scratch_hr, buf_len, sample_rate,
                                                      45.0f, 180.0f, br_rob / 60.0f,
                                                      &hr_ratio);
 
-        /* Sanity clamp: breathing 6-40 BPM, heart rate 40-180 BPM. */
-        if (br_bpm >= 6.0f && br_bpm <= 40.0f) s_breathing_bpm = br_bpm;
+        /* Sanity clamp: breathing band shared with the presence verdict's
+         * periodicity check (edge_dsp_pure.h, PS-AUDIT-002); heart rate 40-180 BPM. */
+        if (br_bpm >= EDGE_BREATHING_BPM_MIN && br_bpm <= EDGE_BREATHING_BPM_MAX) {
+            s_breathing_bpm = br_bpm;
+        }
         if (hr_bpm >= 40.0f && hr_bpm <= 180.0f) s_heartrate_bpm = hr_smooth_push(hr_bpm);
 
         /* Confidence: clamp((ratio - 0.2) / 0.6, 0, 1); 0 when no peak. */
@@ -931,10 +754,20 @@ static void process_frame(const edge_ring_slot_t *slot)
         if (s_motion_energy < 0.0f) s_motion_energy = 0.0f;
     }
 
-    /* --- Step 9: Presence detection ---
-     * Presence = motion energy above a threshold that is either configured
-     * (presence_thresh), learned from the empty room (mean + k*sigma via
-     * calibration_update), or a 0.05 default until calibration finishes. */
+    /* --- Step 9: Presence detection (sovereign is_human verdict) ---
+     * s_presence_score/s_motion_energy stay pure METRICS (motion energy
+     * above a threshold that is either configured (presence_thresh), learned
+     * from the empty room (mean + k*sigma via calibration_update), or a 0.05
+     * default until calibration finishes) — they no longer alone decide the
+     * verdict.
+     *
+     * PS-AUDIT-002 (F1 firewall): motion alone is NOT sufficient to declare
+     * a human present — a fan, curtain, or other non-human mover can raise
+     * motion energy without producing genuine 0.1-0.5 Hz respiratory
+     * periodicity. s_presence_detected now requires motion AND confident,
+     * in-band respiratory periodicity (edge_evaluate_human_presence).
+     * Cardiac-band data is intentionally never passed to that gate — see
+     * edge_dsp_pure.h for why that must stay a compile-time guarantee. */
     s_presence_score = s_motion_energy;
 
     /* Adaptive calibration: learn ambient noise level from first N frames. */
@@ -949,7 +782,11 @@ static void process_frame(const edge_ring_slot_t *slot)
         threshold = 0.05f;  /* Default until calibrated. */
     }
     s_presence_threshold_active = threshold;
-    s_presence_detected = (s_presence_score > threshold);
+
+    bool motion_present = (s_presence_score > threshold);
+    bool breathing_data_ready = (s_history_len >= 64);  /* mirrors Step 7's gate */
+    s_presence_detected = edge_evaluate_human_presence(
+        motion_present, breathing_data_ready, s_breathing_bpm, s_resp_conf);
 
     /* --- Step 10: Fall detection (phase acceleration) --- */
     if (s_history_len >= 3) {

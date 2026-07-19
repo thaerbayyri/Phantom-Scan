@@ -3,3 +3,9 @@
 sdkconfig
 sdkconfig.old
 nvs_node*.bin
+
+# Host-compiled test binaries/logs for main/test/*.c (PS-AUDIT-002) — build
+# locally with gcc; see the build/run comment atop test_edge_dsp_pure.c.
+main/test/*.exe
+main/test/*.o
+main/test/*.log
