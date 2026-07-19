@@ -2,7 +2,7 @@
 
 Tracks remediation of findings from `PHANTOM_SCAN_BEHAVIOR_AUDIT_REPORT.md`. Entries are
 added as work packages close. This report currently covers **WP-0, WP-1, WP-2 (including
-WP-2 close-out)**. WP-3 onward are not yet started.
+WP-2 close-out), WP-3**. WP-4 onward are not yet started.
 
 ## WP-0 — Secret rotation (PS-AUDIT-012)
 
@@ -155,6 +155,53 @@ simultaneously-computed broadband spectral-flatness measure.
   an actual on-device or ESP-IDF-toolchain build has not been run.
 - The host test (`main/test/test_edge_dsp_pure.c`) and calibration driver both compile
   cleanly with `-Wall -Wextra` (zero warnings) on GCC 15.2.0 (MSYS2 mingw64) and exit 0.
+
+## WP-3 — F1 WebSocket presentation gap (PS-AUDIT-014)
+
+**Status: FIXED.** Commit `096f611`.
+
+`server/lib/websocket.ts`'s `handleMessage()` accepted `poseFrame`/`targetIdentity`/
+`vitalSigns` from any authenticated client (gated only on `this.status.isProcessing`), and
+`targetIdentity`/`vitalSigns` wrote directly into `currentTargetIdentity`/`currentVitalSigns`
+— the same fields the deterministic pipeline (micro-Doppler classifier, VitalsComputer/board
+fallback) writes every processing tick. This let the AI sidecar's model-derived `humanProb`
+transiently occupy the verdict-adjacent authoritative channel, and let any non-AI
+authenticated client inject fake identity/vitals/pose data visible to every dashboard.
+
+Fix: all three message types now require `client?.isAI` (set only via a prior
+`registerAIClient` message); a rejected non-AI message is logged
+(`console.warn(...PS-AUDIT-014)`), matching the `SourcePinningGuard` logging convention
+already used in `server/lib/udp-server.ts`. `targetIdentity`/`vitalSigns` from an AI client no
+longer write the authoritative fields at all — they are relayed under distinct types
+(`advisoryIdentity`, `advisoryVitalSigns`) instead, so AI output structurally cannot occupy
+the same channel as the deterministic verdict. `poseFrame` keeps writing
+`currentPoseFrame` (no deterministic source exists for skeletal keypoints, and it was never a
+verdict channel) — now correctly gated on `isAI`.
+
+F1 static re-trace (`git grep 'this\.currentTargetIdentity\s*=|this\.currentVitalSigns\s*='`
+in `server/lib/websocket.ts`): each field has exactly two writers — the deterministic pipeline
+(`:963` classifier assignment, `:1166` vitals assignment) and the artifact-clear reset
+(`:1310-1311`). No client-message writer remains for either field.
+
+Verified `scripts/ai_inference.py` needs no change: `on_open` (`:614-618`) sends
+`registerAIClient` before any inference message, so its existing messages are correctly gated
+and now arrive as the new advisory types without any sidecar-side edit.
+
+**Disclosed side effect, not silently absorbed:** `client/src/hooks/use-websocket.ts` has no
+handler for `advisoryIdentity`/`advisoryVitalSigns` yet, so the AI sidecar's advisory output
+will not render on the dashboard until that UI work is added — out of scope for this security
+fix, and a strictly safer state than before (where it rendered by sharing the authoritative
+channel).
+
+New coverage: `server/lib/websocket.test.ts` (new file, 8 tests) — non-AI client's
+`targetIdentity`/`vitalSigns`/`poseFrame` produce no state change and no broadcast; AI
+client's `targetIdentity`/`vitalSigns` relay under the new advisory types and never write the
+authoritative fields; AI `poseFrame` still works; `registerAIClient` unblocks the gate;
+`sendLiveSnapshotToClient` always serves the deterministic value even after both an injection
+attempt and a legitimate AI message arrive first.
+
+`npm test`: 107/107 pass (99 prior + 8 new). `npm run check` (tsc): clean, no errors.
+`pytest`: 82 passed, 1 skipped (unaffected — TS-only change).
 
 ## UNVERIFIED register (WP-2 additions)
 
