@@ -337,22 +337,41 @@ export class SignalProcessingServer {
         }
         break;
       case "poseFrame":
-        // Only relay AI frames when actively processing — prevents OOM during idle
-        if (this.status.isProcessing) {
+        // PS-AUDIT-014: only a client that completed "registerAIClient" may
+        // publish pose frames — there is no deterministic source for this
+        // channel, so any authenticated client could otherwise inject a
+        // fake skeleton into every connected dashboard. Also only relay
+        // while actively processing (prevents OOM during idle).
+        if (client?.isAI && this.status.isProcessing) {
           this.currentPoseFrame = (message.data as PoseFrame) ?? null;
           this.broadcast("poseFrame", message.data);
+        } else if (client && !client.isAI) {
+          console.warn(`[WS][SEC] non-AI client ${clientId} sent poseFrame — ignored (PS-AUDIT-014)`);
         }
         break;
       case "targetIdentity":
-        if (this.status.isProcessing) {
-          this.currentTargetIdentity = (message.data as TargetIdentity) ?? null;
-          this.broadcast("targetIdentity", message.data);
+        // F1 / PS-AUDIT-014: currentTargetIdentity (and the "targetIdentity"
+        // broadcast) must have exactly one writer — the deterministic
+        // micro-Doppler classifier in processFrame(). A client message must
+        // NEVER write it, even from a registered AI client, or a model
+        // output could occupy the same channel as the deterministic verdict.
+        // AI advisory identity is relayed under a distinct type instead, so
+        // it can never be mistaken for the authoritative classification.
+        if (client?.isAI && this.status.isProcessing) {
+          this.broadcast("advisoryIdentity", message.data);
+        } else if (client && !client.isAI) {
+          console.warn(`[WS][SEC] non-AI client ${clientId} sent targetIdentity — ignored (PS-AUDIT-014)`);
         }
         break;
       case "vitalSigns":
-        if (this.status.isProcessing) {
-          this.currentVitalSigns = (message.data as VitalSigns) ?? null;
-          this.broadcast("vitalSigns", message.data);
+        // Same F1 rule as targetIdentity: currentVitalSigns is written only
+        // by the deterministic VitalsComputer / board-DSP fallback in
+        // processFrame(). AI advisory vitals are relayed under a distinct
+        // type and never touch the authoritative channel.
+        if (client?.isAI && this.status.isProcessing) {
+          this.broadcast("advisoryVitalSigns", message.data);
+        } else if (client && !client.isAI) {
+          console.warn(`[WS][SEC] non-AI client ${clientId} sent vitalSigns — ignored (PS-AUDIT-014)`);
         }
         break;
     }
