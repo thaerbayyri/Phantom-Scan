@@ -22,6 +22,7 @@
 #include "../edge_dsp_pure.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <math.h>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -184,6 +185,104 @@ static void test_gate_boundaries(void)
     CHECK(edge_evaluate_human_presence(true, true, EDGE_BREATHING_BPM_MAX, 1.0f) == true);
 }
 
+/* ---- B2: sample-rate correctness across the canonical 3-7 Hz measured-CSI
+ * range (PHANTOM_SCAN_BEHAVIORAL_TEST_REPORT.md). The pure estimator takes
+ * fs as an explicit parameter (verified: no hardcoded frequency literal in
+ * edge_dsp_pure.c), so this feeds the SAME 15 BPM breathing waveform
+ * generated at 3, 5, and 7 Hz and confirms estimate_periodicity_autocorr
+ * recovers ~15 BPM at each rate — catching a fixed-fs frequency-axis bug
+ * that a single-FS test suite (the tests above, all at FS=15) cannot see.
+ * Real per-sample timing jitter is not modeled here: the pure functions
+ * take a scalar fs, matching the firmware's own EMA-smoothed scalar rate
+ * (edge_processing.c's s_sample_rate_hz) rather than per-sample timestamps. */
+static void test_bpm_estimate_consistent_across_measured_csi_rates(void)
+{
+    const float rates[] = {3.0f, 5.0f, 7.0f};
+    const float truth_bpm = 15.0f;
+    const float truth_hz = truth_bpm / 60.0f;
+
+    for (size_t r = 0; r < sizeof(rates) / sizeof(rates[0]); r++) {
+        float fs = rates[r];
+        float sig[N];
+        for (int i = 0; i < N; i++) {
+            float t = (float)i / fs;
+            sig[i] = 1.2f * sinf(2.0f * (float)M_PI * truth_hz * t);
+        }
+        edge_biquad_t bq;
+        biquad_bandpass_design(&bq, fs, 0.1f, 0.5f);
+        float filt[N];
+        for (int i = 0; i < N; i++) filt[i] = biquad_process(&bq, sig[i]);
+        float ratio = 0.0f;
+        float est_bpm = estimate_periodicity_autocorr(filt, N, fs,
+                                                        EDGE_BREATHING_BPM_MIN,
+                                                        EDGE_BREATHING_BPM_MAX,
+                                                        0.0f, &ratio);
+        printf("[sample-rate sweep] fs=%.1fHz truth=%.1fBPM est=%.2fBPM ratio=%.3f\n",
+               fs, truth_bpm, est_bpm, ratio);
+        CHECK(fabsf(est_bpm - truth_bpm) < 1.0f);
+    }
+}
+
+/* ---- B2: committed Monte Carlo false-positive / missed-detection
+ * calibration (promotes the scratch calibration run cited in
+ * edge_dsp_pure.h's EDGE_RESP_CONF_MIN docstring into a real, reproducible,
+ * asserted regression test — the original run was never committed). Fixed
+ * LCG seed per trial for determinism (rule: no wall-clock/flaky behavioral
+ * tests). Bounds are set with margin above the originally measured figures
+ * (0.2% noise FP, 8% missed-detection at the 6 BPM edge) so this catches a
+ * real regression without being flaky on normal floating-point variation. */
+static unsigned long s_calib_rng;
+static float calib_frand(void)
+{
+    s_calib_rng = s_calib_rng * 1103515245UL + 12345UL;
+    return ((float)((s_calib_rng >> 16) & 0x7fffUL) / 16384.0f) - 1.0f;
+}
+
+static void test_monte_carlo_calibration_bounds(void)
+{
+    const int trials = 500;
+    int noise_false_positives = 0;
+    int breathing_missed = 0;
+
+    for (int i = 0; i < trials; i++) {
+        s_calib_rng = (unsigned long)(1000 + i * 7919);
+        float sig[N];
+        for (int j = 0; j < N; j++) sig[j] = 0.9f * calib_frand();
+        float resp_conf, breathing_bpm, motion_energy;
+        (void)run_pipeline(sig, N, 0.05f, &resp_conf, &breathing_bpm, &motion_energy);
+        if (resp_conf >= EDGE_RESP_CONF_MIN) noise_false_positives++;
+    }
+
+    for (int i = 0; i < trials; i++) {
+        s_calib_rng = (unsigned long)(2000 + i * 7919);
+        float bpm = EDGE_BREATHING_BPM_MIN + (float)(i % 25); /* sweep the full canonical band */
+        float hz = bpm / 60.0f;
+        float sig[N];
+        for (int j = 0; j < N; j++) {
+            float t = (float)j / FS;
+            sig[j] = 1.2f * sinf(2.0f * (float)M_PI * hz * t) + 0.15f * calib_frand();
+        }
+        float resp_conf, breathing_bpm, motion_energy;
+        bool verdict = run_pipeline(sig, N, 0.05f, &resp_conf, &breathing_bpm, &motion_energy);
+        if (!verdict) breathing_missed++;
+    }
+
+    float noise_fp_rate = (float)noise_false_positives / trials;
+    float missed_rate = (float)breathing_missed / trials;
+    printf("[Monte Carlo, N=%d] noise_false_positive_rate=%.3f breathing_missed_detection_rate=%.3f\n",
+           trials, noise_fp_rate, missed_rate);
+    CHECK(noise_fp_rate < 0.02f);   /* originally measured 0.2%; margin to 2% */
+    /* FINDING (PHANTOM_SCAN_BEHAVIORAL_TEST_REPORT.md): measured 19.8% here
+     * via the FULL two-factor verdict (edge_evaluate_human_presence, which
+     * requires motion_energy>threshold AND resp_conf>=EDGE_RESP_CONF_MIN),
+     * higher than the WP-2 close-out's 8% figure — that number only checked
+     * resp_conf in isolation and did not account for motion_energy also
+     * failing to clear its 0.05 threshold at some low-BPM/low-amplitude
+     * combinations. This is the more representative number; bound kept
+     * with margin above it, not tightened to hide the gap. */
+    CHECK(missed_rate < 0.25f);
+}
+
 /* ---- KNOWN LIMITATION (documented in edge_dsp_pure.h): a clean, highly
  * periodic non-human tone can alias into the breathing band via the
  * autocorrelation's integer sub-harmonics. Printed as evidence for the
@@ -211,6 +310,8 @@ int main(void)
     test_broadband_motion_alone_is_not_human();
     test_breathing_band_sets_human_present();
     test_cardiac_only_cannot_flip_negative_respiratory_verdict();
+    test_bpm_estimate_consistent_across_measured_csi_rates();
+    test_monte_carlo_calibration_bounds();
     demo_known_limitation_tonal_aliasing();
 
     if (g_failures) {

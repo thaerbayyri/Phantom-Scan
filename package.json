@@ -11,7 +11,7 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "auth:seed": "tsx scripts/generate-operator-seed.ts",
-    "test": "tsx --test server/**/*.test.ts",
+    "test": "tsx --test server/**/*.test.ts tests/behavioral/**/*.test.ts",
     "test:dashboard-auth": "tsx --test server/**/*.test.ts",
     "test:py": "python -m pytest tests/ -q"
   },
