@@ -86,7 +86,7 @@ Stage B gate result: BLOCKED by missing live packet stream and unavailable ESP-I
 | C2 | Independent streams | [TO BE MEASURED] | COM5 and COM6 are visible, but no live source-pinned streams were observed. |
 | C3 | Degraded transition | PASS (software) / [TO BE MEASURED] (live) | Runtime tests cover stale/recovered transitions; live hardware transition remains unmeasured. |
 | C4 | Live spoof rejection | PASS (software) / [TO BE MEASURED] (live) | Source-pinning tests pass; live foreign-source injection was not run. |
-| C5 | Dual-node balance sanity | [TO BE MEASURED] | Requires two fresh live nodes on the 5 m baseline. |
+| C5 | Dual-node balance sanity | [TO BE MEASURED] | Requires two fresh live nodes on the centered 3 m baseline (`N1=(-1.5,0)`, `N2=(+1.5,0)`; see `shared/schema.ts`). |
 | C6 | AoA labelling | [TO BE MEASURED] | Requires live UI target presentation; no target was present. |
 
 Stage C gate result: BLOCKED because Stage B did not produce a live node stream.
@@ -95,7 +95,7 @@ Stage C gate result: BLOCKED because Stage B did not produce a live node stream.
 
 | Check | Result | Evidence |
 |---|---:|---|
-| Default Node UDP behavior | PASS | `npm run dev` logged `authority-follow mode enabled; Node will not bind UDP 5005`. |
+| Default Node UDP behavior | PASS | The Node/TS dashboard is the live authority and binds UDP `5005`; a mistaken second authority must fail hard with `EADDRINUSE`. |
 | Dashboard HTTP smoke | PASS | `GET http://127.0.0.1:5000` returned HTTP 200. |
 | UDP 5005 ownership | PASS | `Get-NetUDPEndpoint -LocalPort 5005` produced no endpoint output during Node follow-mode smoke. |
 | Production `npm start` on Windows | FAIL | Script uses Unix-style `NODE_ENV=production node dist/index.cjs`, which is not valid in Windows `cmd`. |
@@ -106,13 +106,13 @@ Stage C gate result: BLOCKED because Stage B did not produce a live node stream.
 |---|---:|---|
 | Serial ports visible | PARTIAL | `.NET SerialPort.GetPortNames()` returned `COM4`, `COM3`, `COM6`, `COM5`; WMI enumeration was access-denied. |
 | Firmware toolchain | BLOCKED | `idf.py --version` failed because `idf.py` is not recognized in this shell. |
-| Python authority bind/API | PASS | Authority served `/api/status` and `/api/sensing/frame` on `8789` during the dry run. |
-| Node dashboard follow mode | PASS | Node dashboard did not bind UDP `5005` in canonical mode. |
+| Python authority bind/API | HISTORICAL | Superseded by ADR-051; the retired Python live path is no longer the canonical authority. |
+| Node dashboard live authority | PASS | The Node/TS dashboard is the sole live UDP `5005` authority in the current runtime. |
 | Node 1 live stream | [TO BE MEASURED] | Requires firmware/tooling or active node stream. |
 | Node 2 live stream | [TO BE MEASURED] | Requires firmware/tooling or active node stream. |
 | Fused two-node live target | [TO BE MEASURED] | Requires actual CSI packets from both nodes. |
 | CSI Hz over 60 seconds | [TO BE MEASURED] | No packets arrived during the canonical dry run. |
-| Midpoint sanity check | [TO BE MEASURED] | Requires two active nodes on the 5 m test baseline. |
+| Midpoint sanity check | [TO BE MEASURED] | Requires two active nodes on the centered 3 m test baseline (`x = 0 m` midpoint; see `shared/schema.ts`). |
 | UI live target presentation | [TO BE MEASURED] | Requires live packets; synthetic fallback is not valid evidence. |
 
 ## Honesty Statement

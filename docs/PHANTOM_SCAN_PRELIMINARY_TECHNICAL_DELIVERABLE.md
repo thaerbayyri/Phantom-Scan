@@ -13,6 +13,13 @@
 > [!IMPORTANT]
 > This document constitutes the preliminary technical deliverable for Project Phantom Scan. All performance figures cited herein are derived from validated firmware builds (ESP-IDF v5.2), laboratory bench tests, and deterministic DSP pipeline analyses. No AI/ML inference is used in the core signal processing chain; all algorithms are mathematically grounded and fully reproducible.
 
+> [!WARNING]
+> Remediation truth pass (PS-AUDIT-009/010/011/017): this draft contains
+> superseded exploratory material and unmeasured targets from an older phase.
+> Current live authority is the Node/TS runtime (ADR-051), the live wire format
+> is ADR-018 32-byte, and any row below without a committed measurement artifact
+> must be read as `Target — [TO BE MEASURED]`.
+
 ---
 
 ## Table of Contents
@@ -57,11 +64,11 @@ The platform is designed to operate from both **fixed infrastructure** (wall/cei
 
 | Milestone | Status |
 |---|---|
-| ESP32-S3 firmware (ADR-018 streaming) | ✅ Validated — stable 20 Hz CSI stream |
-| 8-stage DSP pipeline (Python + edge C) | ✅ Validated — all stages operational |
-| Real-time React dashboard | ✅ Operational — 3D pose, vitals, AoA |
-| Dual-target NLOS validation (VTP-PS-002) | ✅ Completed — two targets resolved through wall |
-| Multi-person vitals (up to 4 persons) | ✅ Validated — `EDGE_MAX_PERSONS = 4` |
+| ESP32-S3 firmware (ADR-018 streaming) | Target — [TO BE MEASURED] |
+| 8-stage DSP pipeline (Python + edge C) | Target — [TO BE MEASURED] |
+| Real-time React dashboard | Target — [TO BE MEASURED] |
+| Dual-target NLOS validation (VTP-PS-002) | Target — [TO BE MEASURED] |
+| Multi-person vitals (up to 4 persons) | Target — [TO BE MEASURED] |
 | UAV platform integration | 🔄 Architecture defined — BNO055 IMU sync in progress |
 | DensePose 3D skeleton (WASM Tier 3) | 🔄 17-keypoint inference module under validation |
 
@@ -190,7 +197,7 @@ For 3D spatial resolution, 3–6 ESP32-S3 nodes are deployed per monitored area.
 
 The ADR-018 binary protocol was designed to achieve:
 
-1. **Minimal overhead** — fixed 20-byte header with zero string parsing
+1. **SUPSERSEDED legacy note** — older drafts described a fixed 20-byte header; the live authority now uses the ADR-018 32-byte header.
 2. **Sub-millisecond serialization** — direct memory-mapped struct packing on ESP32
 3. **Stateless transport** — UDP unicast; no handshake latency
 4. **Self-describing frames** — magic number and subcarrier count enable auto-detection
@@ -202,11 +209,11 @@ The ADR-018 binary protocol was designed to achieve:
 │  MAGIC   │ METADATA │  SIGNAL  │ RESERVED │  I/Q     │
 │  4 bytes │ 4 bytes  │ 4 bytes  │ 8 bytes  │ PAYLOAD  │
 ├──────────┼──────────┼──────────┼──────────┼──────────┤
-│ HEADER (20 bytes, fixed)                  │ VARIABLE │
+│ HEADER (SUPSERSEDED 20-byte draft)        │ VARIABLE │
 └───────────────────────────────────────────┴──────────┘
 ```
 
-#### Header Layout (20 bytes, little-endian)
+#### SUPSERSEDED Legacy Header Layout (20 bytes, little-endian)
 
 | Offset | Size | Field | Type | Description |
 |---|---|---|---|---|
@@ -521,7 +528,7 @@ Residual rotor vibration above 10 Hz is removed with a 4th-order Butterworth hig
 ```
 a_vib(t) = HPF[a_linear(t), fc=10 Hz]
 d_vib(t) = ∫∫ a_vib(t) dt²
-φ_correction[k,t] = (2π / λ) · d_vib(t) · cos(θ_k)
+SUPSERSEDED illustrative expression: `φ_correction[k,t] = (2π / λ) · d_vib(t) · cos(θ_k)`; current round-trip radar interpretation uses `4π / λ` where physically applicable.
 ```
 
 Where λ = 0.125 m (2.4 GHz wavelength) and θ_k is the subcarrier's spatial angle.
@@ -555,17 +562,17 @@ A complementary filter blends IMU-derived displacement with the CSI background s
 
 | Metric | Target | Measurement Condition | Status |
 |---|---|---|---|
-| **CSI frame rate** | 20 Hz | Single AP, HT20, 1 node | ✅ Validated |
-| **End-to-end latency** (Tier 0 → Dashboard) | < 80 ms | Local network, 1 node | ✅ Validated |
-| **Spatial jitter** (3D pose) | < 30 mm RMS | 4-node mesh, Kalman fused | ✅ Validated |
-| **Respiration rate accuracy** | ± 1 BPM | Stationary subject, 1 m LOS | ✅ Validated |
-| **Cardiac rate accuracy** | ± 2 BPM | Stationary subject, 1 m LOS | ✅ Validated |
-| **Fall detection latency** | < 200 ms | From impact to alert event | ✅ Validated |
-| **Through-wall range** | Up to 8 m | Yagi antenna, single drywall | ✅ Validated |
-| **Occupancy count accuracy** | ≥ 95% | 1–4 persons, 4-node mesh | ✅ Validated |
-| **Human/Mechanical classification** | ≥ 92% | Controlled indoor environment | ✅ Validated |
-| **AoA angular accuracy** | ± 5° | Single target, 3 m | ✅ Validated |
-| **PDP ranging accuracy** | ± 15 cm | Indoor LOS, HT20 | ✅ Validated |
+| **CSI frame rate** | 20 Hz | Single AP, HT20, 1 node | Target — [TO BE MEASURED] |
+| **End-to-end latency** (Tier 0 → Dashboard) | < 80 ms | Local network, 1 node | Target — [TO BE MEASURED] |
+| **Spatial jitter** (3D pose) | < 30 mm RMS | 4-node mesh, Kalman fused | Target — [TO BE MEASURED] |
+| **Respiration rate accuracy** | ± 1 BPM | Stationary subject, 1 m LOS | Target — [TO BE MEASURED] |
+| **Cardiac rate accuracy** | ± 2 BPM | Stationary subject, 1 m LOS | Target — [TO BE MEASURED] |
+| **Fall detection latency** | < 200 ms | From impact to alert event | Target — [TO BE MEASURED] |
+| **Through-wall range** | Up to 8 m | Yagi antenna, single drywall | Target — [TO BE MEASURED] |
+| **Occupancy count accuracy** | ≥ 95% | 1–4 persons, 4-node mesh | Target — [TO BE MEASURED] |
+| **Human/Mechanical classification** | ≥ 92% | Controlled indoor environment | Target — [TO BE MEASURED] |
+| **AoA angular accuracy** | ± 5° | Single target, 3 m | Target — [TO BE MEASURED] |
+| **PDP ranging accuracy** | ± 15 cm | Indoor LOS, HT20 | Target — [TO BE MEASURED] |
 
 ### 6.2 Dual-Target NLOS Validation (VTP-PS-002)
 
@@ -587,8 +594,8 @@ The WASM Tier 3 DensePose inference module produces 17 skeletal keypoints at 10 
 
 | Metric | Target | Status |
 |---|---|---|
-| Keypoint output rate | 10 Hz | ✅ Validated |
-| Inference latency | < 50 ms | ✅ Validated (WASM3 runtime) |
+| Keypoint output rate | 10 Hz | Target — [TO BE MEASURED] |
+| Inference latency | < 50 ms | Target — [TO BE MEASURED] |
 | Keypoint spatial jitter | < 30 mm RMS | 🔄 Under validation |
 | Skeleton completeness | ≥ 14/17 keypoints visible | 🔄 Under validation |
 | Pose classification accuracy | ≥ 90% (standing/sitting/lying) | 🔄 Under validation |

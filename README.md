@@ -13,7 +13,7 @@
 - deterministic DSP
 - JSONL recording and replay
 - a live React dashboard
-- a Python runtime path that is becoming the Milestone 1 authority
+- a Python runtime path for replay, reference DSP, and tests
 
 This repo is being stabilized for a **realistic two-node ESP32-S3 deployment**. It does **not** target drones, GPS, IMU, MAVLink, or flight-control systems.
 
@@ -29,7 +29,7 @@ This repo is being stabilized for a **realistic two-node ESP32-S3 deployment**. 
 > |------|-------------------|
 > | **Hardware** | Exactly **2 ESP32-S3 nodes** |
 > | **Live UI** | Express + WebSocket + React dashboard |
-> | **Milestone-1 authority** | Python runtime package in `phantom/` |
+> | **Milestone-1 authority** | Node/TS server in `server/` |
 > | **Recording** | **JSONL only** |
 > | **Fallback behavior** | stay up with one node; fused outputs require both |
 > | **Priority** | correctness, observability, replayability, testing |
@@ -63,7 +63,7 @@ The old authority-follower compatibility stub has been **removed**; nothing read
 
 The Python package (`phantom.protocol`, `phantom.ingest`, `phantom.recording`, `phantom.dsp`, `phantom.runtime`, `phantom.api`) remains the replay/recording/DSP toolkit and test target.
 
-Its live mode also binds :5005 and is **retired from live operation** (ADR-051): `npm run dev` (`script/dev-full.cjs`) does not start it, and the `PHANTOM_USE_AUTHORITY=1` escape hatch is deprecated — never run it alongside the dashboard (the port clash silently starves the dashboard; a hard live-bind guard lands with PS-AUDIT-008 remediation).
+Its live mode is **retired from live operation** (ADR-051). The Python CLI now refuses live bind by default; only an explicit `PHANTOM_ALLOW_RETIRED_LIVE_AUTH=1` compatibility override may start it, and it must never run alongside the dashboard.
 
 ---
 
@@ -258,7 +258,7 @@ Purpose:
 
 - Express host
 - auth and audit authority
-- temporary live truth source for dashboard runtime
+- authoritative live ingest and dashboard runtime
 - UDP ingest bridge
 - WebSocket dashboard publishing
 
@@ -548,7 +548,7 @@ Then:
 3. start the scan
 4. ensure the ESP32 nodes are sending UDP traffic to the host
 
-### Run the Python milestone runtime
+### Run the retired Python runtime (compatibility only)
 
 ```bash
 python -m phantom.runtime live
@@ -601,8 +601,8 @@ Firmware commands are documented here, but actual verification depends on ESP-ID
 - the old dashboard diagnostic virtual terminal path has been removed
 - report download is no longer automatically triggered on scan stop
 - the Node/TS host is the authoritative live path and sole owner of UDP :5005
-- the Python package is the replay/recording/DSP toolkit; its live authority mode is
-  gated behind `PHANTOM_USE_AUTHORITY=1` and must not run alongside the dashboard
+- the Python package is the replay/recording/DSP toolkit; its retired live mode is
+  gated behind `PHANTOM_ALLOW_RETIRED_LIVE_AUTH=1` and must not run alongside the dashboard
 
 ---
 

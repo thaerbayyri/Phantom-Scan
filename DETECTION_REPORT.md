@@ -29,7 +29,7 @@ A valid detection trial requires all of the following:
 | Live CSI Hz, node 1 | [TO BE MEASURED] | No packet arrived on UDP `5005`; no source pinning for node 1. |
 | Live CSI Hz, node 2 | [TO BE MEASURED] | No packet arrived on UDP `5005`; no source pinning for node 2. |
 | Fused two-node mode | [TO BE MEASURED] | Requires both nodes fresh and temporally aligned. |
-| Midpoint localization | [TO BE MEASURED] | Requires two live nodes on `[0,0]` to `[5,0]` baseline. |
+| Midpoint localization | [TO BE MEASURED] | Requires two live nodes on the centered 3 m baseline (`N1=(-1.5,0)`, `N2=(+1.5,0)`; see `shared/schema.ts`). |
 | Drywall detection rate | [TO BE MEASURED] | Requires repeated live target-present and target-absent trials. |
 | Empty-room false positive rate | [TO BE MEASURED] | Requires matched negative-control trials. |
 | Fan/curtain rejection | [TO BE MEASURED] | Required stop-condition control was not run. |
@@ -69,7 +69,7 @@ No live trials were executed, so the confusion matrix is not populated.
 3. Confirm node 1 on COM5 source-pins and emits CSI for 60 seconds.
 4. Confirm node 2 on COM6 source-pins independently and fused mode activates only when both nodes are fresh.
 5. Record per-node CSI Hz from JSONL `csi_frame` counts.
-6. Run midpoint sanity on the 5 m baseline.
+6. Run midpoint sanity on the centered 3 m baseline (`x = 0 m` midpoint; see `shared/schema.ts`).
 7. Only then run target-present, empty-room, and fan/curtain trials with session JSONL references.
 
 ## Honesty Statement
