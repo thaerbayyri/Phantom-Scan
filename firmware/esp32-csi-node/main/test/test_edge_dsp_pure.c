@@ -177,7 +177,7 @@ static void test_gate_boundaries(void)
     CHECK(edge_evaluate_human_presence(false, true, 15.0f, 1.0f) == false); /* no motion */
     CHECK(edge_evaluate_human_presence(true, false, 15.0f, 1.0f) == false); /* data not ready */
     CHECK(edge_evaluate_human_presence(true, true, 5.9f, 1.0f) == false);   /* just below band */
-    CHECK(edge_evaluate_human_presence(true, true, 40.1f, 1.0f) == false);  /* just above band */
+    CHECK(edge_evaluate_human_presence(true, true, EDGE_BREATHING_BPM_MAX + 0.1f, 1.0f) == false); /* just above band */
     CHECK(edge_evaluate_human_presence(true, true, 15.0f, EDGE_RESP_CONF_MIN - 0.001f) == false); /* just under conf floor */
     CHECK(edge_evaluate_human_presence(true, true, 15.0f, EDGE_RESP_CONF_MIN) == true);            /* at conf floor */
     CHECK(edge_evaluate_human_presence(true, true, EDGE_BREATHING_BPM_MIN, 1.0f) == true);         /* band edges inclusive */

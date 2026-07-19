@@ -69,19 +69,34 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
  * is not a safe gate threshold: broadband noise can exceed it by chance
  * (the search scans many candidate lags — a multiple-comparisons effect).
  *
- * Empirically calibrated (main/test/test_edge_dsp_pure.c calibration run,
- * 500 Monte Carlo trials each, real edge_dsp_pure.c code): pure broadband
- * noise exceeds 0.5 in only 0.2% of trials (1/500, max observed 0.53),
- * while synthetic breathing across the 8-40 BPM physiological range with
- * realistic noise never produced a confidence below 0.59 (0/500 misses).
- * 0.5 sits with margin on both sides of that gap.
+ * Empirically calibrated against the FULL canonical 6-30 BPM band (500 Monte
+ * Carlo trials each, real edge_dsp_pure.c code, all SYNTHETIC — not real
+ * captures, see PHANTOM_SCAN_REMEDIATION_REPORT.md):
+ *   - Pure broadband noise: P(resp_conf >= 0.5) = 0.2% (1/500, max 0.53).
+ *   - Synthetic breathing, 6-30 BPM, realistic noise: min resp_conf = 0.379
+ *     (near the 6 BPM edge, ~1.7 cycles fit in the 256-sample/~17s window
+ *     at the firmware's typical 15 Hz — a genuinely weaker signal, not a
+ *     calibration error). At threshold 0.5 this gives an 8% missed-
+ *     detection rate (40/500) concentrated at the low-BPM edge; at 0.2%
+ *     noise false-positive rate.
+ * 0.5 is kept deliberately conservative (favors NOT declaring presence over
+ * a false claim, consistent with F1) even though it under-covers the
+ * hardest low-BPM synthetic cases. Because Step 9 re-evaluates every frame,
+ * a miss here delays registration by one analysis window rather than
+ * losing a real, continuously breathing target — but this trade-off is
+ * unverified against real slow-breather captures.
  */
 #define EDGE_RESP_CONF_MIN 0.5f
 
 /** Breathing sanity band (BPM), shared by the estimator's sanity clamp and
- *  the verdict's periodicity check (single source of truth, PS-AUDIT-002). */
+ *  the verdict's periodicity check (single source of truth, PS-AUDIT-002).
+ *  Matches canon exactly: 0.1-0.5 Hz respiratory band == 6-30 BPM. The
+ *  pre-WP-2 firmware's sanity clamp used 6-40 BPM (0.667 Hz upper edge),
+ *  which exceeded canon with no documented clinical rationale (e.g.
+ *  tachypnea coverage) anywhere in this codebase; clamped to canon here
+ *  during WP-2 close-out rather than left as undocumented drift. */
 #define EDGE_BREATHING_BPM_MIN 6.0f
-#define EDGE_BREATHING_BPM_MAX 40.0f
+#define EDGE_BREATHING_BPM_MAX 30.0f
 
 /**
  * Sovereign human-presence verdict (F1 firewall, PS-AUDIT-002): motion
@@ -100,7 +115,7 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
  *
  * KNOWN LIMITATION (documented, not fixed by this gate): the underlying
  * autocorrelation estimator can alias a clean, highly periodic non-human
- * vibration (e.g. a precisely-tuned mechanical resonance) into the 6-40 BPM
+ * vibration (e.g. a precisely-tuned mechanical resonance) into the 6-30 BPM
  * search band, because a band-limited pure tone's autocorrelation retains
  * strong peaks at integer sub-harmonics of its true period. Broadband/
  * non-tonal ambient motion (real fan blade flutter, curtains in air

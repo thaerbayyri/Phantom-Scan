@@ -493,14 +493,19 @@ static void update_multi_person_vitals(const uint8_t *iq_data, uint16_t n_sc,
 
             float br = estimate_bpm_zero_crossing(s_scratch_br, buf_len, sample_rate);
             float br_rob = estimate_periodicity_autocorr(s_scratch_br, buf_len,
-                                                         sample_rate, 6.0f, 40.0f,
+                                                         sample_rate,
+                                                         EDGE_BREATHING_BPM_MIN,
+                                                         EDGE_BREATHING_BPM_MAX,
                                                          0.0f, NULL);
             float hr = estimate_periodicity_autocorr(s_scratch_hr, buf_len,
                                                      sample_rate, 45.0f, 180.0f,
                                                      br_rob / 60.0f, NULL);
 
-            /* Sanity clamp. */
-            if (br >= 6.0f && br <= 40.0f) pv->breathing_bpm = br;
+            /* Sanity clamp: same canonical breathing band as the sovereign
+             * verdict gate (edge_dsp_pure.h, PS-AUDIT-002 close-out). */
+            if (br >= EDGE_BREATHING_BPM_MIN && br <= EDGE_BREATHING_BPM_MAX) {
+                pv->breathing_bpm = br;
+            }
             if (hr >= 40.0f && hr <= 180.0f) pv->heartrate_bpm = hr;
         }
     }
