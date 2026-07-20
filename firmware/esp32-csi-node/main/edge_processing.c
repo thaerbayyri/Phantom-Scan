@@ -199,6 +199,10 @@ static uint32_t s_frame_count;
 static float s_resp_conf;
 static float s_hr_conf;
 
+/** Cycle-to-cycle breathing period jitter (PS-AUDIT-002 follow-up, WP-16) —
+ * see estimate_period_regularity_cv. -1.0f = indeterminate (too few cycles). */
+static float s_resp_period_cv = -1.0f;
+
 /** Presence threshold in effect (configured / calibrated / default) — kept
  *  so the vitals motion flag uses the same machinery as presence. */
 static float s_presence_threshold_active;
@@ -725,13 +729,19 @@ static void process_frame(const edge_ring_slot_t *slot)
         float hr_bpm = estimate_periodicity_autocorr(s_scratch_hr, buf_len, sample_rate,
                                                      45.0f, 180.0f, br_rob / 60.0f,
                                                      &hr_ratio);
-
         /* Sanity clamp: breathing band shared with the presence verdict's
          * periodicity check (edge_dsp_pure.h, PS-AUDIT-002); heart rate 40-180 BPM. */
         if (br_bpm >= EDGE_BREATHING_BPM_MIN && br_bpm <= EDGE_BREATHING_BPM_MAX) {
             s_breathing_bpm = br_bpm;
         }
         if (hr_bpm >= 40.0f && hr_bpm <= 180.0f) s_heartrate_bpm = hr_smooth_push(hr_bpm);
+
+        /* Tonal-aliasing mitigation (PS-AUDIT-002 follow-up, WP-16): jitter
+         * of the breathing-band crossing intervals plus a sub-harmonic-
+         * aliasing multiplicity check against the just-clamped s_breathing_bpm
+         * (the same value Step 9 will pass to the gate). */
+        s_resp_period_cv = estimate_period_regularity_cv(s_scratch_br, buf_len, sample_rate,
+                                                          s_breathing_bpm);
 
         /* Confidence: clamp((ratio - 0.2) / 0.6, 0, 1); 0 when no peak. */
         float rc = (br_ratio - 0.2f) / 0.6f;
@@ -791,7 +801,8 @@ static void process_frame(const edge_ring_slot_t *slot)
     bool motion_present = (s_presence_score > threshold);
     bool breathing_data_ready = (s_history_len >= 64);  /* mirrors Step 7's gate */
     s_presence_detected = edge_evaluate_human_presence(
-        motion_present, breathing_data_ready, s_breathing_bpm, s_resp_conf);
+        motion_present, breathing_data_ready, s_breathing_bpm, s_resp_conf,
+        s_resp_period_cv);
 
     /* --- Step 10: Fall detection (phase acceleration) --- */
     if (s_history_len >= 3) {
@@ -977,6 +988,7 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     /* Reset vitals confidence / feature-state / HR smoother state. */
     s_resp_conf = 0.0f;
     s_hr_conf = 0.0f;
+    s_resp_period_cv = -1.0f;
     s_presence_threshold_active = 0.05f;
     s_feature_state_seq = 0;
     s_hr_ring_n = 0;

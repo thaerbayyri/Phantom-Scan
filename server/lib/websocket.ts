@@ -58,6 +58,7 @@ import {
   resolveLiveHoldState,
   isSampleFresh,
 } from "./target-state";
+import { loadRuntimeSettings, saveRuntimeSettings } from "./runtime-settings";
 import {
   buildRecordingRow,
   buildRecordingSessionMeta,
@@ -87,6 +88,8 @@ export class SignalProcessingServer {
   private processingInterval: NodeJS.Timeout | null = null;
   private isStopping: boolean = false;
 
+  // Operator-adjusted detector calibration (motion thresholds) survives a
+  // restart via runtime-settings.ts; everything else stays code-default.
   private config: ProcessingConfig = {
     isarEnabled: true,
     arrayLength: 16,
@@ -95,8 +98,9 @@ export class SignalProcessingServer {
     clutterRemovalEnabled: true,
     clutterWindowSize: 50,
     motionGateEnabled: false,
-    motionThreshold: 0.05,
-    fusedTargetMotionThreshold: DEFAULT_MOTION_THRESHOLD,
+    motionThreshold: loadRuntimeSettings().motionThreshold ?? 0.05,
+    fusedTargetMotionThreshold:
+      loadRuntimeSettings().fusedTargetMotionThreshold ?? DEFAULT_MOTION_THRESHOLD,
   };
 
   private status: SystemStatus = {
@@ -512,6 +516,18 @@ export class SignalProcessingServer {
       this.backgroundSubtractor.setWindowSize(updates.clutterWindowSize);
     }
 
+    // Persist operator-adjusted motion thresholds so a restart doesn't revert
+    // to the code default (see runtime-settings.ts).
+    if (
+      updates.fusedTargetMotionThreshold !== undefined ||
+      updates.motionThreshold !== undefined
+    ) {
+      saveRuntimeSettings({
+        fusedTargetMotionThreshold: updates.fusedTargetMotionThreshold,
+        motionThreshold: updates.motionThreshold,
+      });
+    }
+
     this.broadcast("config", this.config);
   }
 
@@ -924,6 +940,7 @@ export class SignalProcessingServer {
       const nodeMode = this.resolveLiveNodeMode();
       const fused = nodeMode === "fused_two_node" ? this.computeFusedTarget() : null;
       let fusedBalance: number | undefined;
+      let fusedBalanceLinear: number | undefined;
       let fusedDistanceCm = pdpResult.distanceCm;
       let fusedConfidence: number | undefined;
       if (fused) {
@@ -935,16 +952,24 @@ export class SignalProcessingServer {
         targetVz = 0;
         speed = Math.abs(velMps); // m/s along the axis
         fusedBalance = fused.balance;
+        fusedBalanceLinear = fused.balanceLinear;
         fusedDistanceCm = fused.distToNearestNodeM * 100;
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
       }
 
-      // MOVING/STILL decision for this frame: `isMoving` comes from the
-      // variance MotionGate; `projectedMotion` is a separate speed gate that
-      // only controls whether the heading arrow is allowed to rotate (lower
-      // 0.035 m/s bar in fused mode because axis velocity is already damped).
+      // MOVING/STILL decision for this frame. `projectedMotion` is a separate
+      // speed gate that only controls whether the heading arrow is allowed to
+      // rotate (lower 0.035 m/s bar in fused mode because axis velocity is
+      // already damped). `isMoving` trusts the two-node fusion result when
+      // present: fuseTwoNodeTarget() only returns non-null after real
+      // cross-node perturbation already cleared fusedTargetMotionThreshold,
+      // so a fused target is by construction moving — falling back to the
+      // decoupled single-antenna MotionGate here (as before) silently
+      // downgraded real motion to "idle". Single-node mode is unaffected
+      // (fused is always null there, and its state is hardcoded "degraded"
+      // regardless of isMoving).
       const projectedMotion = speed > (fused ? 0.035 : 0.05);
-      const isMoving = motionResult.motionDetected;
+      const isMoving = fused ? true : motionResult.motionDetected;
 
       // Direction of travel (smooth): exponential blend of the travel angle
       // (30% per frame) with wrap-around handling so the arrow turns smoothly
@@ -981,15 +1006,25 @@ export class SignalProcessingServer {
         distanceCm: fusedDistanceCm,
         wallDistance: pdpResult.wallDistance,
         balance: fusedBalance,
+        balanceLinear: fusedBalanceLinear,
       };
 
       if (nodeMode === "fused_two_node" && !fused) {
-        // Two nodes active but sub-threshold motion → emit NO target (no ghost
-        // at the midpoint). This is the empty-room negative-control gate.
-        this.clearFusedSnapshot(); // idle: node labels drop distance/trend too
-        if (this.currentTargetState.target_visible) {
-          this.clearTargetArtifacts("fused_below_motion_threshold");
-        }
+        // Two nodes active but this window's cross-node perturbation didn't
+        // clear the motion gate. Reset the node-specific balance/trend
+        // labels immediately, but HOLD the last known target through the
+        // same live→stale_hold(1.5s)→cleared(5s) lifecycle used for a live
+        // gap — a single sub-threshold window (a pause mid-stride, a turn)
+        // must not instantly wipe the whole scene. Only a sustained absence
+        // of real detections empties the room (empty-room negative-control
+        // gate still holds after the 5s clear timeout).
+        this.clearFusedSnapshot();
+        this.holdOrClearTarget({
+          hold: "fused_below_motion_threshold_hold",
+          staleHold: "fused_below_motion_threshold_stale_hold",
+          cleared: "fused_below_motion_threshold_cleared",
+          empty: "fused_below_motion_threshold",
+        });
       } else {
         this.currentRadialTarget = radialTarget;
         this.broadcast("radialTarget", radialTarget);
@@ -1225,13 +1260,21 @@ export class SignalProcessingServer {
   }
 
   /**
-   * Called when no fresh sample is available this tick (node silent/unplugged).
-   * Applies the hold lifecycle: keep broadcasting the last target while it is
-   * live/stale_hold (≤5 s), wipe every target artifact once "cleared", or
-   * report an empty "awaiting_live_samples" state when nothing was ever seen.
-   * Prevents a disconnected node from painting a frozen ghost target.
+   * Ages the last truthful target through the hold lifecycle instead of
+   * wiping it instantly: keep broadcasting it while live/stale_hold (≤5 s),
+   * wipe every target artifact once "cleared", or report an empty state when
+   * nothing was ever seen. Shared by handleLiveGap() (no fresh samples at
+   * all) and the fused-two-node sub-threshold path (samples ARE arriving,
+   * but this window's cross-node perturbation didn't clear the motion gate)
+   * — both are "no fresh truthful detection this tick" and should degrade
+   * the same way, not vanish on the very first miss.
    */
-  private handleLiveGap() {
+  private holdOrClearTarget(reasons: {
+    hold: string;
+    staleHold: string;
+    cleared: string;
+    empty: string;
+  }) {
     const nowMs = Date.now();
     const holdState = resolveLiveHoldState(this.lastTruthfulTargetUpdateMs || null, nowMs);
 
@@ -1244,14 +1287,14 @@ export class SignalProcessingServer {
           nodeMode: this.resolveLiveNodeMode(),
           radialTarget: this.currentRadialTarget,
           motionStatus: undefined,
-          reason: holdState === "stale_hold" ? "stale_hold_gap" : "live_gap_hold",
+          reason: holdState === "stale_hold" ? reasons.staleHold : reasons.hold,
         }),
       );
       return;
     }
 
     if (holdState === "cleared") {
-      this.clearTargetArtifacts("live_gap_cleared");
+      this.clearTargetArtifacts(reasons.cleared);
       return;
     }
 
@@ -1261,9 +1304,22 @@ export class SignalProcessingServer {
         nowMs,
         lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
         nodeMode: this.resolveLiveNodeMode(),
-        reason: "awaiting_live_samples",
+        reason: reasons.empty,
       }),
     );
+  }
+
+  /**
+   * Called when no fresh sample is available this tick (node silent/unplugged).
+   * Prevents a disconnected node from painting a frozen ghost target.
+   */
+  private handleLiveGap() {
+    this.holdOrClearTarget({
+      hold: "live_gap_hold",
+      staleHold: "stale_hold_gap",
+      cleared: "live_gap_cleared",
+      empty: "awaiting_live_samples",
+    });
   }
 
   private nodeFpsFor(nodeId: number): number {

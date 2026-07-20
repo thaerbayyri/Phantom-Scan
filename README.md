@@ -358,19 +358,35 @@ true compass bearing if that node's boresight faces north.
 
 ### Fusion (server/lib/node-fusion.ts)
 
-- per node: a 3-second **time-based** window of **per-subcarrier amplitude frames**
-  (≤64 subcarriers per packet, as in RuView's bridge). Motion energy is the temporal
-  std of **each subcarrier** averaged across subcarriers → raw `absStd`, plus a
-  saturated display `motion = min(1, absStd/mean·4)`. A best-subcarrier scalar
-  fallback exists only for legacy senders — its subcarrier index jumps per frame,
-  so its std is selection noise and cannot localize
-- `balance = r2 / (r1 + r2)` using the **raw, unsaturated** `absStd` values
-  (0 → at node 1, 0.5 → midpoint, 1 → at node 2)
-- target position: `x = N1.x + (N2.x − N1.x)·balance` — it slides along the N1–N2 axis
+- per node: a **`PHANTOM_MOTION_WINDOW_MS` time-based window (default 1500 ms)** of
+  **per-subcarrier amplitude frames** (≤64 subcarriers per packet, as in RuView's
+  bridge). Motion energy is the temporal std of **each subcarrier** averaged across
+  subcarriers → raw `absStd`, plus a saturated display `motion = min(1, absStd/mean·4)`.
+  A best-subcarrier scalar fallback exists only for legacy senders — its subcarrier
+  index jumps per frame, so its std is selection noise and cannot localize.
+  (This section previously stated a "3-second" window; that was a documentation error
+  never matched by the code, corrected here in WP-15/PS-AUDIT-011 — the runtime
+  behavior itself was not changed.)
+- **display position** (`radialTarget.balance`, drives what's rendered on screen):
+  `balance = r2^p / (r1^p + r2^p)` using the **raw, unsaturated** `absStd` values,
+  where `p` is `PHANTOM_BALANCE_CONTRAST` (default 2.0 — widens balance toward
+  whichever node clearly sees more perturbation instead of compressing toward the
+  midpoint). The on-screen `x` position additionally applies a separate nearest-node
+  display bias (`PHANTOM_BALANCE_BIAS_EXPONENT`, default 0.72) on top of `balance`.
+- **authoritative cross-check** (`radialTarget.balanceLinear`, added in WP-15/
+  PS-AUDIT-003): the canonical, undecorated `r2 / (r1 + r2)` ratio — independent of
+  both the contrast exponent and the display bias. This is what an analytics/
+  ground-truth consumer should read; it never drives what's drawn on screen.
+- target position: `x = N1.x + (N2.x − N1.x)·(biased balance)` — it slides along the
+  N1–N2 axis
 - **empty-room gate**: no target is emitted (not a centered ghost) unless
   `max(motion1, motion2)` clears `PHANTOM_MOTION_THRESHOLD` (default 0.12 — a
   placeholder that must be calibrated from an empty-room baseline and validated
   against a fan/curtain negative control)
+
+See `docs/adr/ADR-054-fusion-display-vs-authoritative-balance.md` for why the display
+and authoritative values are intentionally different and neither was changed to match
+the other in this pass.
 
 ### Per-node distance and direction
 

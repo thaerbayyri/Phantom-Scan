@@ -62,6 +62,41 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
                                      float *out_peak_ratio);
 
 /**
+ * Regularity metric for the breathing-band signal, combining two checks
+ * (PS-AUDIT-002 follow-up, WP-16):
+ *
+ * 1. Coefficient of variation (stddev/mean) of consecutive positive
+ *    zero-crossing intervals. Real biological breathing has natural
+ *    cycle-to-cycle rate jitter, while a clean mechanical tone (fan, HVAC at
+ *    a stable RPM) is MORE regular cycle-to-cycle than a human ever is. A
+ *    high CV is therefore evidence FOR biological breathing; a near-zero CV
+ *    is evidence the source is mechanical — the opposite polarity of a
+ *    typical signal-quality metric.
+ * 2. Crossing-count multiplicity vs. `claimed_bpm`: sub-harmonic aliasing
+ *    (see estimate_periodicity_autocorr's docstring) reports a slow BPM from
+ *    a much FASTER underlying raw oscillation, so the raw zero-crossing
+ *    count in the window is far higher than one crossing per claimed cycle
+ *    would predict. This under-sampled-relative-to-its-own-frequency
+ *    condition also defeats check 1 alone (interpolated crossing timing
+ *    still carries real quantization/interpolation noise when there are
+ *    only a handful of raw samples per raw cycle), so a large multiplicity
+ *    is treated as decisive evidence of a non-biological source regardless
+ *    of the CV, and this function returns 0.0f (forces rejection) in that
+ *    case without needing a separate return channel.
+ *
+ * @param claimed_bpm  The breathing_bpm the gate is about to evaluate (0 or
+ *                     negative to skip the multiplicity check, e.g. when the
+ *                     estimate was already out of band).
+ * @return stddev/mean of the crossing-to-crossing intervals (0.0f if the
+ *         multiplicity check alone indicates a non-biological source), or
+ *         -1.0f (indeterminate sentinel) when fewer than 3 zero-crossings
+ *         are found in the window (too few cycles to judge jitter
+ *         meaningfully).
+ */
+float estimate_period_regularity_cv(const float *sig, uint16_t len, float fs,
+                                     float claimed_bpm);
+
+/**
  * Minimum autocorrelation peak ratio (see estimate_periodicity_autocorr's
  * out_peak_ratio) required to call the breathing band "periodic" for the
  * sovereign human-presence verdict. estimate_periodicity_autocorr's own
@@ -88,6 +123,32 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
  */
 #define EDGE_RESP_CONF_MIN 0.5f
 
+/**
+ * Minimum cycle-to-cycle period coefficient of variation (see
+ * estimate_period_regularity_cv) required to accept in-band periodicity as
+ * biological rather than a clean mechanical tone (PS-AUDIT-002 follow-up,
+ * WP-16). PLACEHOLDER, calibrated only against SYNTHETIC data the same way
+ * EDGE_RESP_CONF_MIN was (see PHANTOM_SCAN_REMEDIATION_REPORT.md) — needs
+ * real-hardware breathing captures and a real fan/HVAC negative control
+ * before this threshold can be considered final. Values below this are
+ * treated as "too regular to be human"; the -1.0f indeterminate sentinel
+ * (too few cycles in the window) is treated as PASS, not reject — see
+ * edge_evaluate_human_presence's docstring for why.
+ *
+ * Deliberately set very low: estimate_period_regularity_cv's sub-harmonic-
+ * aliasing multiplicity check (not this raw-CV floor) is what actually
+ * rejects the documented tonal-aliasing exploit (forces the return to
+ * 0.0f — see test_tonal_aliasing_is_rejected, measured period_cv=0.000 for
+ * the canonical 2.2 Hz aliasing case). A higher floor here was tried and
+ * measurably hurt real jittered-breathing detection (raised the Monte Carlo
+ * missed-detection rate from ~20% to 30%+ purely from raw CV chance-dipping
+ * below the floor near the low-cycle-count band edges — see
+ * test_monte_carlo_calibration_bounds) without improving tonal-aliasing
+ * rejection, which the multiplicity check already handles. This constant's
+ * remaining job is a weak secondary backstop, not the primary mitigation.
+ */
+#define EDGE_RESP_PERIOD_CV_MIN 0.002f
+
 /** Breathing sanity band (BPM), shared by the estimator's sanity clamp and
  *  the verdict's periodicity check (single source of truth, PS-AUDIT-002).
  *  Matches canon exactly: 0.1-0.5 Hz respiratory band == 6-30 BPM. The
@@ -113,17 +174,29 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
  * constraint, not just a runtime convention: there is no cardiac data for
  * this function to consult even if a future edit tried to.
  *
- * KNOWN LIMITATION (documented, not fixed by this gate): the underlying
+ * TONAL-ALIASING MITIGATION (PS-AUDIT-002 follow-up, WP-16): the underlying
  * autocorrelation estimator can alias a clean, highly periodic non-human
  * vibration (e.g. a precisely-tuned mechanical resonance) into the 6-30 BPM
  * search band, because a band-limited pure tone's autocorrelation retains
  * strong peaks at integer sub-harmonics of its true period. Broadband/
  * non-tonal ambient motion (real fan blade flutter, curtains in air
- * currents, foliage, most HVAC noise) is NOT affected — see
- * main/test/test_edge_dsp_pure.c for the empirical evidence distinguishing
- * the two cases. Closing the tonal-aliasing gap requires a harmonic-purity
- * or peak-sharpness check in the estimator itself and is tracked as a
- * follow-up, not part of this fix.
+ * currents, foliage, most HVAC noise) is NOT affected. This gate now also
+ * requires `period_cv` (see estimate_period_regularity_cv, which folds in
+ * BOTH a raw cycle-to-cycle jitter CV and a sub-harmonic-aliasing crossing-
+ * multiplicity check — the multiplicity check is what actually rejects the
+ * documented exploit; see that function's docstring) to show evidence of a
+ * biological source: a clean mechanical tone — whether via near-zero raw
+ * jitter or, more decisively, via far more raw oscillation cycles than its
+ * claimed BPM implies — is rejected even if it otherwise passes the
+ * confidence/band checks. The indeterminate sentinel (-1.0f, too few cycles
+ * in the window to judge) is treated as PASS, matching the existing
+ * conservative-on-missed-detection stance at the low-BPM edge (see
+ * EDGE_RESP_CONF_MIN's docstring)
+ * rather than rejecting cases the estimator can't evaluate. The threshold
+ * (EDGE_RESP_PERIOD_CV_MIN) is a placeholder calibrated only on synthetic
+ * data — see main/test/test_edge_dsp_pure.c for the empirical evidence and
+ * PHANTOM_SCAN_REMEDIATION_REPORT.md for the real-hardware validation this
+ * still needs.
  *
  * @param motion_present      True when motion_energy > the active threshold.
  * @param breathing_data_ready True once enough history has accumulated for
@@ -132,13 +205,17 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
  *                             gate) — false during the startup transient.
  * @param breathing_bpm        Latest sanity-clamped breathing estimate.
  * @param resp_conf            Autocorr peak-ratio confidence for breathing_bpm.
- * @return true only when motion is present AND in-band, confident
- *         respiratory periodicity was found.
+ * @param period_cv            Cycle-to-cycle period coefficient of variation
+ *                              from estimate_period_regularity_cv, or -1.0f
+ *                              when indeterminate (see above).
+ * @return true only when motion is present AND in-band, confident,
+ *         naturally-jittered respiratory periodicity was found.
  */
 bool edge_evaluate_human_presence(bool motion_present,
                                    bool breathing_data_ready,
                                    float breathing_bpm,
-                                   float resp_conf);
+                                   float resp_conf,
+                                   float period_cv);
 
 #ifdef __cplusplus
 }

@@ -31,13 +31,17 @@ export const MOTION_SATURATION_SCALE = 4;
 /**
  * Presence/motion gate for emitting a fused target. THIS IS THE DETECTOR.
  *
- * This default is a PLACEHOLDER. It MUST be calibrated from a recorded empty-room
- * baseline (`mean + k·σ` of `max(motion1, motion2)`), and validated against a
- * negative control: a fan/curtain must be REJECTED while a still (breathing-only)
- * person is still detected. Override at runtime via PHANTOM_MOTION_THRESHOLD.
+ * Calibrated 2026-07-20 against this rig's measured empty-room baseline
+ * (`max(motion1, motion2)` over 296 samples: mean 0.49, sigma 0.027, max 0.58 —
+ * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that noise ceiling.
+ * Re-calibrate via scripts/calibrate-threshold.ts (and re-validate against a
+ * negative control: a fan/curtain must be REJECTED while a still, breathing-only
+ * person is still detected) if the room or hardware setup changes materially.
+ * Override at runtime via PHANTOM_MOTION_THRESHOLD, or persistently via the
+ * "Fused Target Presence Threshold" slider (server/lib/runtime-settings.ts).
  */
 export const DEFAULT_MOTION_THRESHOLD = Number.parseFloat(
-  process.env.PHANTOM_MOTION_THRESHOLD ?? "0.12",
+  process.env.PHANTOM_MOTION_THRESHOLD ?? "0.6",
 );
 
 /**
@@ -187,14 +191,33 @@ export interface FuseInput {
 export interface FusedTarget {
   x: number;
   z: number;
-  /** 0 → at node 1, 0.5 → midpoint, 1 → at node 2. */
+  /** 0 → at node 1, 0.5 → midpoint, 1 → at node 2. Contrast-shaped (see
+   * BALANCE_CONTRAST_EXPONENT) — this is the DISPLAY value; it is what
+   * positions the on-screen target, not the canonical linear ratio. */
   balance: number;
+  /** Canonical, undecorated balance = r2/(r1+r2) — independent of
+   * BALANCE_CONTRAST_EXPONENT and BALANCE_BIAS_EXPONENT. Authoritative
+   * cross-check value (PS-AUDIT-003/011, ADR-054); never drives the
+   * on-screen target position, which remains `balance` above. */
+  balanceLinear: number;
   /** Range to the NEAREST node anchor in meters (physically meaningful). */
   distToNearestNodeM: number;
 }
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Canonical linear balance = r2/(r1+r2), with no contrast exponent or
+ * display bias applied. This is the authoritative/canonical cross-check
+ * value (PS-AUDIT-003/011, ADR-054) — it is NEVER used to place the
+ * on-screen target, which uses the contrast+bias-shaped `balance` instead.
+ */
+export function computeLinearBalance(r1: number, r2: number): number {
+  const a = Number.isFinite(r1) ? Math.max(0, r1) : 0;
+  const b = Number.isFinite(r2) ? Math.max(0, r2) : 0;
+  return a + b > EPS ? b / (a + b) : 0.5;
 }
 
 /**
@@ -254,5 +277,7 @@ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
   const d1 = Math.hypot(x - n1.x, z - n1.z);
   const d2 = Math.hypot(x - n2.x, z - n2.z);
 
-  return { x, z, balance, distToNearestNodeM: Math.min(d1, d2) };
+  const balanceLinear = computeLinearBalance(r1, r2);
+
+  return { x, z, balance, balanceLinear, distToNearestNodeM: Math.min(d1, d2) };
 }

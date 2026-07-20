@@ -36,6 +36,10 @@ interface WSState {
   targetDebug: TargetDebug | null;
   targetState: TargetState | null;
   vitalSigns: VitalSigns | null;
+  // AI sidecar advisory output only (PS-REMED-WP3-FOLLOWUP-01). Never the
+  // deterministic verdict — see server/lib/websocket.ts's isAI-gated relay.
+  advisoryIdentity: TargetIdentity | null;
+  advisoryVitalSigns: VitalSigns | null;
   poseFrame: PoseFrame | null;
   nodes: SensorNode[];
   nodeFeatures: NodeFeatureState[];
@@ -52,7 +56,7 @@ const defaultConfig: ProcessingConfig = {
   clutterWindowSize: 50,
   motionGateEnabled: false,
   motionThreshold: 0.05,
-  fusedTargetMotionThreshold: 0.12,
+  fusedTargetMotionThreshold: 0.6,
 };
 
 const defaultStatus: SystemStatus = {
@@ -126,6 +130,8 @@ function buildClearedSceneState(
     targetDebug: null as TargetDebug | null,
     targetState: buildClearedTargetState(reason),
     vitalSigns: null as VitalSigns | null,
+    advisoryIdentity: null as TargetIdentity | null,
+    advisoryVitalSigns: null as VitalSigns | null,
     poseFrame: null as PoseFrame | null,
     nodeFeatures: [] as NodeFeatureState[],
     // Node beacons are only cleared on socket death: on Stop the server
@@ -158,6 +164,8 @@ export function useWebSocket() {
     targetDebug: null,
     targetState: defaultTargetState,
     vitalSigns: null,
+    advisoryIdentity: null,
+    advisoryVitalSigns: null,
     poseFrame: null,
     nodes: [],
     nodeFeatures: [],
@@ -384,6 +392,24 @@ export function useWebSocket() {
         setState((prev) => ({
           ...prev,
           vitalSigns: message.data as VitalSigns,
+        }));
+        break;
+
+      // AI sidecar advisory identity/vitals only — relayed by the server
+      // exclusively from isAI-registered clients (PS-REMED-WP3-FOLLOWUP-01).
+      // Never written into targetIdentity/vitalSigns; the deterministic
+      // pipeline remains the only writer of those authoritative fields.
+      case "advisoryIdentity":
+        setState((prev) => ({
+          ...prev,
+          advisoryIdentity: (message.data as TargetIdentity | null) ?? null,
+        }));
+        break;
+
+      case "advisoryVitalSigns":
+        setState((prev) => ({
+          ...prev,
+          advisoryVitalSigns: (message.data as VitalSigns | null) ?? null,
         }));
         break;
 

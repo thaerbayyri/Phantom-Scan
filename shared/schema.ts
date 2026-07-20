@@ -145,7 +145,7 @@ export const processingConfigSchema = z.object({
   motionThreshold: z.number().min(0).max(1).default(0.05),
   // Presence gate for two-node fusion: max(motion1, motion2) must clear this
   // for a target to exist at all (see node-fusion.ts DEFAULT_MOTION_THRESHOLD).
-  fusedTargetMotionThreshold: z.number().min(0).max(1).default(0.12),
+  fusedTargetMotionThreshold: z.number().min(0).max(1).default(0.6),
 });
 export type ProcessingConfig = z.infer<typeof processingConfigSchema>;
 
@@ -231,7 +231,13 @@ export const radialTargetSchema = z.object({
   wallDistance: z.number().default(5.0), // First wall reflection distance (m)
   // Two-node fusion: 0 → at node 1, 0.5 → midpoint, 1 → at node 2 (RuView balance).
   // Present only in fused_two_node mode; x/z are placed on the N1–N2 line from it.
+  // This is the DISPLAY value (contrast+bias-shaped) — see balanceLinear below
+  // for the canonical undecorated ratio (PS-AUDIT-003/011, ADR-054).
   balance: z.number().optional(),
+  // Canonical/authoritative balance = r2/(r1+r2), independent of the display
+  // contrast exponent and nearest-node bias. Cross-check value only — never
+  // drives x/z placement, which remains driven by `balance` above.
+  balanceLinear: z.number().optional(),
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 

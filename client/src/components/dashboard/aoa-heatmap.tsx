@@ -9,6 +9,25 @@ interface AoAHeatmapProps {
   className?: string;
 }
 
+// Teal ramp (matches --chart-2) — the low end is a dark, visible teal rather
+// than pure black, so a real low-amplitude reading (e.g. a null/guard
+// subcarrier) reads as "low signal" instead of looking like a rendering gap
+// against the transparent dark background.
+const SUBCARRIER_COLORSCALE: Array<[number, string]> = [
+  [0, "hsl(220, 20%, 14%)"],
+  [0.25, "hsl(195, 55%, 22%)"],
+  [0.5, "hsl(188, 65%, 38%)"],
+  [0.75, "hsl(180, 78%, 55%)"],
+  [1, "hsl(170, 85%, 82%)"],
+];
+
+// Physical bounds of the dB scale: amplitude = |int8 + i*int8|, so
+// 0 <= amplitude <= sqrt(127^2 + 127^2) => -60 dB floor (clamp in the
+// accumulator) to ~45 dB ceiling. Fixed (not per-frame auto-ranged) so the
+// same physical signal always renders the same color.
+const SUBCARRIER_ZMIN = -60;
+const SUBCARRIER_ZMAX = 45;
+
 /**
  * Time × subcarrier amplitude waterfall (dB) from the raw CSI stream — human
  * motion appears as coherent ripples sweeping across subcarriers over time.
@@ -55,7 +74,9 @@ export function AoAHeatmap({ data, className = "" }: AoAHeatmapProps) {
               x: plotData.angles,
               y: plotData.times,
               z: plotData.intensities,
-              colorscale: "Hot",
+              colorscale: SUBCARRIER_COLORSCALE,
+              zmin: SUBCARRIER_ZMIN,
+              zmax: SUBCARRIER_ZMAX,
               hovertemplate:
                 "Subcarrier: %{x}<br>Time: %{y:.2f}s<br>Amplitude: %{z:.2f} dB<extra></extra>",
               showscale: false,

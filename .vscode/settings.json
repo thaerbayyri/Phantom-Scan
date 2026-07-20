@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "D:/WIFI csi/phanotm/phantom scan/firmware/esp32-csi-node"
+    "cmake.sourceDirectory": "D:/WIFI csi/phanotm/phantom scan/firmware/esp32-csi-node",
+    "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.5.2/"
 }

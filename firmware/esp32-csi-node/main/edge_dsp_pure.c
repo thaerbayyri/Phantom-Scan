@@ -82,6 +82,63 @@ float estimate_bpm_zero_crossing(const float *history, uint16_t len,
     return freq_hz * 60.0f;
 }
 
+float estimate_period_regularity_cv(const float *sig, uint16_t len, float fs,
+                                     float claimed_bpm)
+{
+    if (len < 4) return -1.0f;
+
+    /* Sub-sample (linearly interpolated) crossing TIMES, not raw sample
+     * indices: an integer-only crossing index quantizes to +/-0.5 samples,
+     * which dominates the statistic for short-period signals (few
+     * samples/cycle) regardless of how truly regular the source is.
+     * Interpolating the crossing time removes that artifact so the CV
+     * reflects real period jitter, not sampling-grid noise. */
+    float crossings[128];
+    uint16_t n_cross = 0;
+
+    for (uint16_t i = 1; i < len && n_cross < 128; i++) {
+        if (sig[i - 1] <= 0.0f && sig[i] > 0.0f) {
+            float denom = sig[i] - sig[i - 1];
+            float frac = (denom > 1e-9f) ? (-sig[i - 1] / denom) : 0.0f;
+            crossings[n_cross++] = (float)(i - 1) + frac;
+        }
+    }
+
+    if (n_cross < 3) return -1.0f; /* too few cycles to judge jitter */
+
+    uint16_t n_intervals = n_cross - 1;
+
+    /* Sub-harmonic-aliasing multiplicity check: if the raw signal oscillates
+     * far more often than the claimed (accepted) BPM implies, the accepted
+     * periodicity is a sub-harmonic of a much faster, non-biological source
+     * — decisive on its own, and not reliably caught by the CV below when
+     * the raw period is short (few samples/cycle). */
+    if (claimed_bpm > 0.0f && fs > 0.0f) {
+        float window_s = (float)len / fs;
+        float expected_cycles = window_s * (claimed_bpm / 60.0f);
+        if (expected_cycles > 0.5f) {
+            float multiplicity = (float)n_intervals / expected_cycles;
+            if (multiplicity > 1.6f) return 0.0f; /* force rejection */
+        }
+    }
+    float intervals[127];
+    float sum = 0.0f;
+    for (uint16_t i = 0; i < n_intervals; i++) {
+        intervals[i] = crossings[i + 1] - crossings[i];
+        sum += intervals[i];
+    }
+    float mean = sum / (float)n_intervals;
+    if (mean <= 1e-6f) return -1.0f;
+
+    float var_acc = 0.0f;
+    for (uint16_t i = 0; i < n_intervals; i++) {
+        float d = intervals[i] - mean;
+        var_acc += d * d;
+    }
+    float variance = var_acc / (float)n_intervals;
+    return sqrtf(variance) / mean;
+}
+
 float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
                                     float bpm_lo, float bpm_hi,
                                     float reject_br_hz,
@@ -144,13 +201,18 @@ float estimate_periodicity_autocorr(const float *sig, uint16_t len, float fs,
 bool edge_evaluate_human_presence(bool motion_present,
                                    bool breathing_data_ready,
                                    float breathing_bpm,
-                                   float resp_conf)
+                                   float resp_conf,
+                                   float period_cv)
 {
     if (!motion_present || !breathing_data_ready) return false;
 
     bool in_band = (breathing_bpm >= EDGE_BREATHING_BPM_MIN) &&
                    (breathing_bpm <= EDGE_BREATHING_BPM_MAX);
     bool confident = (resp_conf >= EDGE_RESP_CONF_MIN);
+    /* Indeterminate (-1.0f, too few cycles to judge) passes through rather
+     * than rejecting, to avoid worsening the already-documented missed-
+     * detection rate at the low-BPM edge (see EDGE_RESP_CONF_MIN). */
+    bool natural_jitter = (period_cv < 0.0f) || (period_cv >= EDGE_RESP_PERIOD_CV_MIN);
 
-    return in_band && confident;
+    return in_band && confident && natural_jitter;
 }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   fuseTwoNodeTarget,
   biasBalanceTowardNearestNode,
+  computeLinearBalance,
   computeNodeMotionFromMatrix,
   computeNodeTrends,
   MOTION_SATURATION_SCALE,
@@ -231,4 +232,33 @@ test("computeNodeMotionFromMatrix: saturates at 1.0 and uses the documented scal
   assert.equal(m.motion, 1);
   assert.ok(m.absStd > 0);
   assert.equal(MOTION_SATURATION_SCALE, 4);
+});
+
+// ── balanceLinear: authoritative/canonical cross-check (PS-AUDIT-003/011, ADR-054) ──
+
+test("computeLinearBalance is the undecorated r2/(r1+r2) ratio", () => {
+  assert.ok(Math.abs(computeLinearBalance(30, 10) - 0.25) < 1e-9);
+  assert.equal(computeLinearBalance(0, 0), 0.5);
+  assert.equal(computeLinearBalance(10, 10), 0.5);
+});
+
+test("balanceLinear on fuseTwoNodeTarget is invariant to the contrast exponent, unlike balance", () => {
+  const p1 = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING, contrastExponent: 1 });
+  const p2 = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING, contrastExponent: 2 });
+  const p3 = fuseTwoNodeTarget({ r1: 30, r2: 10, anchors: ANCHORS, ...MOVING, contrastExponent: 3 });
+  assert.ok(p1 && p2 && p3);
+  // Always the plain linear ratio regardless of contrast shaping.
+  for (const t of [p1!, p2!, p3!]) {
+    assert.ok(Math.abs(t.balanceLinear - 0.25) < 1e-9, `balanceLinear ${t.balanceLinear}`);
+  }
+  // `balance` (display value), by contrast, DOES vary with the exponent.
+  assert.ok(Math.abs(p1!.balance - 0.25) < 1e-9);
+  assert.ok(p2!.balance < p1!.balance);
+  assert.ok(p3!.balance < p2!.balance);
+});
+
+test("balanceLinear is 0.5 at the midpoint", () => {
+  const t = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING });
+  assert.ok(t);
+  assert.ok(Math.abs(t!.balanceLinear - 0.5) < 1e-9);
 });

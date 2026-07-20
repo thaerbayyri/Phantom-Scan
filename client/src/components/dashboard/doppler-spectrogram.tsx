@@ -9,6 +9,24 @@ interface DopplerSpectrogramProps {
     className?: string;
 }
 
+// Purple ramp (matches --chart-3) instead of stock Viridis, so the panel
+// reads as part of the same dark theme as the other charts.
+const DOPPLER_COLORSCALE: Array<[number, string]> = [
+    [0, "hsl(230, 20%, 14%)"],
+    [0.25, "hsl(258, 40%, 26%)"],
+    [0.5, "hsl(272, 50%, 45%)"],
+    [0.75, "hsl(285, 60%, 62%)"],
+    [1, "hsl(300, 85%, 85%)"],
+];
+
+// computeDFTMagnitudes clamps the floor at -60 dB, but the ceiling was
+// previously hardcoded to 0 dB — far below the DFT magnitude's real range
+// (amplitude is |int8 + i*int8|, up to sqrt(127^2+127^2) ~= 45 dB), so almost
+// all real motion energy clipped to the top of the scale and the whole plot
+// washed out to a flat bright color. 45 dB matches that physical ceiling.
+const DOPPLER_ZMIN = -60;
+const DOPPLER_ZMAX = 45;
+
 /**
  * Time × frequency heatmap of the dynamic CSI amplitude — the target's raw
  * motion signature: vertical energy bands appear while the person moves and
@@ -61,9 +79,9 @@ export function DopplerSpectrogram({
                                     plotData.intensities.map((row) => row[colIdx])
                                 )
                                 : [],
-                            colorscale: "Viridis",
-                            zmin: -60,
-                            zmax: 0,
+                            colorscale: DOPPLER_COLORSCALE,
+                            zmin: DOPPLER_ZMIN,
+                            zmax: DOPPLER_ZMAX,
                             hovertemplate:
                                 "Time: %{x:.2f}s<br>Doppler: %{y:.1f} Hz<br>Power: %{z:.1f} dB<extra></extra>",
                             showscale: false,
