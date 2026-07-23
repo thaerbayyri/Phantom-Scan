@@ -8,7 +8,7 @@ const UDP_HOST = "0.0.0.0";
 
 const MAGIC_NUMBER_LE = 0xc5110001;
 const HEARTBEAT_MAGIC_LE = 0xc51100a1;
-/** RuView firmware rv_feature_state packet (1 Hz per node, board-side DSP). */
+/** Phantom Scan firmware rv_feature_state packet (1 Hz per node, board-side DSP). */
 const FEATURE_STATE_MAGIC_LE = 0xc5110006;
 const FEATURE_STATE_MIN_SIZE = 56;
 /** This repo's own firmware vitals packet (edge_vitals_pkt_t, 32 bytes). */
@@ -361,10 +361,10 @@ export function crc32IEEE(buf: Buffer, length: number): number {
 }
 
 /**
- * Parse a RuView rv_feature_state packet (magic 0xC5110006, ≥56 bytes LE).
- * Field offsets mirror scripts/ruview-dashboard-bridge.py parse_feat():
- * node_id u8 @4; f32 motion @16, presence @20, resp_bpm @24, resp_conf @28,
- * hr_bpm @32, hr_conf @36.
+ * Parse the Phantom Scan rv_feature_state packet (magic 0xC5110006, ≥56 bytes LE).
+ * Field offsets match the archived scripts/ruview-dashboard-bridge.py parse_feat()
+ * for continuity: node_id u8 @4; f32 motion @16, presence @20, resp_bpm @24,
+ * resp_conf @28, hr_bpm @32, hr_conf @36.
  */
 export function parseFeatureStatePacket(msg: Buffer): ParsedFeatureState | null {
     if (msg.length < FEATURE_STATE_MIN_SIZE) {
@@ -399,7 +399,7 @@ export function parseFeatureStatePacket(msg: Buffer): ParsedFeatureState | null 
  * node_id u8 @4; flags u8 @5 (bit0 presence, bit1 fall, bit2 motion);
  * breathing u16 @6 (BPM*100); heart u32 @8 (BPM*10000); rssi i8 @12;
  * motion_energy f32 @16; presence_score f32 @20; timestamp_ms u32 @24.
- * Mapped onto the same ParsedFeatureState the RuView 0xC5110006 packet
+ * Mapped onto the same ParsedFeatureState the 0xC5110006 feature-state packet
  * produces, so either firmware populates the dashboard's Board DSP card.
  */
 export function parseEdgeVitalsPacket(msg: Buffer): ParsedFeatureState | null {
@@ -565,7 +565,7 @@ export function startUDPServer() {
     server.on("message", (msg, rinfo) => {
         const kind = classifyPacketMagic(msg);
 
-        // Firmware DSP feature-state (RuView 0xC5110006): independent 1 Hz
+        // Firmware DSP feature-state (0xC5110006): independent 1 Hz
         // stream shown alongside host-DSP metrics — never fused with them.
         if (kind === "feature_state") {
             const feat = parseFeatureStatePacket(msg);
@@ -576,7 +576,7 @@ export function startUDPServer() {
         }
 
         // This repo's own firmware vitals (0xC5110002): same role as the
-        // RuView feature-state — board-side presence/motion/vitals for the
+        // 0xC5110006 feature-state packet — board-side presence/motion/vitals for the
         // Board DSP card, never fused with the host target math.
         if (kind === "vitals") {
             const feat = parseEdgeVitalsPacket(msg);
@@ -648,10 +648,10 @@ export function startUDPServer() {
         let bestH1 = { re: 0, im: 0 };
         let bestH2 = { re: 0, im: 0 };
 
-        // Per-subcarrier amplitudes (antenna 0), capped at 64 like RuView's
-        // bridge. The two-node balance fusion needs the full vector: the
-        // best-subcarrier scalar below jumps index frame-to-frame, so its
-        // temporal std is selection noise, not human motion.
+        // Per-subcarrier amplitudes (antenna 0), capped at 64. Phantom Balance
+        // Fusion needs the full vector: the best-subcarrier scalar below jumps
+        // index frame-to-frame, so its temporal std is selection noise, not
+        // human motion.
         const ampCount = Math.min(parsed.numSubcarriers, 64);
         const amplitudes = new Array<number>(ampCount);
 
@@ -669,7 +669,7 @@ export function startUDPServer() {
             let p2_re = 0;
             let p2_im = 0;
 
-            // If RuView sends 2 antennas (unlikely based on current code, but future proofing)
+            // If the firmware sends 2 antennas (unlikely based on current code, but future proofing)
             if (parsed.numAntennas > 1) {
                 p2_re = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2);
                 p2_im = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2 + 1);

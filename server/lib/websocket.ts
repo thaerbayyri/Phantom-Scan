@@ -141,7 +141,7 @@ export class SignalProcessingServer {
   private hardwareNodeLastSeenMs: Map<number, number> = new Map();
   private nextHardwareQueueIndex = 0;
 
-  // Two-node fusion (RuView balance) state. Each window entry is one packet's
+  // Two-node fusion (Phantom Balance Fusion) state. Each window entry is one packet's
   // per-subcarrier amplitude frame (falls back to a 1-element frame from the
   // scalar h1 when the packet carried no vector).
   private nodeAmpWindow: Map<number, { t: number; amps: number[] }[]> = new Map();
@@ -933,7 +933,7 @@ export class SignalProcessingServer {
         speed = Math.sqrt(targetVx * targetVx + targetVz * targetVz);
       }
 
-      // ── 9b. Two-node fusion (RuView balance) — replaces the single-node guess ──
+      // ── 9b. Two-node fusion (Phantom Balance Fusion) — replaces the single-node guess ──
       // In fused_two_node mode the target is placed on the N1–N2 line by the
       // cross-node motion ratio. `r`/`theta` become display-only; `distanceCm`
       // stays physically meaningful (range to the nearest node).
@@ -1407,7 +1407,7 @@ export class SignalProcessingServer {
       : "single_node";
   }
 
-  // ── Two-node fusion (RuView balance) ───────────────────────────────
+  // ── Two-node fusion (Phantom Balance Fusion) ───────────────────────────────
   private recordNodeAmplitude(sample: CSISample): void {
     const nodeId = sample.nodeId ?? 1;
     if (nodeId !== 1 && nodeId !== 2) return; // only the two anchored nodes
@@ -1417,7 +1417,7 @@ export class SignalProcessingServer {
       win = [];
       this.nodeAmpWindow.set(nodeId, win);
     }
-    // Prefer the full per-subcarrier vector (RuView method); fall back to a
+    // Prefer the full per-subcarrier vector; fall back to a
     // 1-element frame from the scalar h1 for legacy/synthetic senders.
     const amps =
       sample.amplitudes && sample.amplitudes.length > 0
@@ -1531,7 +1531,7 @@ export class SignalProcessingServer {
     return nodes;
   }
 
-  // ── Firmware DSP feature-state (RuView 0xC5110006, 1 Hz per node) ──
+  // ── Firmware DSP feature-state (Phantom Scan feature-state packet, 0xC5110006, 1 Hz per node) ──
   // Board-side metrics kept STRICTLY separate from the host-DSP fusion path;
   // broadcast for side-by-side cross-checking in the UI only.
   private nodeFeatureStates = new Map<

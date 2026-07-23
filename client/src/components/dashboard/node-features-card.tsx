@@ -8,7 +8,7 @@ interface NodeFeaturesCardProps {
 }
 
 /**
- * Firmware DSP metrics (RuView 0xC5110006 feature-state, 1 Hz per node).
+ * Firmware DSP metrics (Phantom Scan feature-state packet, 0xC5110006, 1 Hz per node).
  * Board-computed presence/motion/vitals shown verbatim for cross-checking
  * against the host-DSP estimates — the two pipelines are independent.
  * With current firmware the resp/heart confidences are real autocorrelation

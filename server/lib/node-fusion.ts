@@ -1,10 +1,10 @@
 /**
- * Two-node CSI fusion (RuView-style 1-D localization).
+ * Phantom Balance Fusion — two-node CSI fusion, 1-D localization.
  *
- * With only two nodes we cannot resolve a true (x, z). What we CAN do — following
- * RuView's `ruview-dashboard-bridge.py` — is use each node's *absolute, unsaturated*
- * per-window amplitude perturbation (`absStd`) as a proximity proxy, then place the
- * target on the straight line between the two board anchors via
+ * With only two nodes we cannot resolve a true (x, z). What we CAN do is use each
+ * node's *absolute, unsaturated* per-window amplitude perturbation (`absStd`) as a
+ * proximity proxy, then place the target on the straight line between the two board
+ * anchors via
  *
  *     balance = r2 / (r1 + r2)     (0 → at node 1, 0.5 → midpoint, 1 → at node 2)
  *
@@ -18,7 +18,7 @@ export interface NodeAnchor {
 }
 
 /**
- * Display-only motion saturation scale (the inherited RuView `* 4`).
+ * Display-only motion saturation scale (the legacy `* 4` factor).
  *
  * COUPLING WARNING: this constant only affects the *display* `motion` value
  * (localization uses the raw unsaturated `absStd`). But `motion` is exactly what
@@ -119,10 +119,10 @@ export interface NodeMotion {
 }
 
 /**
- * RuView-faithful per-node motion energy from a window of per-subcarrier
- * amplitude FRAMES (each frame = amplitude vector for one received packet).
+ * Per-node motion energy from a window of per-subcarrier amplitude FRAMES
+ * (each frame = amplitude vector for one received packet).
  *
- * Mirrors `ruview-dashboard-bridge.py` compute_update():
+ * Per-node update step:
  *   k         = min frame length (subcarrier count)
  *   sub_std_j = temporal pstdev of subcarrier j across the window
  *   absStd    = mean(sub_std)          — raw, unsaturated → balance

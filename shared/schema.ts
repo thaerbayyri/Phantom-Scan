@@ -18,8 +18,8 @@ export const csiSampleSchema = z.object({
   // Canonical hardware identity carried alongside the runtime node id at the
   // authority ingest boundary (PS-AUDIT-005 mapping layer).
   hardwareId: z.number().optional(),
-  // Per-subcarrier amplitudes (antenna 0) for this frame. Feeds the RuView-style
-  // per-subcarrier temporal-std motion energy that drives two-node balance —
+  // Per-subcarrier amplitudes (antenna 0) for this frame. Feeds the
+  // per-subcarrier temporal-std motion energy that drives Phantom Balance Fusion —
   // the scalar h1 alone (max-power subcarrier, index jumps per frame) is too
   // noisy to localize with.
   amplitudes: z.array(z.number()).optional(),
@@ -229,7 +229,7 @@ export const radialTargetSchema = z.object({
   humanProb: z.number().default(0.5),
   distanceCm: z.number().default(200),   // Distance in centimeters
   wallDistance: z.number().default(5.0), // First wall reflection distance (m)
-  // Two-node fusion: 0 → at node 1, 0.5 → midpoint, 1 → at node 2 (RuView balance).
+  // Two-node fusion: 0 → at node 1, 0.5 → midpoint, 1 → at node 2 (Phantom Balance Fusion).
   // Present only in fused_two_node mode; x/z are placed on the N1–N2 line from it.
   // This is the DISPLAY value (contrast+bias-shaped) — see balanceLinear below
   // for the canonical undecorated ratio (PS-AUDIT-003/011, ADR-054).
@@ -271,7 +271,7 @@ export const targetStateSchema = z.object({
 });
 export type TargetState = z.infer<typeof targetStateSchema>;
 
-// ── Two-node ESP32-S3 geometry (RuView-style anchors) ──────────────────
+// ── Two-node ESP32-S3 geometry (fixed anchors) ──────────────────
 // Fixed node anchor positions in radar/world meters (origin at center, +Z = north).
 // 3 m apart on the E–W axis, centered — the target's balance-fused position slides
 // along the line between them. Single source of truth for server + client.
@@ -300,7 +300,7 @@ export const sensorNodeSchema = z.object({
 });
 export type SensorNode = z.infer<typeof sensorNodeSchema>;
 
-// Firmware DSP feature state (RuView 0xC5110006 packet, 1 Hz per node).
+// Firmware DSP feature state (Phantom Scan feature-state packet, 0xC5110006, 1 Hz per node).
 // Board-computed metrics shown ALONGSIDE the host-DSP estimates for
 // cross-checking — never fed into the host-side fusion/target math.
 export const nodeFeatureStateSchema = z.object({
