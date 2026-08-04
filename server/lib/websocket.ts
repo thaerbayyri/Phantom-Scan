@@ -35,6 +35,7 @@ import {
   computeNodeMotionFromMatrix,
   computeNodeTrends,
   computeFallbackVelocity,
+  computeGainNormalizedPerturbation,
   DEFAULT_MOTION_THRESHOLD,
   type FusedTarget,
   type NodeTrend,
@@ -1477,8 +1478,12 @@ export class SignalProcessingServer {
     const m1 = this.nodeMotionFor(1);
     const m2 = this.nodeMotionFor(2);
     const fused = fuseTwoNodeTarget({
-      r1: m1.absStd,
-      r2: m2.absStd,
+      // Gain-normalized (per-node absStd/mean), not raw absStd — PS-BEHTEST-004:
+      // raw absStd scales linearly with any per-node gain/RSSI mismatch, which
+      // biased balance toward whichever board had higher effective gain. See
+      // ADR-056.
+      r1: computeGainNormalizedPerturbation(m1.absStd, m1.mean),
+      r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
       motion1: m1.motion,
       motion2: m2.motion,
       anchors: { 1: NODE_ANCHORS[1], 2: NODE_ANCHORS[2] },

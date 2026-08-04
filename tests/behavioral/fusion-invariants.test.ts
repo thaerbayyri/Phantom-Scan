@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import {
   fuseTwoNodeTarget,
   computeNodeMotionFromMatrix,
+  computeGainNormalizedPerturbation,
 } from "../../server/lib/node-fusion";
 
 /**
  * B3 — fusion/localization behavior gaps not already covered by
- * server/lib/node-fusion.test.ts's 20 existing tests (midpoint, endpoints,
+ * server/lib/node-fusion.test.ts's 20+ existing tests (midpoint, endpoints,
  * display bias, empty-room gate, matrix motion, trends/hysteresis, contrast
  * exponent, saturation — all verified present before writing this file).
  * This file covers two specific gaps: (1) whether a purely multiplicative
@@ -15,11 +16,21 @@ import {
  * from 0.5, and (2) a direct hit on the r1^p+r2^p<=EPS fallback branch that
  * the existing zero-perturbation test doesn't reach (it's gated off by the
  * `present` check before division happens).
+ *
+ * UPDATE (ADR-056): gap (1)'s finding, PS-BEHTEST-004, is now FIXED upstream
+ * — server/lib/websocket.ts's computeFusedTarget() gain-normalizes r1/r2 via
+ * computeGainNormalizedPerturbation() before calling fuseTwoNodeTarget, so
+ * production no longer feeds it raw absStd. The FINDING test below is kept,
+ * renamed, and its assertions are UNCHANGED — it still correctly documents
+ * that fuseTwoNodeTarget's own math drifts under gain asymmetry IF fed raw
+ * absStd directly (by design: the fix lives entirely in the caller, not in
+ * fuseTwoNodeTarget's contract). Its sibling immediately below proves the
+ * real production composition is gain-invariant.
  */
 
 const ANCHORS = { 1: { x: -1.5, z: 0 }, 2: { x: 1.5, z: 0 } } as const;
 
-test("FINDING: a static multiplicative gain asymmetry between nodes (no real motion difference) biases balance away from 0.5", () => {
+test("[HISTORICAL — fixed upstream, see PS-BEHTEST-004/ADR-056] fuseTwoNodeTarget's balance drifts under a static multiplicative gain asymmetry IF fed raw absStd directly (production no longer does this)", () => {
   // Both nodes see the IDENTICAL relative perturbation pattern (same
   // physical motion depth) — node 2's raw amplitude is just uniformly
   // scaled by a constant gain factor (proxy for antenna/RSSI hardware
@@ -61,6 +72,34 @@ test("FINDING: a static multiplicative gain asymmetry between nodes (no real mot
   // node-to-node gain mismatch with EQUAL real motion depth pulls the
   // reported position measurably toward the higher-gain node.
   assert.ok(Math.abs(t!.balance - 0.5) > 0.1, `expected balance to drift from 0.5 under gain asymmetry, got ${t!.balance}`);
+});
+
+test("FIXED (PS-BEHTEST-004/ADR-056): the real production composition (computeNodeMotionFromMatrix -> computeGainNormalizedPerturbation -> fuseTwoNodeTarget) is gain-invariant for the exact same scenario above", () => {
+  const base = [
+    [10, 12, 9, 11],
+    [11, 9, 12, 10],
+    [9, 11, 10, 12],
+    [12, 10, 11, 9],
+  ];
+  const gain = 2.0;
+  const scaled = base.map((frame) => frame.map((v) => v * gain));
+
+  const m1 = computeNodeMotionFromMatrix(base);
+  const m2 = computeNodeMotionFromMatrix(scaled);
+
+  const t = fuseTwoNodeTarget({
+    r1: computeGainNormalizedPerturbation(m1.absStd, m1.mean),
+    r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
+    motion1: 1,
+    motion2: 1,
+    motionThreshold: 0.12,
+    anchors: ANCHORS,
+  });
+  assert.ok(t);
+  assert.ok(
+    Math.abs(t!.balance - 0.5) < 0.02,
+    `expected balance to stay near 0.5 once production normalizes by each node's own gain, got ${t!.balance}`,
+  );
 });
 
 test("fuseTwoNodeTarget hits the r1^p+r2^p<=EPS fallback (balance=0.5) when present via the linear r1+r2 gate but the contrast-exponentiated sum underflows", () => {

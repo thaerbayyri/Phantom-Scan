@@ -7,6 +7,7 @@ import {
   computeNodeMotionFromMatrix,
   computeNodeTrends,
   computeFallbackVelocity,
+  computeGainNormalizedPerturbation,
   MOTION_SATURATION_SCALE,
   FALLBACK_VELOCITY_MAX_GAP_S,
   type NodeTrend,
@@ -331,4 +332,93 @@ test("computeFallbackVelocity: invalidating prev (null) after a primary-tracker 
   const withInvalidation = computeFallbackVelocity(afterPrimaryHitInvalidation, raw, 1000 + shortGapMs);
   assert.equal(withInvalidation.vx, 0, "must not diff the 3m displacement across the primary-tracked gap");
   assert.equal(withInvalidation.speed, 0);
+});
+
+// ── computeGainNormalizedPerturbation (PS-BEHTEST-004 / ADR-056) ──────────────
+
+test("computeGainNormalizedPerturbation cancels a per-node multiplicative gain", () => {
+  const absStd = 5;
+  const mean = 15;
+  const base = computeGainNormalizedPerturbation(absStd, mean);
+  for (const gain of [2.0, 0.5, 3.7]) {
+    const scaled = computeGainNormalizedPerturbation(absStd * gain, mean * gain);
+    assert.ok(Math.abs(scaled - base) < 1e-9, `gain=${gain}: base=${base} scaled=${scaled}`);
+  }
+});
+
+test("computeGainNormalizedPerturbation returns 0 for a silent node without dividing by zero", () => {
+  const r = computeGainNormalizedPerturbation(0, 0);
+  assert.equal(r, 0);
+  assert.ok(Number.isFinite(r));
+});
+
+test("computeGainNormalizedPerturbation guards a non-finite or non-positive mean defensively", () => {
+  assert.ok(Number.isFinite(computeGainNormalizedPerturbation(5, NaN)));
+  assert.ok(Number.isFinite(computeGainNormalizedPerturbation(5, -1)));
+  assert.ok(Number.isFinite(computeGainNormalizedPerturbation(5, 0)));
+  // Falls back to divisor 1.0, so absStd passes through unchanged.
+  assert.equal(computeGainNormalizedPerturbation(5, NaN), 5);
+});
+
+test("FIXED (PS-BEHTEST-004): gain-normalizing r1/r2 restores balance ~= 0.5 under a 2x per-node gain asymmetry with identical real motion", () => {
+  // Same synthetic scenario as tests/behavioral/fusion-invariants.test.ts's
+  // FINDING test, but run through the REAL fixed composition production now
+  // uses (computeNodeMotionFromMatrix -> computeGainNormalizedPerturbation ->
+  // fuseTwoNodeTarget) instead of feeding raw absStd directly.
+  const base = [
+    [10, 12, 9, 11],
+    [11, 9, 12, 10],
+    [9, 11, 10, 12],
+    [12, 10, 11, 9],
+  ];
+  const gain = 2.0;
+  const scaled = base.map((frame) => frame.map((v) => v * gain));
+
+  const m1 = computeNodeMotionFromMatrix(base);
+  const m2 = computeNodeMotionFromMatrix(scaled);
+
+  const t = fuseTwoNodeTarget({
+    r1: computeGainNormalizedPerturbation(m1.absStd, m1.mean),
+    r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
+    motion1: 1,
+    motion2: 1,
+    motionThreshold: 0.12,
+    anchors: ANCHORS,
+  });
+  assert.ok(t);
+  assert.ok(Math.abs(t!.balance - 0.5) < 0.02, `expected balance near 0.5 (gain-invariant), got ${t!.balance}`);
+});
+
+test("a COMMON gain applied equally to both nodes leaves balance unchanged (the bug was only the differential mismatch)", () => {
+  const m1Frames = [
+    [10, 12, 9, 11],
+    [11, 9, 12, 10],
+  ];
+  const m2Frames = [
+    [20, 15, 25, 18],
+    [22, 14, 24, 19],
+  ];
+  const commonGain = 3.0;
+
+  const balanceFor = (gain: number) => {
+    const m1 = computeNodeMotionFromMatrix(m1Frames.map((f) => f.map((v) => v * gain)));
+    const m2 = computeNodeMotionFromMatrix(m2Frames.map((f) => f.map((v) => v * gain)));
+    const t = fuseTwoNodeTarget({
+      r1: computeGainNormalizedPerturbation(m1.absStd, m1.mean),
+      r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
+      motion1: 1,
+      motion2: 1,
+      motionThreshold: 0.12,
+      anchors: ANCHORS,
+    });
+    assert.ok(t);
+    return t!.balance;
+  };
+
+  const balanceAt1x = balanceFor(1);
+  const balanceAtCommonGain = balanceFor(commonGain);
+  assert.ok(
+    Math.abs(balanceAt1x - balanceAtCommonGain) < 1e-9,
+    `balanceAt1x=${balanceAt1x} balanceAtCommonGain=${balanceAtCommonGain}`,
+  );
 });

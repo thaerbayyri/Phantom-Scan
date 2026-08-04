@@ -221,6 +221,27 @@ export function computeLinearBalance(r1: number, r2: number): number {
 }
 
 /**
+ * Gain-normalize a node's raw perturbation (`absStd`) by that same node's own
+ * mean amplitude (`mean`/`base`), producing a dimensionless, UNSATURATED
+ * relative-perturbation ratio invariant to any per-node multiplicative
+ * gain/RSSI/antenna mismatch (PS-BEHTEST-004).
+ *
+ * `std(g·X) = g·std(X)` for a uniform gain `g` applied to one node's raw
+ * amplitude, and that same `g` scales that node's own mean identically — so
+ * `absStd/mean` cancels `g` exactly, regardless of which node it comes from.
+ * This is the same ratio `computeNodeMotionFromMatrix`'s display `motion`
+ * field already uses, minus its `* MOTION_SATURATION_SCALE` and
+ * `Math.min(1, …)` clamp: `balance`'s localization math needs the raw
+ * unsaturated ratio, not the saturated display value (two nodes both past
+ * saturation would otherwise collapse to a false midpoint).
+ */
+export function computeGainNormalizedPerturbation(absStd: number, mean: number): number {
+  const s = Number.isFinite(absStd) ? Math.max(0, absStd) : 0;
+  const m = Number.isFinite(mean) && mean > 0 ? mean : 1.0;
+  return s / m;
+}
+
+/**
  * Bias the projected display position toward the nearest node while preserving
  * 0, 0.5, and 1 exactly. Used only for the displayed on-axis estimate.
  */
