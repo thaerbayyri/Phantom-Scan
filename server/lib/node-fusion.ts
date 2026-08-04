@@ -281,3 +281,51 @@ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
 
   return { x, z, balance, balanceLinear, distToNearestNodeM: Math.min(d1, d2) };
 }
+
+// ── Fallback (non-Kalman, non-fused) velocity — Area 5/NEW-1 ───────────────
+
+export interface FallbackVelocitySample {
+  x: number;
+  z: number;
+  atMs: number;
+}
+
+export interface FallbackVelocityResult {
+  vx: number;
+  vz: number;
+  speed: number;
+}
+
+/** Real-time gap beyond which a fallback sample is treated as a fresh start, never diffed. */
+export const FALLBACK_VELOCITY_MAX_GAP_S = 0.25;
+/** Floor on dt so a near-zero interval can't blow up the velocity. */
+export const FALLBACK_VELOCITY_MIN_DT_S = 0.02;
+
+/**
+ * Frame-rate-independent instantaneous velocity for the non-Kalman, non-fused
+ * fallback path (used when the primary DBSCAN/Kalman tracker misses this tick).
+ * Returns zero — never a spike — when there is no previous sample or the real
+ * elapsed gap exceeds `FALLBACK_VELOCITY_MAX_GAP_S`.
+ *
+ * Callers own invalidating `prev` (passing `null`) on every condition that
+ * breaks positional continuity: primary-tracker success, a fused_two_node
+ * <-> single_node mode transition, and the 5s hard-clear/1.5s stale-hold
+ * lifecycle — this function only guards the generic real-time-gap case.
+ */
+export function computeFallbackVelocity(
+  prev: FallbackVelocitySample | null,
+  raw: { x: number; z: number },
+  nowMs: number,
+): FallbackVelocityResult {
+  if (!prev) {
+    return { vx: 0, vz: 0, speed: 0 };
+  }
+  const realGapS = (nowMs - prev.atMs) / 1000;
+  if (realGapS > FALLBACK_VELOCITY_MAX_GAP_S) {
+    return { vx: 0, vz: 0, speed: 0 };
+  }
+  const dt = Math.max(realGapS, FALLBACK_VELOCITY_MIN_DT_S);
+  const vx = (raw.x - prev.x) / dt;
+  const vz = (raw.z - prev.z) / dt;
+  return { vx, vz, speed: Math.hypot(vx, vz) };
+}

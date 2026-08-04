@@ -1,7 +1,8 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useRef, useMemo, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { RadialTarget } from "@shared/schema";
+import { dampAngle, DECAY_RATES } from "@/lib/smooth-follow";
 
 // ═══════════════════════════════════════════════════════════════════
 //  DirectionalNode — glowing sphere + heading arrow + fading trail
@@ -9,6 +10,10 @@ import type { RadialTarget } from "@shared/schema";
 
 interface DirectionalNodeProps {
     target: RadialTarget;
+    /** Shared, already-damped position (RadialScene owns the damping/snap decision). */
+    positionRef: MutableRefObject<THREE.Vector3>;
+    /** Shared, already-damped speed, used in place of raw target.speed for visual scale. */
+    speedRef: MutableRefObject<number>;
 }
 
 // Max trail length
@@ -28,20 +33,18 @@ function getNearNodeStrength(balance?: number): number {
  * trail draws the last 60 positions fading from old to new. Color also
  * flips cyan (#00e5ff) when moving vs darker teal (#0097a7) when still.
  */
-export function DirectionalNode({ target }: DirectionalNodeProps) {
+export function DirectionalNode({ target, positionRef, speedRef }: DirectionalNodeProps) {
     const groupRef = useRef<THREE.Group>(null);
     const arrowRef = useRef<THREE.Group>(null);
     const glowRef = useRef<THREE.Mesh>(null);
     const trailRef = useRef<THREE.LineSegments>(null);
 
-    // Smooth tracking
-    const targetPos = useRef(new THREE.Vector3(target.x, 0.3, target.z));
     const currentAngle = useRef(target.angle);
 
     // Trail history
     const trailPositions = useRef<THREE.Vector3[]>([]);
     const trailGeometry = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry());
-    const lastTrailPoint = useRef<THREE.Vector3>(new THREE.Vector3(target.x, 0.3, target.z));
+    const lastTrailPoint = useRef<THREE.Vector3>(positionRef.current.clone());
 
     // Pre-allocate trail buffer
     const trailBuffer = useMemo(() => {
@@ -56,61 +59,38 @@ export function DirectionalNode({ target }: DirectionalNodeProps) {
     const ringInner = 0.36 + target.confidence * 0.18 + nearNodeStrength * 0.05;
     const ringOuter = 0.43 + target.confidence * 0.18 + nearNodeStrength * 0.08;
 
-    useEffect(() => {
-        targetPos.current.set(target.x, 0.3, target.z);
-
-        if (!groupRef.current) {
-            return;
-        }
-
-        const current = groupRef.current.position;
-        const next = targetPos.current;
-        const jumpDistance = current.distanceTo(next);
-
-        // Snap large jumps immediately so the live marker cannot feel stuck
-        // after reconnects or mode transitions.
-        if (jumpDistance > 0.3 || trailPositions.current.length === 0) {
-            current.copy(next);
-            lastTrailPoint.current.copy(next);
-            trailPositions.current = [next.clone()];
-        }
-    }, [target.x, target.z]);
-
-    useFrame((state) => {
+    useFrame((state, delta) => {
         if (!groupRef.current) return;
 
         const t = state.clock.elapsedTime;
 
-        // ── Smooth position lerp ──
-        // Adaptive follow rate: chase hard when far behind or the target is
-        // fast; settle gently when nearly on top of it so the dot doesn't
-        // jitter with per-frame balance noise.
-        targetPos.current.set(target.x, 0.3, target.z);
-        const distanceToTarget = groupRef.current.position.distanceTo(targetPos.current);
-        const followAlpha =
-            distanceToTarget > 0.25
-                ? 0.88
-                : target.speed > 0.18
-                    ? 0.8
-                    : isFusedTarget
-                        ? Math.min(0.9, 0.7 + nearNodeStrength * 0.18)
-                        : distanceToTarget > 0.08
-                            ? 0.6
-                            : 0.34;
-        groupRef.current.position.lerp(targetPos.current, followAlpha);
+        // ── Position: directly from the shared, already-damped/snapped
+        // value RadialScene computes once per frame (Area 2/NEW-3). Detect
+        // the jump here (rather than lerping) purely to know when to reset
+        // the trail — the position itself is never locally smoothed.
+        const incoming = positionRef.current;
+        const jumpDistance = groupRef.current.position.distanceTo(incoming);
+        groupRef.current.position.copy(incoming);
+        if (jumpDistance > 0.3 || trailPositions.current.length === 0) {
+            lastTrailPoint.current.copy(incoming);
+            trailPositions.current = [incoming.clone()];
+        }
 
         // ── Smooth heading rotation ──
-        const angleDiff = target.angle - currentAngle.current;
-        const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        currentAngle.current += wrapped * (isFusedTarget ? 0.22 : 0.12);
+        currentAngle.current = dampAngle(
+            currentAngle.current,
+            target.angle,
+            isFusedTarget ? DECAY_RATES.headingArrowFused : DECAY_RATES.headingArrowSingle,
+            delta,
+        );
 
         // Rotate arrow to point in direction of travel
         if (arrowRef.current) {
             arrowRef.current.rotation.y = -currentAngle.current + Math.PI / 2;
 
-            // Scale arrow by speed (min 0.3, max 1.5)
+            // Scale arrow by (smoothed) speed (min 0.3, max 1.5)
             const arrowScale = target.isMoving
-                ? Math.min(1.9, 0.38 + target.speed * 2.7 + nearNodeStrength * 0.28)
+                ? Math.min(1.9, 0.38 + speedRef.current * 2.7 + nearNodeStrength * 0.28)
                 : 0.34 + nearNodeStrength * 0.16;
             arrowRef.current.scale.setScalar(arrowScale);
         }

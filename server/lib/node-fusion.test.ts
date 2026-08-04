@@ -6,7 +6,9 @@ import {
   computeLinearBalance,
   computeNodeMotionFromMatrix,
   computeNodeTrends,
+  computeFallbackVelocity,
   MOTION_SATURATION_SCALE,
+  FALLBACK_VELOCITY_MAX_GAP_S,
   type NodeTrend,
 } from "./node-fusion";
 
@@ -261,4 +263,72 @@ test("balanceLinear is 0.5 at the midpoint", () => {
   const t = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING });
   assert.ok(t);
   assert.ok(Math.abs(t!.balanceLinear - 0.5) < 1e-9);
+});
+
+// ── computeFallbackVelocity (Area 5/NEW-1) — contract tests, not accuracy tests ──
+
+test("computeFallbackVelocity returns zero with no previous sample (first tick, never a spike)", () => {
+  const r = computeFallbackVelocity(null, { x: 5, z: 5 }, 1000);
+  assert.equal(r.vx, 0);
+  assert.equal(r.vz, 0);
+  assert.equal(r.speed, 0);
+});
+
+test("computeFallbackVelocity is linear in displacement for a fixed dt (no hidden multiplier)", () => {
+  const prev = { x: 0, z: 0, atMs: 1000 };
+  const dtMs = 50;
+  const a = computeFallbackVelocity(prev, { x: 0.1, z: 0 }, 1000 + dtMs);
+  const b = computeFallbackVelocity(prev, { x: 0.2, z: 0 }, 1000 + dtMs);
+  // Doubling displacement over the same dt must exactly double velocity —
+  // this fails against any position-dependent multiplier (e.g. the 1.35x
+  // endpoint boost that must NEVER leak into this unrelated fallback path).
+  assert.ok(Math.abs(b.vx - 2 * a.vx) < 1e-9, `a.vx=${a.vx} b.vx=${b.vx}`);
+});
+
+test("computeFallbackVelocity does not hardcode a 50ms tick — the same displacement over a longer real dt yields a smaller velocity", () => {
+  const prev = { x: 0, z: 0, atMs: 1000 };
+  const fast = computeFallbackVelocity(prev, { x: 0.1, z: 0 }, 1000 + 50); // 50ms
+  const slow = computeFallbackVelocity(prev, { x: 0.1, z: 0 }, 1000 + 200); // 200ms
+  assert.ok(slow.vx < fast.vx, `fast.vx=${fast.vx} slow.vx=${slow.vx}`);
+  // The old bug (targetVx = dx * 20) is exactly "assume dt=50ms always" —
+  // confirm the 50ms case matches dx/dt algebra, not a fixed dx*20 constant.
+  assert.ok(Math.abs(fast.vx - 0.1 / 0.05) < 1e-9, `fast.vx=${fast.vx}`);
+});
+
+test("computeFallbackVelocity floors dt so a near-zero interval cannot blow up velocity", () => {
+  const prev = { x: 0, z: 0, atMs: 1000 };
+  const r = computeFallbackVelocity(prev, { x: 0.05, z: 0 }, 1000 + 1); // 1ms real gap
+  assert.ok(Number.isFinite(r.vx));
+  // Floored to FALLBACK_VELOCITY_MIN_DT_S (0.02s), not the true 0.001s gap.
+  assert.ok(Math.abs(r.vx - 0.05 / 0.02) < 1e-6, `vx=${r.vx}`);
+});
+
+test("computeFallbackVelocity yields zero (never a spike) across a gap beyond the max threshold", () => {
+  const prev = { x: 0, z: 0, atMs: 1000 };
+  const gapMs = (FALLBACK_VELOCITY_MAX_GAP_S + 0.1) * 1000;
+  // A 1.6m displacement across a 2s gap would be 0.8 m/s if naively diffed —
+  // this must report zero instead, matching NEW-1's corrected-fix rationale.
+  const r = computeFallbackVelocity(prev, { x: 1.6, z: 0 }, 1000 + gapMs);
+  assert.equal(r.vx, 0);
+  assert.equal(r.vz, 0);
+  assert.equal(r.speed, 0);
+});
+
+test("computeFallbackVelocity: invalidating prev (null) after a primary-tracker hit yields zero on the next fallback tick, not a diff across the skipped interval", () => {
+  // Simulates: a fallback sample at t=1000 (seeds prev), then a primary-hit
+  // tick 100ms later — WITHIN the max-gap window, so without invalidation
+  // the fallback path would happily diff across it and report real motion.
+  // Per NEW-1's 5th reset condition, a primary-tracker success must
+  // invalidate prev (pass null) so the *next* primary-miss tick starts fresh.
+  const seeded = { x: 0, z: 0, atMs: 1000 };
+  const shortGapMs = 100;
+  const raw = { x: 3, z: 0 };
+
+  const withoutInvalidation = computeFallbackVelocity(seeded, raw, 1000 + shortGapMs);
+  assert.ok(withoutInvalidation.speed > 1, `expected a real spike without invalidation, got ${withoutInvalidation.speed}`);
+
+  const afterPrimaryHitInvalidation: typeof seeded | null = null; // caller invalidated on the primary-hit tick
+  const withInvalidation = computeFallbackVelocity(afterPrimaryHitInvalidation, raw, 1000 + shortGapMs);
+  assert.equal(withInvalidation.vx, 0, "must not diff the 3m displacement across the primary-tracked gap");
+  assert.equal(withInvalidation.speed, 0);
 });
