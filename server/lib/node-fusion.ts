@@ -350,3 +350,26 @@ export function computeFallbackVelocity(
   const vz = (raw.z - prev.z) / dt;
   return { vx, vz, speed: Math.hypot(vx, vz) };
 }
+
+// ── Single-node presence gate (ADR-057) ────────────────────────────────────
+
+/**
+ * Whether single-node mode has ANY real evidence a target is present this
+ * tick, before broadcasting a fresh `radialTarget`. Unlike `fuseTwoNodeTarget`
+ * (which already gates on `present = max(motion1,motion2) >= threshold`),
+ * single-node mode had no equivalent check at all — the MUSIC-spectrum point
+ * cloud and DBSCAN/Kalman tracker can both cluster ambient noise/multipath
+ * with nobody in the room, and that noise-derived target was broadcast
+ * unconditionally every tick.
+ *
+ * Uses `motionDetected OR a confident tracked cluster` (not motion alone) so
+ * a real-but-stationary person — who may not trip the temporal motion gate,
+ * but can still form a spatial DBSCAN cluster — is not treated as absent.
+ * This does not fully solve detecting a perfectly still person via spatial
+ * clustering alone (that needs a calibrated absolute noise floor, unverified
+ * on real hardware); it solves the reported bug (continuous ghost target
+ * with nobody present) by requiring at least one real evidence signal.
+ */
+export function hasSingleNodePresenceEvidence(motionDetected: boolean, hasTrackedTarget: boolean): boolean {
+  return motionDetected || hasTrackedTarget;
+}

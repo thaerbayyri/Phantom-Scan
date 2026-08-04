@@ -36,6 +36,7 @@ import {
   computeNodeTrends,
   computeFallbackVelocity,
   computeGainNormalizedPerturbation,
+  hasSingleNodePresenceEvidence,
   DEFAULT_MOTION_THRESHOLD,
   type FusedTarget,
   type NodeTrend,
@@ -1054,6 +1055,24 @@ export class SignalProcessingServer {
           staleHold: "fused_below_motion_threshold_stale_hold",
           cleared: "fused_below_motion_threshold_cleared",
           empty: "fused_below_motion_threshold",
+        });
+      } else if (
+        nodeMode === "single_node" &&
+        !hasSingleNodePresenceEvidence(motionResult.motionDetected, Boolean(trackedTarget))
+      ) {
+        // ADR-057: single-node mode previously had NO presence gate at all —
+        // the MUSIC-spectrum point cloud and DBSCAN/Kalman tracker can both
+        // cluster ambient noise/multipath with nobody in the room, and that
+        // noise-derived radialTarget was broadcast unconditionally every
+        // tick (a continuous ghost target in an empty room). Route through
+        // the same hold/stale/clear lifecycle as the fused path above so a
+        // real-but-momentarily-undetected target isn't instantly wiped —
+        // only a sustained absence of any real evidence empties the room.
+        this.holdOrClearTarget({
+          hold: "single_node_no_detection_hold",
+          staleHold: "single_node_no_detection_stale_hold",
+          cleared: "single_node_no_detection_cleared",
+          empty: "single_node_no_detection",
         });
       } else {
         this.currentRadialTarget = radialTarget;

@@ -8,6 +8,7 @@ import {
   computeNodeTrends,
   computeFallbackVelocity,
   computeGainNormalizedPerturbation,
+  hasSingleNodePresenceEvidence,
   MOTION_SATURATION_SCALE,
   FALLBACK_VELOCITY_MAX_GAP_S,
   type NodeTrend,
@@ -421,4 +422,22 @@ test("a COMMON gain applied equally to both nodes leaves balance unchanged (the 
     Math.abs(balanceAt1x - balanceAtCommonGain) < 1e-9,
     `balanceAt1x=${balanceAt1x} balanceAtCommonGain=${balanceAtCommonGain}`,
   );
+});
+
+// ── hasSingleNodePresenceEvidence (ADR-057, empty-room ghost target) ──────────
+
+test("hasSingleNodePresenceEvidence: no motion and no tracked cluster => no presence (empty room)", () => {
+  assert.equal(hasSingleNodePresenceEvidence(false, false), false);
+});
+
+test("hasSingleNodePresenceEvidence: real motion alone is sufficient evidence", () => {
+  assert.equal(hasSingleNodePresenceEvidence(true, false), true);
+});
+
+test("hasSingleNodePresenceEvidence: a tracked cluster alone is sufficient evidence (covers a real-but-stationary target)", () => {
+  assert.equal(hasSingleNodePresenceEvidence(false, true), true);
+});
+
+test("hasSingleNodePresenceEvidence: both signals present is still presence", () => {
+  assert.equal(hasSingleNodePresenceEvidence(true, true), true);
 });
