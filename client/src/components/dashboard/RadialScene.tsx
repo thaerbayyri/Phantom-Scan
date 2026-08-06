@@ -6,9 +6,32 @@ import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState, SensorNode 
 import { summarizeTargetSpatial } from "@shared/target-spatial";
 import { canPresentAxisMotionVector } from "@shared/target-presentation";
 import { headingVectorFromAngle } from "@shared/bearing";
+import { dampVector3, dampScalar, DECAY_RATES } from "@/lib/smooth-follow";
 import { DirectionalNode } from "./DirectionalNode";
 import { HumanMesh } from "./HumanMesh";
 import { MachineStatic } from "./MachineStatic";
+
+/** 0 at the axis midpoint → 1 at a node; drives the position-decay-tier pick below. */
+function getNearNodeStrength(balance?: number): number {
+    if (balance === undefined) return 0;
+    return Math.min(1, Math.abs(balance - 0.5) * 2);
+}
+
+/** Frame-rate-independent decay rate for the shared target position, per Area 1/2. */
+function positionDecayRate(
+    distanceToRaw: number,
+    speed: number,
+    isFusedTarget: boolean,
+    nearNodeStrength: number,
+): number {
+    if (distanceToRaw > 0.25) return DECAY_RATES.positionFar;
+    if (speed > 0.18) return DECAY_RATES.positionFast;
+    if (isFusedTarget) {
+        return DECAY_RATES.positionFusedBase + nearNodeStrength * DECAY_RATES.positionFusedNearScale;
+    }
+    if (distanceToRaw > 0.08) return DECAY_RATES.positionNear;
+    return DECAY_RATES.positionSettle;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  Polar Grid — concentric rings + radial spokes
@@ -414,6 +437,42 @@ export function RadialScene({
         targetState.state !== "none" &&
         targetState.state !== "stale"
     );
+
+    // Shared position/speed state for DirectionalNode + HumanMesh (Area 2/3):
+    // one damped position and one damped speed, computed once per frame here
+    // and copied down so the dot and body never diverge against the same
+    // radialTarget.x/z. The snap decision (large jump, reacquisition, mode
+    // flip) also lives here so it fires exactly once instead of being
+    // duplicated (and desynced) across both children.
+    const smoothedPosition = useRef(new THREE.Vector3(radialTarget?.x ?? 0, 0.3, radialTarget?.z ?? 0));
+    const smoothedSpeed = useRef(radialTarget?.speed ?? 0);
+    const rawTargetVecScratch = useRef(new THREE.Vector3());
+    const prevCanRenderTarget = useRef(canRenderTarget);
+    const prevNodeMode = useRef(targetState?.node_mode);
+
+    useFrame((_state, delta) => {
+        if (!radialTarget) return;
+
+        const reacquired = canRenderTarget && !prevCanRenderTarget.current;
+        const modeFlipped = targetState?.node_mode !== prevNodeMode.current;
+        prevCanRenderTarget.current = canRenderTarget;
+        prevNodeMode.current = targetState?.node_mode;
+
+        const rawTargetVec = rawTargetVecScratch.current.set(radialTarget.x, 0.3, radialTarget.z);
+        const distanceToRaw = smoothedPosition.current.distanceTo(rawTargetVec);
+
+        if (reacquired || modeFlipped || distanceToRaw > 0.3) {
+            smoothedPosition.current.copy(rawTargetVec);
+            smoothedSpeed.current = 0;
+            return;
+        }
+
+        const isFusedTarget = radialTarget.balance !== undefined;
+        const nearNodeStrength = getNearNodeStrength(radialTarget.balance);
+        const decayRate = positionDecayRate(distanceToRaw, radialTarget.speed, isFusedTarget, nearNodeStrength);
+        dampVector3(smoothedPosition.current, rawTargetVec, decayRate, delta);
+        smoothedSpeed.current = dampScalar(smoothedSpeed.current, radialTarget.speed, DECAY_RATES.speed, delta);
+    });
     // Human skeleton overlay: rendered when the target is presentable AND the
     // micro-Doppler classifier commits to "human" (label requires humanProb
     // > 0.65; the JSX below applies the label check). Uses the AI poseFrame
@@ -491,11 +550,20 @@ export function RadialScene({
                 <>
                     {/* Always keep the live target anchor visible in the radar,
                         even when a richer human/mechanical overlay is rendered. */}
-                    <DirectionalNode target={fusedArrowTarget ?? radialTarget} />
+                    <DirectionalNode
+                        target={fusedArrowTarget ?? radialTarget}
+                        positionRef={smoothedPosition}
+                        speedRef={smoothedSpeed}
+                    />
                     {label === "mechanical" && canRenderVolumetricOverlay ? (
                         <MachineStatic target={radialTarget} />
                     ) : label === "human" && canRenderConfidentHuman ? (
-                        <HumanMesh target={radialTarget} poseFrame={poseFrame} />
+                        <HumanMesh
+                            target={radialTarget}
+                            poseFrame={poseFrame}
+                            positionRef={smoothedPosition}
+                            speedRef={smoothedSpeed}
+                        />
                     ) : null}
                     {showAxisMotionVector && (
                         <TargetMotionVector target={fusedArrowTarget ?? radialTarget} />

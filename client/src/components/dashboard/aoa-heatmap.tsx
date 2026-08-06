@@ -9,10 +9,9 @@ interface AoAHeatmapProps {
   className?: string;
 }
 
-// Teal ramp (matches --chart-2) — the low end is a dark, visible teal rather
-// than pure black, so a real low-amplitude reading (e.g. a null/guard
-// subcarrier) reads as "low signal" instead of looking like a rendering gap
-// against the transparent dark background.
+// Teal ramp (matches --chart-2). Known-null subcarrier columns are masked
+// out below rather than colored, so the dark end of this ramp is reached
+// only by genuinely weak (but real) readings.
 const SUBCARRIER_COLORSCALE: Array<[number, string]> = [
   [0, "hsl(220, 20%, 14%)"],
   [0.25, "hsl(195, 55%, 22%)"],
@@ -21,12 +20,80 @@ const SUBCARRIER_COLORSCALE: Array<[number, string]> = [
   [1, "hsl(170, 85%, 82%)"],
 ];
 
-// Physical bounds of the dB scale: amplitude = |int8 + i*int8|, so
-// 0 <= amplitude <= sqrt(127^2 + 127^2) => -60 dB floor (clamp in the
-// accumulator) to ~45 dB ceiling. Fixed (not per-frame auto-ranged) so the
-// same physical signal always renders the same color.
-const SUBCARRIER_ZMIN = -60;
-const SUBCARRIER_ZMAX = 45;
+// The theoretical dB bounds (amplitude = |int8 + i*int8|, so 0 <= amplitude
+// <= sqrt(127^2 + 127^2) => -60..45 dB) are almost never reached by real
+// hardware: this rig's actual per-subcarrier amplitudes cluster around
+// 13-15 dB with only ~2 dB of frame-to-frame spread. A fixed -60..45 scale
+// crushes that entire real signal into ~2% of the color range, so every
+// non-null subcarrier renders as the same flat color. Auto-ranging to the
+// live buffer's 5th/95th percentile keeps the actual signal visible
+// regardless of hardware gain, at the cost of "same absolute dB = same
+// color" consistency across sessions.
+const AUTO_RANGE_MIN_SPREAD_DB = 6;
+
+// ESP-IDF's raw HT20 CSI buffer includes 12 null/guard subcarriers (DC +
+// band edges) that report near-zero I/Q — the firmware forwards that buffer
+// byte-for-byte (csi_collector.c) with no filtering, and the accumulator
+// clamps near-zero amplitude toward a -60 dB floor. These columns aren't a
+// low-but-real reading, they're the same dead subcarrier index every frame.
+// Rendering them as "signal" paints a permanent dark stripe that looks like
+// a rendering glitch.
+//
+// Detection is relative, not an exact -60 dB pin: a genuine null bin can
+// still pick up a little leakage/noise some frames (never exactly 0), so
+// requiring every row to hit the floor exactly is fragile — one noisy frame
+// un-flags the column and the stripe comes back. Instead, compare each
+// column's median level against the median of all columns: real subcarriers
+// here vary within ~2 dB of each other, so anything sitting far below that
+// baseline is a dead bin, not weak signal.
+const NULL_SUBCARRIER_DB_BELOW_MEDIAN = 15;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+function maskNullSubcarrierColumns(intensities: number[][]): (number | null)[][] {
+  if (intensities.length === 0 || intensities[0].length === 0) {
+    return intensities;
+  }
+  const numCols = intensities[0].length;
+  const columnMedians = Array.from({ length: numCols }, (_, c) =>
+    median(intensities.map((row) => row[c])),
+  );
+  const baseline = median(columnMedians);
+  const isNullColumn = columnMedians.map(
+    (m) => m < baseline - NULL_SUBCARRIER_DB_BELOW_MEDIAN,
+  );
+  return intensities.map((row) =>
+    row.map((v, c) => (isNullColumn[c] ? null : v)),
+  );
+}
+
+function autoRangeZ(intensities: (number | null)[][]): { zmin: number; zmax: number } {
+  const flat: number[] = [];
+  for (const row of intensities) {
+    for (const v of row) {
+      if (typeof v === "number" && Number.isFinite(v)) flat.push(v);
+    }
+  }
+  if (flat.length === 0) {
+    return { zmin: -60, zmax: 45 };
+  }
+  flat.sort((a, b) => a - b);
+  const p = (q: number) => flat[Math.min(flat.length - 1, Math.floor(q * flat.length))];
+  let zmin = p(0.05);
+  let zmax = p(0.95);
+  if (zmax - zmin < AUTO_RANGE_MIN_SPREAD_DB) {
+    const mid = (zmin + zmax) / 2;
+    zmin = mid - AUTO_RANGE_MIN_SPREAD_DB / 2;
+    zmax = mid + AUTO_RANGE_MIN_SPREAD_DB / 2;
+  }
+  return { zmin, zmax };
+}
 
 /**
  * Time × subcarrier amplitude waterfall (dB) from the raw CSI stream — human
@@ -43,6 +110,16 @@ export function AoAHeatmap({ data, className = "" }: AoAHeatmapProps) {
     }
     return data;
   }, [data]);
+
+  const maskedIntensities = useMemo(
+    () => maskNullSubcarrierColumns(plotData?.intensities ?? []),
+    [plotData],
+  );
+
+  const zRange = useMemo(
+    () => autoRangeZ(maskedIntensities),
+    [maskedIntensities],
+  );
 
   if (!plotData) {
     return (
@@ -73,10 +150,10 @@ export function AoAHeatmap({ data, className = "" }: AoAHeatmapProps) {
               type: "heatmap",
               x: plotData.angles,
               y: plotData.times,
-              z: plotData.intensities,
+              z: maskedIntensities,
               colorscale: SUBCARRIER_COLORSCALE,
-              zmin: SUBCARRIER_ZMIN,
-              zmax: SUBCARRIER_ZMAX,
+              zmin: zRange.zmin,
+              zmax: zRange.zmax,
               hovertemplate:
                 "Subcarrier: %{x}<br>Time: %{y:.2f}s<br>Amplitude: %{z:.2f} dB<extra></extra>",
               showscale: false,

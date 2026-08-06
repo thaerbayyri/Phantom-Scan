@@ -34,6 +34,9 @@ import {
   fuseTwoNodeTarget,
   computeNodeMotionFromMatrix,
   computeNodeTrends,
+  computeFallbackVelocity,
+  computeGainNormalizedPerturbation,
+  hasSingleNodePresenceEvidence,
   DEFAULT_MOTION_THRESHOLD,
   type FusedTarget,
   type NodeTrend,
@@ -197,9 +200,16 @@ export class SignalProcessingServer {
   private lastTruthfulTargetUpdateMs = 0;
 
   // Radial tracking state
-  private prevRadialX = 2;
-  private prevRadialZ = 0;
   private radialAngle = 0;
+
+  // Fallback (non-Kalman, non-fused) velocity state — Area 5/NEW-1. Separate
+  // from prevRadialX/Z above (which track the final resolved position across
+  // all modes for angle continuity) so a primary-tracker hit or a mode/gap
+  // discontinuity can invalidate just this path without disturbing the other.
+  private fallbackVelPrevX: number | null = null;
+  private fallbackVelPrevZ: number | null = null;
+  private fallbackVelPrevMs = 0;
+  private prevNodeModeForFallback: TargetState["node_mode"] | null = null;
 
   // ── Session report accumulation ──
   private reportStartTime = 0;
@@ -917,6 +927,15 @@ export class SignalProcessingServer {
       let targetVz = 0;
       let speed = 0;
 
+      // Computed early (moved up from below the fallback block) so the
+      // fallback path can detect a fused_two_node <-> single_node flip
+      // before deciding whether to trust its own dt-tracking state.
+      const nodeMode = this.resolveLiveNodeMode();
+      if (this.prevNodeModeForFallback !== null && this.prevNodeModeForFallback !== nodeMode) {
+        this.invalidateFallbackVelocity();
+      }
+      this.prevNodeModeForFallback = nodeMode;
+
       if (trackedTarget) {
         // Use smooth coordinates and bounded velocity from Kalman Filter
         radX = trackedTarget.x;
@@ -924,20 +943,35 @@ export class SignalProcessingServer {
         targetVx = trackedTarget.vx;
         targetVz = trackedTarget.vz;
         speed = Math.sqrt(targetVx * targetVx + targetVz * targetVz);
+        // Primary tracker succeeded this tick — the fallback path below can
+        // be skipped for many ticks with none of the other reset conditions
+        // firing, so invalidate now: a later primary-miss must never diff
+        // against a stale sample from before this gap (NEW-1, 5th condition).
+        this.invalidateFallbackVelocity();
       } else {
-        // Fallback to instantaneous noisy physics
-        const dx = rawRadX - this.prevRadialX;
-        const dz = rawRadZ - this.prevRadialZ;
-        targetVx = dx * 20;
-        targetVz = dz * 20;
-        speed = Math.sqrt(targetVx * targetVx + targetVz * targetVz);
+        // Fallback: instantaneous physics from the raw (non-Kalman) position.
+        // computeFallbackVelocity is pure/unit-tested (node-fusion.test.ts);
+        // this class only owns the prev-sample state and the invalidation
+        // triggers (mode flip above, primary-tracker success above, and the
+        // 5s hard-clear/1.5s stale-hold lifecycle via clearTargetArtifacts).
+        const nowFallbackMs = Date.now();
+        const prevSample =
+          this.fallbackVelPrevX === null || this.fallbackVelPrevZ === null
+            ? null
+            : { x: this.fallbackVelPrevX, z: this.fallbackVelPrevZ, atMs: this.fallbackVelPrevMs };
+        const result = computeFallbackVelocity(prevSample, { x: rawRadX, z: rawRadZ }, nowFallbackMs);
+        targetVx = result.vx;
+        targetVz = result.vz;
+        speed = result.speed;
+        this.fallbackVelPrevX = rawRadX;
+        this.fallbackVelPrevZ = rawRadZ;
+        this.fallbackVelPrevMs = nowFallbackMs;
       }
 
       // ── 9b. Two-node fusion (Phantom Balance Fusion) — replaces the single-node guess ──
       // In fused_two_node mode the target is placed on the N1–N2 line by the
       // cross-node motion ratio. `r`/`theta` become display-only; `distanceCm`
       // stays physically meaningful (range to the nearest node).
-      const nodeMode = this.resolveLiveNodeMode();
       const fused = nodeMode === "fused_two_node" ? this.computeFusedTarget() : null;
       let fusedBalance: number | undefined;
       let fusedBalanceLinear: number | undefined;
@@ -981,9 +1015,6 @@ export class SignalProcessingServer {
         this.radialAngle += wrapped * 0.3;
       }
 
-      this.prevRadialX = radX;
-      this.prevRadialZ = radZ;
-
       // Broadcast target identity
       this.currentTargetIdentity = classification;
       this.broadcast("targetIdentity", classification);
@@ -1024,6 +1055,24 @@ export class SignalProcessingServer {
           staleHold: "fused_below_motion_threshold_stale_hold",
           cleared: "fused_below_motion_threshold_cleared",
           empty: "fused_below_motion_threshold",
+        });
+      } else if (
+        nodeMode === "single_node" &&
+        !hasSingleNodePresenceEvidence(motionResult.motionDetected, Boolean(trackedTarget))
+      ) {
+        // ADR-057: single-node mode previously had NO presence gate at all —
+        // the MUSIC-spectrum point cloud and DBSCAN/Kalman tracker can both
+        // cluster ambient noise/multipath with nobody in the room, and that
+        // noise-derived radialTarget was broadcast unconditionally every
+        // tick (a continuous ghost target in an empty room). Route through
+        // the same hold/stale/clear lifecycle as the fused path above so a
+        // real-but-momentarily-undetected target isn't instantly wiped —
+        // only a sustained absence of any real evidence empties the room.
+        this.holdOrClearTarget({
+          hold: "single_node_no_detection_hold",
+          staleHold: "single_node_no_detection_stale_hold",
+          cleared: "single_node_no_detection_cleared",
+          empty: "single_node_no_detection",
         });
       } else {
         this.currentRadialTarget = radialTarget;
@@ -1360,6 +1409,7 @@ export class SignalProcessingServer {
    */
   private clearTargetArtifacts(reason: string) {
     this.clearFusedSnapshot();
+    this.invalidateFallbackVelocity();
     this.pointCloudHistory = [];
     this.currentTrackedTarget = null;
     this.currentRadialTarget = null;
@@ -1447,8 +1497,12 @@ export class SignalProcessingServer {
     const m1 = this.nodeMotionFor(1);
     const m2 = this.nodeMotionFor(2);
     const fused = fuseTwoNodeTarget({
-      r1: m1.absStd,
-      r2: m2.absStd,
+      // Gain-normalized (per-node absStd/mean), not raw absStd — PS-BEHTEST-004:
+      // raw absStd scales linearly with any per-node gain/RSSI mismatch, which
+      // biased balance toward whichever board had higher effective gain. See
+      // ADR-056.
+      r1: computeGainNormalizedPerturbation(m1.absStd, m1.mean),
+      r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
       motion1: m1.motion,
       motion2: m2.motion,
       anchors: { 1: NODE_ANCHORS[1], 2: NODE_ANCHORS[2] },
@@ -1495,6 +1549,17 @@ export class SignalProcessingServer {
     this.fusedSnapshot = null;
     this.prevFusedX = null;
     this.prevFusedMs = 0;
+  }
+
+  /**
+   * Reset Area 5's fallback-velocity dt tracking so the next fallback sample
+   * starts fresh (velMps=0, then re-seed) instead of diffing its position
+   * against a stale previous sample across a gap it never witnessed.
+   */
+  private invalidateFallbackVelocity(): void {
+    this.fallbackVelPrevX = null;
+    this.fallbackVelPrevZ = null;
+    this.fallbackVelPrevMs = 0;
   }
 
   private buildSensorNodes(): SensorNode[] {

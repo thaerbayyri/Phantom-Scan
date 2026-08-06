@@ -345,6 +345,7 @@ phantom scan/
 | [ADR-051](docs/adr/ADR-051-runtime-authority.md) | Why the Node/TS server, not Python, owns live runtime |
 | [ADR-054](docs/adr/ADR-054-fusion-display-vs-authoritative-balance.md) | Why `balance` (display) and `balanceLinear` (authoritative) intentionally differ |
 | [RUN.md](RUN.md) | Canonical start sequence and port map |
+| [docs/research/csi-phase-in-wifi-sensing.md](docs/research/csi-phase-in-wifi-sensing.md) | How CSI phase is used for AoA, ranging, and vital signs, and why raw phase needs SFO/PDD sanitization first |
 | [BOOTSTRAP.md](BOOTSTRAP.md) | One-page command cheat sheet |
 | [SETUP_AUDIT.md](SETUP_AUDIT.md) / [AUDIT.md](AUDIT.md) | Setup and repository disposition audits |
 

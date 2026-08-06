@@ -1,11 +1,12 @@
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { RadialTarget, PoseFrame } from "@shared/schema";
+import { dampAngle, DECAY_RATES } from "@/lib/smooth-follow";
 
 // ═══════════════════════════════════════════════════════════════════
 //  HumanMesh — DensePose-inspired wireframe figure
-//  Supports dual-mode rendering: 
+//  Supports dual-mode rendering:
 //  1. Real-time AI reconstructed skeleton when poseFrame is present
 //  2. Procedural animation driven by speed/breathing otherwise
 // ═══════════════════════════════════════════════════════════════════
@@ -13,6 +14,10 @@ import type { RadialTarget, PoseFrame } from "@shared/schema";
 interface HumanMeshProps {
     target: RadialTarget;
     poseFrame?: PoseFrame | null;
+    /** Shared, already-damped position (RadialScene owns the damping/snap decision). */
+    positionRef: MutableRefObject<THREE.Vector3>;
+    /** Shared, already-damped speed, used in place of raw target.speed for the walk cycle. */
+    speedRef: MutableRefObject<number>;
 }
 
 function getNearNodeStrength(balance?: number): number {
@@ -67,7 +72,7 @@ const BONE_CONNECTIONS = [
     ["right_hip", "right_knee"], ["right_knee", "right_ankle"]
 ];
 
-export function HumanMesh({ target, poseFrame }: HumanMeshProps) {
+export function HumanMesh({ target, poseFrame, positionRef, speedRef }: HumanMeshProps) {
     const groupRef = useRef<THREE.Group>(null);
     const bodyRef = useRef<THREE.Group>(null);
     const leftLegRef = useRef<THREE.Group>(null);
@@ -76,44 +81,36 @@ export function HumanMesh({ target, poseFrame }: HumanMeshProps) {
     const rightArmRef = useRef<THREE.Group>(null);
     const headGlowRef = useRef<THREE.Mesh>(null);
 
-    const targetPos = useRef(new THREE.Vector3(target.x, 0, target.z));
     const currentAngle = useRef(target.angle);
     const nearNodeStrength = getNearNodeStrength(target.balance);
     const isFusedTarget = target.balance !== undefined;
 
-    useFrame((state) => {
+    useFrame((state, delta) => {
         // Skip procedural updates if we are in AI Pose mode
         if (poseFrame && poseFrame.keypoints && poseFrame.keypoints.length > 0) return;
-        
+
         if (!groupRef.current) return;
         const t = state.clock.elapsedTime;
 
-        // Smooth position
-        targetPos.current.set(target.x, 0, target.z);
-        const distanceToTarget = groupRef.current.position.distanceTo(targetPos.current);
-        if (distanceToTarget > 0.35) {
-            groupRef.current.position.copy(targetPos.current);
-        } else {
-            const followAlpha =
-                target.speed > 0.16
-                    ? 0.42
-                    : isFusedTarget
-                        ? 0.28 + nearNodeStrength * 0.12
-                        : 0.16;
-            groupRef.current.position.lerp(targetPos.current, followAlpha);
-        }
+        // Position comes directly from the shared, already-damped/snapped
+        // value RadialScene computes once per frame (Area 2/NEW-3) — no
+        // local lerp or snap check here.
+        groupRef.current.position.copy(positionRef.current);
 
         // Smooth heading
-        const angleDiff = target.angle - currentAngle.current;
-        const wrapped = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-        currentAngle.current += wrapped * (isFusedTarget ? 0.2 : 0.12);
+        currentAngle.current = dampAngle(
+            currentAngle.current,
+            target.angle,
+            isFusedTarget ? DECAY_RATES.headingBodyFused : DECAY_RATES.headingBodySingle,
+            delta,
+        );
         if (bodyRef.current) {
             bodyRef.current.rotation.y = -currentAngle.current + Math.PI / 2;
         }
 
         if (target.isMoving && target.speed > 0.02) {
             // Walking animation — swing legs and arms
-            const walkSpeed = Math.min(8, target.speed * 6);
+            const walkSpeed = Math.min(8, speedRef.current * 6);
             const swing = Math.sin(t * walkSpeed) * 0.5;
 
             if (leftLegRef.current) leftLegRef.current.rotation.x = swing;
