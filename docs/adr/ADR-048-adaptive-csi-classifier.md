@@ -2,10 +2,65 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted (original decision) — **§2 classifier superseded, see update below** |
 | Date | 2026-03-05 |
 | Deciders | ruv |
 | Depends on | ADR-024 (AETHER Embeddings), ADR-039 (Edge Processing), ADR-045 (AMOLED Display) |
+
+> **Update (2026-08-06):** The Rust adaptive classifier and its "override classification"
+> behavior described in Decision §2 were never implemented and are superseded by a
+> different, tested, advisory-only architecture. See **"Status Update (2026-08-06):
+> Adaptive Classifier Superseded"** below before relying on §2/§3/§4/Files of this ADR.
+
+## Status Update (2026-08-06): Adaptive Classifier Superseded
+
+**The Rust classifier described in Decision §2 (`adaptive_classifier.rs`) was never
+implemented.** Verified 2026-08-06: no `crates/` directory, no `Cargo.toml`, and no file
+matching `adaptive_classifier.rs` exist anywhere in this repository. More broadly, the
+entire `crates/wifi-densepose-sensing-server` Rust workspace that this ADR's Decision and
+Files sections reference does not exist in the shipped codebase — this ADR predates
+[ADR-051](ADR-051-runtime-authority.md) (2026-07-17), which blessed the Node/TS server
+(`server/`) as the sole Milestone-1 runtime authority; no Rust server implementation is
+part of the shipped architecture.
+
+The system instead implements a different, advisory-only architecture for AI/ML-derived
+classification signals, tagged `F1` / `PS-AUDIT-014` in code:
+
+- AI-sidecar output (`scripts/ai_inference.py`) can only populate `advisoryIdentity` /
+  `advisoryVitalSigns` WebSocket channels — see the guard clause in
+  `server/lib/websocket.ts:366-390` (`case "targetIdentity"` / `case "vitalSigns"`).
+- The authoritative `currentTargetIdentity` / `currentVitalSigns` fields — which drive the
+  sovereign human/non-human verdict — are written **only** by the deterministic
+  micro-Doppler classifier and `VitalsComputer` inside `processFrame()`. No client
+  message, AI or otherwise, can write them.
+- This is the direct opposite of this ADR's §2.4 "Override classification only when
+  adaptive model is loaded" design: no component in the current architecture is permitted
+  to override the deterministic verdict, full stop.
+
+Enforcement is test-backed, not just a code comment:
+- `server/lib/websocket.test.ts:83-100` and `:150-178` — assert an AI client's
+  `targetIdentity`/`vitalSigns` never write the authoritative fields, and that a
+  new-client snapshot always serves the deterministic value, never an injected or
+  AI-advisory one.
+- `tests/test_invariants.py:16-28`
+  (`test_f1_ai_perturbations_do_not_change_deterministic_human_gate`) — asserts the
+  deterministic gate is identity-unchanged under adversarial AI-side perturbation.
+- `tests/test_invariants.py:31-36` — greps `scripts/ai_inference.py` to confirm its
+  authoritative-looking `"label"` field stays `"unknown"` and the model's opinion is only
+  ever exposed as `advisoryLabel`.
+
+**Any future work in this area must preserve the advisory-only (F1) invariant and must
+not reintroduce an override capability.** This is safety-relevant: it is the mechanism
+that prevents a model's opinion from ever becoming the human/non-human verdict used for
+detection decisions. Treat `server/lib/websocket.ts:366-390`,
+`server/lib/websocket.test.ts`, and `tests/test_invariants.py` as the authoritative
+source of truth going forward — not Decision §2/§3/§4 or the Files table below.
+
+The Three-Stage Signal Smoothing Pipeline (§1) and Vital Signs Smoothing (§4) sections of
+this ADR's original Decision are retained below for historical record. They were also
+written against the same non-existent `crates/wifi-densepose-sensing-server` target and
+have not been independently re-verified against the current TS server — treat them as
+unconfirmed against shipped code, not as a description of current behavior.
 
 ## Context
 
