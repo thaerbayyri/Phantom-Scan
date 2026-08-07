@@ -238,6 +238,14 @@ export const radialTargetSchema = z.object({
   // contrast exponent and nearest-node bias. Cross-check value only — never
   // drives x/z placement, which remains driven by `balance` above.
   balanceLinear: z.number().optional(),
+  // Item 1 (PhantomScan_Research_Gap_Analysis.md): whether the deterministic
+  // ACF/DFT MicroDopplerClassifier corroborated, contradicted, or was
+  // inconclusive/not-evaluated for this tick's presence decision. The
+  // classifier only ever SUPPRESSES a presence claim the energy/motion gate
+  // already made — see evaluateClassifierCorroboration in node-fusion.ts.
+  classifierCorroboration: z
+    .enum(["confirmed", "contradicted", "inconclusive", "not_evaluated"])
+    .optional(),
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 

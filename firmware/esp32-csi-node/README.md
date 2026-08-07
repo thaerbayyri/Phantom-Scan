@@ -12,7 +12,7 @@ This firmware captures WiFi Channel State Information (CSI) from an ESP32-S3 and
 
 > | Capability | Method | Performance |
 > |------------|--------|-------------|
-> | **CSI streaming** | Per-subcarrier I/Q capture over UDP | ~20 Hz, ADR-018 binary format |
+> | **CSI streaming** | Per-subcarrier I/Q capture over UDP | ~41-43 pps measured (50 Hz send-rate cap), ADR-018 binary format |
 > | **Breathing detection** | Bandpass 0.1-0.5 Hz, zero-crossing BPM | 6-30 BPM |
 > | **Heart rate** | Bandpass 0.8-2.0 Hz, zero-crossing BPM | 40-120 BPM |
 > | **Presence sensing** | Phase variance + adaptive calibration | < 1 ms latency |
@@ -112,7 +112,7 @@ The firmware implements a tiered processing pipeline. Each tier builds on the pr
 The default, production-stable baseline. Captures CSI frames from the WiFi driver and streams them over UDP in the ADR-018 binary format.
 
 - **Magic:** `0xC5110001`
-- **Rate:** ~20 Hz per channel
+- **Rate:** ~41-43 pps measured per node (50 Hz firmware send-rate cap, not a guaranteed rate)
 - **Payload:** 20-byte header + I/Q pairs (2 bytes per subcarrier per antenna)
 - **Bandwidth:** ~5 KB/s per node (64 subcarriers, 1 antenna)
 
@@ -150,7 +150,7 @@ All packets are sent over UDP to the configured aggregator. The magic number in 
 
 | Magic | Name | Rate | Size | Contents |
 |-------|------|------|------|----------|
-| `0xC5110001` | CSI Frame (ADR-018) | ~20 Hz | Variable | Raw I/Q per subcarrier per antenna |
+| `0xC5110001` | CSI Frame (ADR-018) | ~41-43 pps measured (50 Hz cap) | Variable | Raw I/Q per subcarrier per antenna |
 | `0xC5110002` | Vitals Packet | 1 Hz | 32 bytes | Presence, breathing BPM, heart rate, fall flag, occupancy |
 | `0xC5110004` | WASM Output | Event-driven | Variable | Custom events from WASM modules (u8 type + f32 value) |
 | `0xC5110006` | Feature State (RuView lineage) | 1 Hz | ≥56 bytes | Board-DSP motion, presence, respiration BPM+conf, heart BPM+conf — parsed by the dashboard into the "Board DSP" card |
@@ -379,7 +379,7 @@ Tier 3 turns the ESP32 from a fixed-function sensor into a programmable sensing 
 - **Compiled from Rust** using the `wasm32-unknown-unknown` target
 - **Packaged in signed RVF containers** with Ed25519 signatures
 - **Uploaded over HTTP** to the running device (no physical access needed)
-- **Executed per-frame** (~20 Hz) by the WASM3 interpreter after Tier 2 DSP completes
+- **Executed per-frame** (~41-43 Hz measured, 50 Hz cap) by the WASM3 interpreter after Tier 2 DSP completes
 
 ### RVF (RuVector Format)
 
@@ -426,7 +426,7 @@ Every WASM module must export these three functions:
 | Export | Called | Purpose |
 |--------|--------|---------|
 | `on_init()` | Once, when started | Allocate state, initialize algorithms |
-| `on_frame(n_subcarriers: i32)` | Per CSI frame (~20 Hz) | Process sensor data, emit events |
+| `on_frame(n_subcarriers: i32)` | Per CSI frame (~41-43 Hz measured, 50 Hz cap) | Process sensor data, emit events |
 | `on_timer()` | At configurable interval (default 1 s) | Periodic housekeeping, aggregated output |
 
 ### HTTP Management Endpoints

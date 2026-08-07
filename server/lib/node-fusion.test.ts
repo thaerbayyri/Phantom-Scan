@@ -9,9 +9,13 @@ import {
   computeFallbackVelocity,
   computeGainNormalizedPerturbation,
   hasSingleNodePresenceEvidence,
+  evaluateClassifierCorroboration,
+  wasSuppressedByClassifier,
   MOTION_SATURATION_SCALE,
   FALLBACK_VELOCITY_MAX_GAP_S,
+  DEFAULT_MECHANICAL_REJECT_HUMAN_PROB_MAX,
   type NodeTrend,
+  type ClassifierGateInput,
 } from "./node-fusion";
 
 const ANCHORS = { 1: { x: -1.5, z: 0 }, 2: { x: 1.5, z: 0 } } as const;
@@ -440,4 +444,152 @@ test("hasSingleNodePresenceEvidence: a tracked cluster alone is sufficient evide
 
 test("hasSingleNodePresenceEvidence: both signals present is still presence", () => {
   assert.equal(hasSingleNodePresenceEvidence(true, true), true);
+});
+
+// ── Item 1: classifier corroboration gate ──────────────────────────────────
+// MicroDopplerClassifier (server/lib/signal-processing.ts) is deterministic
+// DFT+autocorrelation DSP, not an ML/AI model — these tests confirm it acts
+// as a CORROBORATING signal only (can suppress, never assert presence alone)
+// and does not touch the advisory-only AI firewall (F1/PS-AUDIT-014), which
+// is a completely separate mechanism gating scripts/ai_inference.py output.
+
+const HUMAN: ClassifierGateInput = { label: "human", humanProb: 0.9 };
+const CONFIDENT_MECHANICAL: ClassifierGateInput = { label: "mechanical", humanProb: 0.05 };
+const BORDERLINE_MECHANICAL: ClassifierGateInput = { label: "mechanical", humanProb: 0.34 };
+const UNKNOWN: ClassifierGateInput = { label: "unknown", humanProb: 0.5 };
+
+test("evaluateClassifierCorroboration: no classifier supplied => not_evaluated, never suppresses", () => {
+  const r = evaluateClassifierCorroboration(undefined);
+  assert.equal(r.suppress, false);
+  assert.equal(r.corroboration, "not_evaluated");
+});
+
+test("evaluateClassifierCorroboration: confident 'human' => confirmed, never suppresses", () => {
+  const r = evaluateClassifierCorroboration(HUMAN);
+  assert.equal(r.suppress, false);
+  assert.equal(r.corroboration, "confirmed");
+});
+
+test("evaluateClassifierCorroboration: confident 'mechanical' (humanProb <= threshold) => contradicted, suppresses", () => {
+  const r = evaluateClassifierCorroboration(CONFIDENT_MECHANICAL);
+  assert.equal(r.suppress, true);
+  assert.equal(r.corroboration, "contradicted");
+});
+
+test("evaluateClassifierCorroboration: borderline 'mechanical' (above the confident-reject bar) => inconclusive, does NOT suppress", () => {
+  // humanProb 0.34 is below MicroDopplerClassifier's own 0.35 "mechanical"
+  // label boundary but above DEFAULT_MECHANICAL_REJECT_HUMAN_PROB_MAX (0.2) —
+  // must not become stricter than the energy-gate-only baseline for a merely
+  // borderline call.
+  assert.ok(BORDERLINE_MECHANICAL.humanProb > DEFAULT_MECHANICAL_REJECT_HUMAN_PROB_MAX);
+  const r = evaluateClassifierCorroboration(BORDERLINE_MECHANICAL);
+  assert.equal(r.suppress, false);
+  assert.equal(r.corroboration, "inconclusive");
+});
+
+test("evaluateClassifierCorroboration: 'unknown' => inconclusive, does NOT suppress", () => {
+  const r = evaluateClassifierCorroboration(UNKNOWN);
+  assert.equal(r.suppress, false);
+  assert.equal(r.corroboration, "inconclusive");
+});
+
+// (a) energy gate passes + classifier says "human" => presence confirmed
+test("fuseTwoNodeTarget (a): energy gate passes + classifier 'human' => target present, corroboration confirmed", () => {
+  const t = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, classifier: HUMAN });
+  assert.ok(t, "target must be present");
+  assert.equal(t!.classifierCorroboration, "confirmed");
+});
+
+// (b) energy gate passes + classifier confidently says "mechanical" => suppressed
+test("fuseTwoNodeTarget (b): energy gate passes + confident 'mechanical' classifier => presence suppressed (null)", () => {
+  const t = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, classifier: CONFIDENT_MECHANICAL });
+  assert.equal(t, null, "confident mechanical classification must suppress an otherwise-passing energy gate");
+});
+
+// (c) energy gate passes + classifier "unknown"/low-confidence => falls back to energy-gate-only baseline
+test("fuseTwoNodeTarget (c): energy gate passes + 'unknown' classifier => target still present (not stricter than baseline)", () => {
+  const withClassifier = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, classifier: UNKNOWN });
+  const withoutClassifier = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING });
+  assert.ok(withClassifier, "ambiguous classifier output must not suppress presence");
+  assert.ok(withoutClassifier);
+  assert.equal(withClassifier!.classifierCorroboration, "inconclusive");
+  // Ambiguous classifier evidence must not change the position/balance math either.
+  assert.equal(withClassifier!.balance, withoutClassifier!.balance);
+});
+
+test("fuseTwoNodeTarget (c): borderline 'mechanical' (not confidently rejected) also falls back to baseline", () => {
+  const t = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, classifier: BORDERLINE_MECHANICAL });
+  assert.ok(t, "borderline mechanical call must not suppress presence");
+  assert.equal(t!.classifierCorroboration, "inconclusive");
+});
+
+// (d) energy gate fails => no target regardless of classifier output (empty-room invariant)
+test("fuseTwoNodeTarget (d): energy gate fails => no target even with a confident 'human' classification", () => {
+  const t = fuseTwoNodeTarget({
+    r1: 0.001,
+    r2: 0.001,
+    motion1: 0.01,
+    motion2: 0.01,
+    anchors: ANCHORS,
+    motionThreshold: 0.12,
+    classifier: HUMAN,
+  });
+  assert.equal(t, null, "empty-room gate must hold regardless of classifier output");
+});
+
+test("fuseTwoNodeTarget: no classifier supplied at all => behavior is byte-for-byte the pre-Item-1 baseline", () => {
+  const t = fuseTwoNodeTarget({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING });
+  assert.ok(t);
+  assert.equal(t!.classifierCorroboration, "not_evaluated");
+});
+
+test("wasSuppressedByClassifier: true only when energy gate passed AND classifier confidently vetoed", () => {
+  assert.equal(
+    wasSuppressedByClassifier({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, classifier: CONFIDENT_MECHANICAL }),
+    true,
+  );
+  // Energy gate never fired — must not be reported as classifier-vetoed even
+  // though the classifier also says "mechanical" (avoids a misleading log).
+  assert.equal(
+    wasSuppressedByClassifier({
+      r1: 0.001,
+      r2: 0.001,
+      motion1: 0.01,
+      motion2: 0.01,
+      anchors: ANCHORS,
+      motionThreshold: 0.12,
+      classifier: CONFIDENT_MECHANICAL,
+    }),
+    false,
+  );
+  // Energy gate passed, classifier didn't confidently veto.
+  assert.equal(
+    wasSuppressedByClassifier({ r1: 10, r2: 10, anchors: ANCHORS, ...MOVING, classifier: HUMAN }),
+    false,
+  );
+});
+
+// Same (a)-(d) matrix for the single-node gate.
+test("hasSingleNodePresenceEvidence (a): energy evidence + 'human' classifier => presence", () => {
+  assert.equal(hasSingleNodePresenceEvidence(true, false, HUMAN), true);
+});
+
+test("hasSingleNodePresenceEvidence (b): energy evidence + confident 'mechanical' classifier => suppressed", () => {
+  assert.equal(hasSingleNodePresenceEvidence(true, false, CONFIDENT_MECHANICAL), false);
+  assert.equal(hasSingleNodePresenceEvidence(false, true, CONFIDENT_MECHANICAL), false);
+});
+
+test("hasSingleNodePresenceEvidence (c): energy evidence + 'unknown' classifier => falls back to baseline (still present)", () => {
+  assert.equal(hasSingleNodePresenceEvidence(true, false, UNKNOWN), true);
+});
+
+test("hasSingleNodePresenceEvidence (d): no energy evidence => no presence even with a confident 'human' classifier", () => {
+  assert.equal(hasSingleNodePresenceEvidence(false, false, HUMAN), false);
+});
+
+test("hasSingleNodePresenceEvidence: omitting classifier entirely is unchanged from the pre-Item-1 signature", () => {
+  // Existing 2-arg call sites (and this repo's existing tests above) must
+  // keep behaving identically — classifier is opt-in, not opt-out.
+  assert.equal(hasSingleNodePresenceEvidence(true, false), true);
+  assert.equal(hasSingleNodePresenceEvidence(false, false), false);
 });

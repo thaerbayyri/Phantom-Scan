@@ -20,7 +20,7 @@ set(REQUIRES
 # ADR-045: AMOLED display support (compile-time optional)
 if(CONFIG_DISPLAY_ENABLE)
     list(APPEND SRCS "display_hal.c" "display_ui.c")
-    set(REQUIRES esp_lcd esp_lcd_touch lvgl)
+    list(APPEND REQUIRES esp_lcd esp_lcd_touch lvgl)
 endif()
 
 idf_component_register(

@@ -86,6 +86,68 @@ export const BALANCE_CONTRAST_EXPONENT = Number.parseFloat(
 
 export type NodeTrend = "approaching" | "receding" | "stable";
 
+// ── Classifier corroboration (Item 1 / PS-GAP-001) ─────────────────────────
+//
+// `MicroDopplerClassifier` (server/lib/signal-processing.ts) computes a
+// human/mechanical/unknown label from deterministic DFT + autocorrelation
+// features on the raw amplitude signal — it is NOT an ML/AI model, so wiring
+// it into the presence gate does not touch the advisory-only AI firewall
+// (F1 / PS-AUDIT-014, server/lib/websocket.ts:366-390). It mirrors the
+// firmware's own `edge_evaluate_human_presence` pattern (edge_dsp_pure.c):
+// motion AND NOT-confidently-mechanical, never the classifier alone.
+//
+// This is deliberately a CORROBORATING gate, not a replacement for the
+// energy/motion gate: the classifier can only SUPPRESS a presence claim the
+// energy gate already made (when it confidently asserts "mechanical"); it
+// can never assert presence on its own. This preserves the project's
+// deterministic-first, energy-gate-is-primary design.
+
+export type ClassifierCorroboration = "confirmed" | "contradicted" | "inconclusive" | "not_evaluated";
+
+export interface ClassifierGateInput {
+  label: "human" | "mechanical" | "unknown";
+  humanProb: number;
+}
+
+/**
+ * How confidently the classifier must assert "mechanical" (humanProb at or
+ * below this) before it's allowed to suppress a presence claim. Deliberately
+ * stricter than the classifier's own label boundary (0.35, see
+ * MicroDopplerClassifier) so a merely-borderline "mechanical" label does not
+ * suppress a real detection — only a confident one does. PLACEHOLDER pending
+ * the Item 2 real-hardware fan/HVAC negative-control session; re-tune once
+ * that data exists. Override at runtime via PHANTOM_MECHANICAL_REJECT_MAX.
+ */
+export const DEFAULT_MECHANICAL_REJECT_HUMAN_PROB_MAX = Number.parseFloat(
+  process.env.PHANTOM_MECHANICAL_REJECT_MAX ?? "0.2",
+);
+
+/**
+ * Pure corroboration decision: does the (optional) classifier evidence
+ * suppress an otherwise-passing energy gate? Exposed standalone (in addition
+ * to being used inside `fuseTwoNodeTarget`/`hasSingleNodePresenceEvidence`)
+ * so callers can log/observe the reason a target was or wasn't suppressed —
+ * e.g. for the Item 2 negative-control analysis, which needs to distinguish
+ * "energy gate never fired" from "energy gate fired but classifier vetoed."
+ */
+export function evaluateClassifierCorroboration(
+  classifier: ClassifierGateInput | undefined,
+  mechanicalRejectHumanProbMax: number = DEFAULT_MECHANICAL_REJECT_HUMAN_PROB_MAX,
+): { suppress: boolean; corroboration: ClassifierCorroboration } {
+  if (!classifier) {
+    return { suppress: false, corroboration: "not_evaluated" };
+  }
+  if (classifier.label === "mechanical" && classifier.humanProb <= mechanicalRejectHumanProbMax) {
+    return { suppress: true, corroboration: "contradicted" };
+  }
+  if (classifier.label === "human") {
+    return { suppress: false, corroboration: "confirmed" };
+  }
+  // "mechanical" below the confident-reject bar, or "unknown" — ambiguous:
+  // must not become stricter than today's energy-gate-only baseline.
+  return { suppress: false, corroboration: "inconclusive" };
+}
+
 /**
  * Per-node approach/recede trend from the signed axis velocity.
  *
@@ -186,6 +248,10 @@ export interface FuseInput {
   motionThreshold?: number;
   /** Balance contrast exponent p (default BALANCE_CONTRAST_EXPONENT). */
   contrastExponent?: number;
+  /** Optional corroborating classifier evidence — see evaluateClassifierCorroboration. */
+  classifier?: ClassifierGateInput;
+  /** Override for DEFAULT_MECHANICAL_REJECT_HUMAN_PROB_MAX. */
+  mechanicalRejectHumanProbMax?: number;
 }
 
 export interface FusedTarget {
@@ -202,6 +268,9 @@ export interface FusedTarget {
   balanceLinear: number;
   /** Range to the NEAREST node anchor in meters (physically meaningful). */
   distToNearestNodeM: number;
+  /** Whether the optional classifier corroborated, contradicted, or was
+   * inconclusive/not-evaluated this tick — see evaluateClassifierCorroboration. */
+  classifierCorroboration: ClassifierCorroboration;
 }
 
 function clamp01(value: number): number {
@@ -266,15 +335,52 @@ export function biasBalanceTowardNearestNode(
  * motion threshold, or when there is effectively no perturbation. This is the
  * empty-room gate: a quiet room must not paint a target at the midpoint.
  */
-export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
+/**
+ * The raw energy/motion presence gate alone, with no classifier involved —
+ * factored out of `fuseTwoNodeTarget` so `wasSuppressedByClassifier` can
+ * reuse the exact same formula rather than risk drifting out of sync with
+ * a second, independently-maintained copy.
+ */
+function computeEnergyGatePassed(input: FuseInput, r1: number, r2: number): boolean {
   const threshold = input.motionThreshold ?? DEFAULT_MOTION_THRESHOLD;
+  return Math.max(input.motion1, input.motion2) >= threshold && r1 + r2 > EPS;
+}
+
+/**
+ * Observability helper (Item 1): true only when the energy gate demonstrably
+ * passed AND the classifier is what suppressed the target — as opposed to
+ * the energy gate never having fired at all. `fuseTwoNodeTarget` itself
+ * only returns null either way, which is sufficient to gate but not to
+ * distinguish the cause; this lets the Item 2 negative-control analysis
+ * (and the live single_node/fused_two_node hold-reason logging in
+ * websocket.ts) tell the two suppression causes apart.
+ */
+export function wasSuppressedByClassifier(input: FuseInput): boolean {
+  const r1 = Number.isFinite(input.r1) ? Math.max(0, input.r1) : 0;
+  const r2 = Number.isFinite(input.r2) ? Math.max(0, input.r2) : 0;
+  if (!computeEnergyGatePassed(input, r1, r2)) {
+    return false;
+  }
+  return evaluateClassifierCorroboration(input.classifier, input.mechanicalRejectHumanProbMax).suppress;
+}
+
+export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
   const r1 = Number.isFinite(input.r1) ? Math.max(0, input.r1) : 0;
   const r2 = Number.isFinite(input.r2) ? Math.max(0, input.r2) : 0;
 
   // PRESENCE GATE: someone is "present" only if at least one node's saturated
   // motion clears the calibrated threshold AND there is real perturbation
   // energy (r1+r2 > EPS). Failing either → null → the UI shows an empty room.
-  const present = Math.max(input.motion1, input.motion2) >= threshold && r1 + r2 > EPS;
+  const energyGatePassed = computeEnergyGatePassed(input, r1, r2);
+
+  // CORROBORATING GATE (Item 1): the energy gate remains primary/authoritative.
+  // The classifier can only suppress a presence claim the energy gate already
+  // made — it can never assert presence on its own (see evaluateClassifierCorroboration).
+  const { suppress, corroboration } = evaluateClassifierCorroboration(
+    input.classifier,
+    input.mechanicalRejectHumanProbMax,
+  );
+  const present = energyGatePassed && !suppress;
   if (!present) {
     return null;
   }
@@ -300,7 +406,7 @@ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
 
   const balanceLinear = computeLinearBalance(r1, r2);
 
-  return { x, z, balance, balanceLinear, distToNearestNodeM: Math.min(d1, d2) };
+  return { x, z, balance, balanceLinear, distToNearestNodeM: Math.min(d1, d2), classifierCorroboration: corroboration };
 }
 
 // ── Fallback (non-Kalman, non-fused) velocity — Area 5/NEW-1 ───────────────
@@ -369,7 +475,23 @@ export function computeFallbackVelocity(
  * clustering alone (that needs a calibrated absolute noise floor, unverified
  * on real hardware); it solves the reported bug (continuous ghost target
  * with nobody present) by requiring at least one real evidence signal.
+ *
+ * Item 1: `classifier` is the same optional corroborating evidence
+ * `fuseTwoNodeTarget` accepts — it can only SUPPRESS presence the energy
+ * evidence (motion OR tracked cluster) already established, never assert it
+ * alone. Omitting `classifier` (existing call sites) is fully backward
+ * compatible — behavior is unchanged from before this gate existed.
  */
-export function hasSingleNodePresenceEvidence(motionDetected: boolean, hasTrackedTarget: boolean): boolean {
-  return motionDetected || hasTrackedTarget;
+export function hasSingleNodePresenceEvidence(
+  motionDetected: boolean,
+  hasTrackedTarget: boolean,
+  classifier?: ClassifierGateInput,
+  mechanicalRejectHumanProbMax?: number,
+): boolean {
+  const energyGatePassed = motionDetected || hasTrackedTarget;
+  if (!energyGatePassed) {
+    return false;
+  }
+  const { suppress } = evaluateClassifierCorroboration(classifier, mechanicalRejectHumanProbMax);
+  return !suppress;
 }

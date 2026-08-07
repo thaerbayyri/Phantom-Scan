@@ -1,6 +1,6 @@
 import type { CSISample, RadialTarget, TargetState } from "@shared/schema";
 import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
-import type { NodeTrend } from "./node-fusion";
+import type { ClassifierCorroboration, NodeTrend } from "./node-fusion";
 import { TREND_DEADBAND_MPS } from "./node-fusion";
 
 export type GroundTruthSource = "none" | "dwell" | "video";
@@ -76,6 +76,11 @@ export interface RecordingRow {
   gt_y_m?: number;
   gt_point_id?: string;
   gt_source: GroundTruthSource;
+  /** Item 1/2: unlike `label` (gated on target_visible), this is populated on
+   * EVERY row — including suppressed/held ticks — so a negative-control
+   * session can distinguish "energy gate never fired" from "energy gate
+   * fired but the classifier vetoed it" purely from the recording. */
+  classifier_corroboration: ClassifierCorroboration;
 }
 
 export interface BuildRecordingRowInput {
@@ -88,6 +93,9 @@ export interface BuildRecordingRowInput {
   nodeFps: { 1: number; 2: number };
   syncMarker?: boolean;
   groundTruthTag?: GroundTruthTag | null;
+  /** Item 1/2: this tick's classifier corroboration decision, captured
+   * regardless of whether a target ended up visible this tick. */
+  classifierCorroboration?: ClassifierCorroboration;
 }
 
 export const RECORDING_POSITION_CONTRACT =
@@ -126,6 +134,7 @@ export const RECORDING_COLUMNS: Array<keyof RecordingRow> = [
   "gt_y_m",
   "gt_point_id",
   "gt_source",
+  "classifier_corroboration",
 ];
 
 export function buildRecordingSessionMeta(input: {
@@ -212,6 +221,7 @@ export function buildRecordingRow(input: BuildRecordingRowInput): RecordingRow {
     gt_y_m: input.groundTruthTag?.yM,
     gt_point_id: input.groundTruthTag?.pointId,
     gt_source: gtSource,
+    classifier_corroboration: input.classifierCorroboration ?? "not_evaluated",
   };
 }
 

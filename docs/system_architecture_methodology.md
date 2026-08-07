@@ -99,6 +99,6 @@ Phantom Scan is built on "Privacy by Design" principles:
 
 ## 5. Summary of Technical Specs
 - **Frequency**: 2.4GHz / 5GHz (Device dependent).
-- **Sample Rate**: ~20Hz (Nominal).
+- **Sample Rate**: ~41-43 pps/node measured (50 Hz firmware send-rate cap; see README.md wire-protocol table).
 - **Angular Resolution**: ~5° with 2-antenna array.
 - **Ranging Precision**: ±15cm (Indoor Environment).

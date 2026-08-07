@@ -160,6 +160,28 @@ test("resolveLiveHoldState distinguishes startup, live, stale hold, and cleared"
   assert.equal(resolveLiveHoldState(1_000, 1_000 + LIVE_TARGET_CLEAR_TIMEOUT_MS), "cleared");
 });
 
+test("emptyTargetState settles back to 'none' well past the clear timeout instead of reporting 'stale' forever", () => {
+  const lastTruthful = 1_000;
+  // Just inside the stale window: genuinely recently aged out.
+  const recentlyLost = emptyTargetState({
+    dataSource: "esp32",
+    nowMs: lastTruthful + LIVE_TARGET_STALE_TIMEOUT_MS + 1,
+    lastTruthfulUpdateMs: lastTruthful,
+  });
+  assert.equal(recentlyLost.state, "stale");
+
+  // Long after the clear timeout (e.g. minutes into an otherwise-empty room
+  // later in the same long session) — must read as an ordinary empty room,
+  // not "stale" forever just because a target was truthfully seen once.
+  const longAfter = emptyTargetState({
+    dataSource: "esp32",
+    nowMs: lastTruthful + LIVE_TARGET_CLEAR_TIMEOUT_MS + 10 * 60_000,
+    lastTruthfulUpdateMs: lastTruthful,
+  });
+  assert.equal(longAfter.state, "none");
+  assert.equal(longAfter.stale, false);
+});
+
 test("bearing_deg uses the compass convention (x=1,z=0 -> 90 = east)", () => {
   const state = buildTargetState({
     dataSource: "esp32",

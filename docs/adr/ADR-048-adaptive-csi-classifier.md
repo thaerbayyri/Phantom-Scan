@@ -14,7 +14,7 @@
 
 ## Status Update (2026-08-06): Adaptive Classifier Superseded
 
-**The Rust classifier described in Decision §2 (`adaptive_classifier.rs`) was never
+**The Rust classifier described in Decision 2 (`adaptive_classifier.rs`) was never
 implemented.** Verified 2026-08-06: no `crates/` directory, no `Cargo.toml`, and no file
 matching `adaptive_classifier.rs` exist anywhere in this repository. More broadly, the
 entire `crates/wifi-densepose-sensing-server` Rust workspace that this ADR's Decision and
@@ -28,7 +28,7 @@ classification signals, tagged `F1` / `PS-AUDIT-014` in code:
 
 - AI-sidecar output (`scripts/ai_inference.py`) can only populate `advisoryIdentity` /
   `advisoryVitalSigns` WebSocket channels — see the guard clause in
-  `server/lib/websocket.ts:366-390` (`case "targetIdentity"` / `case "vitalSigns"`).
+  `server/lib/websocket.ts:370-394` (verified 2026-08-06; drifted from 366-390 due to later import additions, logic unchanged) (`case "targetIdentity"` / `case "vitalSigns"`).
 - The authoritative `currentTargetIdentity` / `currentVitalSigns` fields — which drive the
   sovereign human/non-human verdict — are written **only** by the deterministic
   micro-Doppler classifier and `VitalsComputer` inside `processFrame()`. No client
@@ -52,7 +52,7 @@ Enforcement is test-backed, not just a code comment:
 **Any future work in this area must preserve the advisory-only (F1) invariant and must
 not reintroduce an override capability.** This is safety-relevant: it is the mechanism
 that prevents a model's opinion from ever becoming the human/non-human verdict used for
-detection decisions. Treat `server/lib/websocket.ts:366-390`,
+detection decisions. Treat `server/lib/websocket.ts:370-394` (verified 2026-08-06; drifted from 366-390 due to later import additions, logic unchanged),
 `server/lib/websocket.test.ts`, and `tests/test_invariants.py` as the authoritative
 source of truth going forward — not Decision §2/§3/§4 or the Files table below.
 

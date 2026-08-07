@@ -189,7 +189,7 @@ All packets travel over UDP to the host on `:5005`. A 4-byte little-endian magic
 
 | Magic | Frame | Rate | Notes |
 |---|---|---|---|
-| `0xC5110001` | CSI frame | ~20 Hz/node | 32-byte header (ADR-018); legacy 20-byte header accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
+| `0xC5110001` | CSI frame | ~41-43 pps/node measured (50 Hz firmware send-rate cap, not a guaranteed rate — see `csi_collector.c` `CSI_MIN_SEND_INTERVAL_US`) | 32-byte header (ADR-018); legacy 20-byte header accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
 | `0xC5110002` | Vitals | 1 Hz/node | Board-side presence/motion/vitals, shown alongside — never fused into — the host-DSP target math |
 | `0xC5110004` | WASM module output | event-driven | Output from optional programmable sensing modules |
 | `0xC5110006` | Feature-state | 1 Hz/node | Board-computed motion/presence/respiration/heart-rate metrics for the **Board DSP** card |

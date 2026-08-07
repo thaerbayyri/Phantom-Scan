@@ -10,11 +10,17 @@ interface AoASpectrumProps {
 }
 
 /**
- * MUSIC pseudo-spectrum for the current frame. Derived visualization: with
- * single-antenna boards there is no spatial aperture, so this is computed
- * over a time-sample buffer (synthetic aperture) — useful as a stable signal
- * signature, not a physically calibrated bearing. In fused two-node mode the
- * server treats the peak angle as display-only.
+ * MUSIC pseudo-spectrum over the server's TEMPORAL sample window — a signal
+ * signature, NOT a spatial angle-of-arrival. Confirmed 2026-08-07
+ * (PS-GAP-MUSIC-001 fix session, Task 0): the input buffer is 16
+ * time-sequential single-antenna CSI scalars interleaved from two
+ * clock-unsynchronized nodes; no spatial direction is physically encoded in
+ * it, so the x-axis "degrees" are a steering-vector correlation coordinate,
+ * not a measured bearing. The underlying input-independence defect
+ * (spectrum frozen regardless of input) was fixed the same session — the
+ * curve now genuinely tracks the signal — but the relabeling below is
+ * permanent for this hardware: fixing the math cannot add a spatial
+ * aperture that the single-antenna nodes don't have.
  */
 export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
   // Honest empty state: never synthesize a fake spectrum — an operator must be
@@ -33,9 +39,14 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
   if (!plotData) {
     return (
       <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>
-        <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
-          <Radio className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm">AoA Spectrum (MUSIC — derived)</CardTitle>
+        <CardHeader className="flex flex-col gap-0.5 px-4 pb-2 pt-4">
+          <div className="flex flex-row items-center gap-2">
+            <Radio className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm">Signal Signature (temporal MUSIC)</CardTitle>
+          </div>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/70">
+            TEMPORAL SIGNATURE — NOT SPATIAL ANGLE
+          </span>
         </CardHeader>
         <CardContent className="flex flex-1 items-center justify-center px-2 pb-2 pt-0">
           <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground/60">
@@ -48,9 +59,18 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
 
   return (
     <Card className={`flex min-w-0 flex-col overflow-hidden ${className}`}>
-      <CardHeader className="flex flex-row items-center gap-2 px-4 pb-2 pt-4">
-        <Radio className="h-4 w-4 text-chart-1" />
-        <CardTitle className="text-sm">AoA Spectrum (MUSIC — derived)</CardTitle>
+      <CardHeader className="flex flex-col gap-0.5 px-4 pb-2 pt-4">
+        <div className="flex flex-row items-center gap-2">
+          <Radio className="h-4 w-4 text-chart-1" />
+          <CardTitle className="text-sm">Signal Signature (temporal MUSIC)</CardTitle>
+        </div>
+        {/* Same honesty-caveat convention as getLivePositionCaveat's
+            "ON-AXIS ESTIMATE - NOT ROOM POSITION" treatment: single-antenna
+            nodes have no spatial aperture, so the x-axis is a steering
+            coordinate over the temporal window, not a physical bearing. */}
+        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/70">
+          TEMPORAL SIGNATURE — NOT SPATIAL ANGLE
+        </span>
       </CardHeader>
       <CardContent className="flex-1 px-2 pb-2 pt-0">
         <Plot
@@ -63,7 +83,7 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
               y: plotData.powers,
               line: { color: "hsl(217, 91%, 60%)", width: 2 },
               fillcolor: "hsla(217, 91%, 60%, 0.2)",
-              hovertemplate: "Angle: %{x}°<br>Power: %{y:.1f} dB<extra></extra>",
+              hovertemplate: "Steering coord: %{x}<br>Power: %{y:.1f} dB<extra></extra>",
             },
             {
               type: "scatter",
@@ -71,12 +91,15 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
               x: [plotData.peakAngle],
               y: [Math.max(...plotData.powers)],
               marker: {
-                color: "hsl(0, 84%, 60%)",
-                size: 10,
-                symbol: "diamond",
+                // De-emphasized (was red/size 10): the peak is a signature
+                // feature, not a measured direction — it must not read as a
+                // confident spatial fix.
+                color: "hsl(217, 30%, 55%)",
+                size: 6,
+                symbol: "diamond-open",
               },
               name: "Peak",
-              hovertemplate: "Peak: %{x}°<extra></extra>",
+              hovertemplate: "Signature peak (steering coord %{x} — not a spatial angle)<extra></extra>",
             },
           ]}
           layout={{
@@ -85,7 +108,7 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
             plot_bgcolor: "rgba(0,0,0,0)",
             margin: { l: 40, r: 12, t: 8, b: 28 },
             xaxis: {
-              title: "Angle (deg)",
+              title: "Steering coordinate (not physical direction)",
               range: [-60, 60],
               gridcolor: "rgba(128,128,128,0.2)",
               zerolinecolor: "rgba(128,128,128,0.4)",

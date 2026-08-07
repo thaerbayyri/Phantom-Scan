@@ -35,6 +35,17 @@ function newProcessingServer(): any {
   return server;
 }
 
+function ingestSampleFor(server: any, nodeId: number) {
+  server.ingestSample({
+    timestamp: Date.now(),
+    h1: { re: 1, im: 1 },
+    h2: { re: 1, im: 1 },
+    rssi: -40,
+    nodeId,
+    amplitudes: [1, 1, 1, 1],
+  });
+}
+
 test("non-AI client's targetIdentity produces no state change and no broadcast", () => {
   const server = newProcessingServer();
   const attacker = makeClient("attacker");
@@ -175,4 +186,48 @@ test("new-client snapshot (sendLiveSnapshotToClient) always serves the determini
   const identityMsg = newClient.sent.find((m) => m.type === "targetIdentity");
   assert.ok(identityMsg, "snapshot must include a targetIdentity message");
   assert.deepEqual(identityMsg!.data, deterministic, "snapshot must reflect only the deterministic write, never the injected/advisory data");
+});
+
+// ── resolveLiveNodeMode() staleness handling ────────────────────────────────
+// Investigated after a live-UDP-replay session showed fused-two-node display
+// while only node 2's packets were being replayed. Confirmed (in-process,
+// deliberately no network involved, to sidestep an unrelated ambient-UDP-
+// traffic confound discovered in that environment) that this function itself
+// has no staleness bug — the earlier observation was traced to that ambient
+// traffic supplying real node-1 samples in the background, not a code defect.
+// These tests lock in the verified-correct behavior.
+
+test("resolveLiveNodeMode: cold start with only node 2 reporting resolves single_node, not fused", () => {
+  const server = newProcessingServer();
+  ingestSampleFor(server, 2);
+  assert.equal(server.resolveLiveNodeMode(), "single_node");
+});
+
+test("resolveLiveNodeMode: both nodes freshly reporting resolves fused_two_node", () => {
+  const server = newProcessingServer();
+  ingestSampleFor(server, 2);
+  ingestSampleFor(server, 1);
+  assert.equal(server.resolveLiveNodeMode(), "fused_two_node");
+});
+
+test("resolveLiveNodeMode: node 1 going stale mid-session (dropout) falls back to single_node while node 2 keeps reporting", () => {
+  const server = newProcessingServer();
+  ingestSampleFor(server, 2);
+  ingestSampleFor(server, 1);
+  assert.equal(server.resolveLiveNodeMode(), "fused_two_node", "sanity: starts fused");
+
+  // Simulate node 1 going silent >1.5s ago (network drop / powered off /
+  // moved out of range) without a real wait — same staleness window
+  // activeHardwareNodeIds() checks (server/lib/websocket.ts).
+  server.hardwareNodeLastSeenMs.set(1, Date.now() - 2000);
+  assert.equal(server.resolveLiveNodeMode(), "single_node", "must fall back once node 1 is stale");
+});
+
+test("resolveLiveNodeMode: both nodes stale resolves single_node (no separate 'no nodes' state)", () => {
+  const server = newProcessingServer();
+  ingestSampleFor(server, 2);
+  ingestSampleFor(server, 1);
+  server.hardwareNodeLastSeenMs.set(1, Date.now() - 2000);
+  server.hardwareNodeLastSeenMs.set(2, Date.now() - 2000);
+  assert.equal(server.resolveLiveNodeMode(), "single_node");
 });

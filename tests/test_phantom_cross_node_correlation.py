@@ -9,6 +9,7 @@ isolation) so the wiring itself is what's under test.
 """
 
 import math
+from pathlib import Path
 
 from phantom.protocol import CsiFrameV1
 from phantom.runtime import PhantomRuntime, RuntimeConfig
@@ -49,8 +50,11 @@ def _lcg(seed: int):
         yield (state / 0x7FFFFFFF) * 2.0 - 1.0
 
 
-def _run_two_node_session(*, correlated: bool, n_frames: int = 120) -> dict:
-    runtime = PhantomRuntime(RuntimeConfig(output_dir="", stale_timeout_ns=60_000_000_000))
+def _run_two_node_session(*, output_dir: Path, correlated: bool, n_frames: int = 120) -> dict:
+    # output_dir must be a real pytest tmp_path, not "" — an empty string
+    # resolves to the CWD (repo root when pytest runs from there), which
+    # previously left stray <uuid>.jsonl session files in the repo root.
+    runtime = PhantomRuntime(RuntimeConfig(output_dir=str(output_dir), stale_timeout_ns=60_000_000_000))
     left_noise = _lcg(1)
     right_noise = _lcg(2 if correlated else 999)
     derived = None
@@ -70,8 +74,8 @@ def _run_two_node_session(*, correlated: bool, n_frames: int = 120) -> dict:
     return derived
 
 
-def test_cross_node_correlation_is_not_structurally_zero():
-    derived = _run_two_node_session(correlated=True)
+def test_cross_node_correlation_is_not_structurally_zero(tmp_path: Path):
+    derived = _run_two_node_session(output_dir=tmp_path, correlated=True)
     correlation = derived["fused"]["cross_node_correlation"]
     assert correlation != 0.0, (
         "cross_node_correlation must not be the structural 0.0 that results "
@@ -79,9 +83,9 @@ def test_cross_node_correlation_is_not_structurally_zero():
     )
 
 
-def test_correlated_motion_scores_higher_than_independent_motion():
-    correlated = _run_two_node_session(correlated=True)["fused"]["cross_node_correlation"]
-    independent = _run_two_node_session(correlated=False)["fused"]["cross_node_correlation"]
+def test_correlated_motion_scores_higher_than_independent_motion(tmp_path: Path):
+    correlated = _run_two_node_session(output_dir=tmp_path / "a", correlated=True)["fused"]["cross_node_correlation"]
+    independent = _run_two_node_session(output_dir=tmp_path / "b", correlated=False)["fused"]["cross_node_correlation"]
     assert correlated > independent, (
         f"shared-motion correlation ({correlated}) should exceed independent-motion "
         f"correlation ({independent}) — the metric must reflect real synchrony, "
@@ -89,8 +93,8 @@ def test_correlated_motion_scores_higher_than_independent_motion():
     )
 
 
-def test_on_axis_position_uses_motion_energy_through_real_pipeline_wiring():
-    derived = _run_two_node_session(correlated=True)
+def test_on_axis_position_uses_motion_energy_through_real_pipeline_wiring(tmp_path: Path):
+    derived = _run_two_node_session(output_dir=tmp_path, correlated=True)
     on_axis = derived["fused"]["on_axis_position"]
     assert on_axis["dimensionality"] == "1D-on-axis"
     assert on_axis["baseline_m"] == 3.0

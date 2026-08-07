@@ -42,6 +42,9 @@ stage establishes the empty-room baseline and confirms the detector stays quiet.
 ## S2 — Negative Controls
 
 Preserve the fan / curtain / AC control rows. These are still required evidence.
+Device list, positions, durations, exact commands, and pass/fail criteria are now
+specified in `docs/NEGATIVE_CONTROL_CHECKLIST.md` (Item 2,
+`PhantomScan_Research_Gap_Analysis.md`) — use it to fill in the row(s) below.
 
 | Date | Control (fan/curtain/AC) | Position | Duration | Max motion observed | Targets emitted (pass = 0) | Artifacts |
 |------|--------------------------|----------|----------|---------------------|----------------------------|-----------|
