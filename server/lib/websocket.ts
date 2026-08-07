@@ -37,9 +37,13 @@ import {
   computeFallbackVelocity,
   computeGainNormalizedPerturbation,
   hasSingleNodePresenceEvidence,
+  evaluateClassifierCorroboration,
+  wasSuppressedByClassifier,
   DEFAULT_MOTION_THRESHOLD,
   type FusedTarget,
   type NodeTrend,
+  type ClassifierGateInput,
+  type ClassifierCorroboration,
 } from "./node-fusion";
 import {
   computeMUSICSpectrum,
@@ -972,7 +976,14 @@ export class SignalProcessingServer {
       // In fused_two_node mode the target is placed on the N1–N2 line by the
       // cross-node motion ratio. `r`/`theta` become display-only; `distanceCm`
       // stays physically meaningful (range to the nearest node).
-      const fused = nodeMode === "fused_two_node" ? this.computeFusedTarget() : null;
+      const fused = nodeMode === "fused_two_node" ? this.computeFusedTarget(classification) : null;
+      // Item 1: single-node mode has no FusedTarget to carry the corroboration
+      // reason, so evaluate it directly for observability/state-reason purposes
+      // (hasSingleNodePresenceEvidence below applies the same decision to gate).
+      const classifierCorroboration: ClassifierCorroboration = fused
+        ? fused.classifierCorroboration
+        : evaluateClassifierCorroboration(classification).corroboration;
+      this.lastTickClassifierCorroboration = classifierCorroboration;
       let fusedBalance: number | undefined;
       let fusedBalanceLinear: number | undefined;
       let fusedDistanceCm = pdpResult.distanceCm;
@@ -1038,6 +1049,9 @@ export class SignalProcessingServer {
         wallDistance: pdpResult.wallDistance,
         balance: fusedBalance,
         balanceLinear: fusedBalanceLinear,
+        // Item 1: observability for the corroborating classifier gate — see
+        // evaluateClassifierCorroboration (server/lib/node-fusion.ts).
+        classifierCorroboration,
       };
 
       if (nodeMode === "fused_two_node" && !fused) {
@@ -1050,15 +1064,19 @@ export class SignalProcessingServer {
         // of real detections empties the room (empty-room negative-control
         // gate still holds after the 5s clear timeout).
         this.clearFusedSnapshot();
+        // Item 1: distinguish "cross-node perturbation never cleared the
+        // motion gate" from "it did, but the classifier confidently vetoed
+        // it as mechanical" — see wasSuppressedByClassifier / computeFusedTarget.
+        const vetoed = this.lastFusedVetoedByClassifier;
         this.holdOrClearTarget({
-          hold: "fused_below_motion_threshold_hold",
-          staleHold: "fused_below_motion_threshold_stale_hold",
-          cleared: "fused_below_motion_threshold_cleared",
-          empty: "fused_below_motion_threshold",
+          hold: vetoed ? "fused_classifier_vetoed_hold" : "fused_below_motion_threshold_hold",
+          staleHold: vetoed ? "fused_classifier_vetoed_stale_hold" : "fused_below_motion_threshold_stale_hold",
+          cleared: vetoed ? "fused_classifier_vetoed_cleared" : "fused_below_motion_threshold_cleared",
+          empty: vetoed ? "fused_classifier_vetoed" : "fused_below_motion_threshold",
         });
       } else if (
         nodeMode === "single_node" &&
-        !hasSingleNodePresenceEvidence(motionResult.motionDetected, Boolean(trackedTarget))
+        !hasSingleNodePresenceEvidence(motionResult.motionDetected, Boolean(trackedTarget), classification)
       ) {
         // ADR-057: single-node mode previously had NO presence gate at all —
         // the MUSIC-spectrum point cloud and DBSCAN/Kalman tracker can both
@@ -1068,11 +1086,17 @@ export class SignalProcessingServer {
         // the same hold/stale/clear lifecycle as the fused path above so a
         // real-but-momentarily-undetected target isn't instantly wiped —
         // only a sustained absence of any real evidence empties the room.
+        //
+        // Item 1: distinguish "no energy evidence at all" from "energy
+        // evidence existed but the classifier confidently vetoed it as
+        // mechanical" in the reason string, so the Item 2 negative-control
+        // analysis can tell the two suppression causes apart in logs.
+        const vetoed = classifierCorroboration === "contradicted";
         this.holdOrClearTarget({
-          hold: "single_node_no_detection_hold",
-          staleHold: "single_node_no_detection_stale_hold",
-          cleared: "single_node_no_detection_cleared",
-          empty: "single_node_no_detection",
+          hold: vetoed ? "single_node_classifier_vetoed_hold" : "single_node_no_detection_hold",
+          staleHold: vetoed ? "single_node_classifier_vetoed_stale_hold" : "single_node_no_detection_stale_hold",
+          cleared: vetoed ? "single_node_classifier_vetoed_cleared" : "single_node_no_detection_cleared",
+          empty: vetoed ? "single_node_classifier_vetoed" : "single_node_no_detection",
         });
       } else {
         this.currentRadialTarget = radialTarget;
@@ -1216,6 +1240,7 @@ export class SignalProcessingServer {
             nodeFps: { 1: this.nodeFpsFor(1), 2: this.nodeFpsFor(2) },
             syncMarker: this.pendingSyncMarker,
             groundTruthTag: this.activeGroundTruthTag,
+            classifierCorroboration: this.lastTickClassifierCorroboration,
           }),
         );
         this.pendingSyncMarker = false;
@@ -1493,10 +1518,21 @@ export class SignalProcessingServer {
    * amplitude windows → fuseTwoNodeTarget (presence gate + balance position).
    * Returns null for an empty room; maxMotion doubles as position confidence.
    */
-  private computeFusedTarget(): (FusedTarget & { maxMotion: number }) | null {
+  /** Set by computeFusedTarget every call (including null returns) — Item 1
+   * observability: distinguishes "energy gate never fired" from "energy gate
+   * fired but the classifier vetoed it" for the fused_two_node hold-reason. */
+  private lastFusedVetoedByClassifier = false;
+  /** Item 1/2: this tick's classifier corroboration outcome, set unconditionally
+   * every processFrame() tick (regardless of node mode or suppression) so the
+   * live recording harness can capture it even on suppressed/held ticks. */
+  private lastTickClassifierCorroboration: ClassifierCorroboration = "not_evaluated";
+
+  private computeFusedTarget(
+    classifier?: ClassifierGateInput,
+  ): (FusedTarget & { maxMotion: number }) | null {
     const m1 = this.nodeMotionFor(1);
     const m2 = this.nodeMotionFor(2);
-    const fused = fuseTwoNodeTarget({
+    const fuseInput = {
       // Gain-normalized (per-node absStd/mean), not raw absStd — PS-BEHTEST-004:
       // raw absStd scales linearly with any per-node gain/RSSI mismatch, which
       // biased balance toward whichever board had higher effective gain. See
@@ -1507,7 +1543,11 @@ export class SignalProcessingServer {
       motion2: m2.motion,
       anchors: { 1: NODE_ANCHORS[1], 2: NODE_ANCHORS[2] },
       motionThreshold: this.config.fusedTargetMotionThreshold,
-    });
+      // Item 1: corroborating (not primary) evidence — see evaluateClassifierCorroboration.
+      classifier,
+    };
+    const fused = fuseTwoNodeTarget(fuseInput);
+    this.lastFusedVetoedByClassifier = wasSuppressedByClassifier(fuseInput);
     if (!fused) return null;
     return { ...fused, maxMotion: Math.max(m1.motion, m2.motion) };
   }

@@ -1,5 +1,68 @@
 import type { PointCloudPoint, TrackedTarget } from "@shared/schema";
 
+// ── Item 4 (PhantomScan_Research_Gap_Analysis.md): spatial noise-floor
+// calibration ─────────────────────────────────────────────────────────
+//
+// ADR-057 flagged `maxEnergy > 10` (below, TrackingProcessor.process) as a
+// hardcoded threshold with no documented derivation and no calibrated
+// absolute noise floor — unlike the temporal MotionGate
+// (server/lib/signal-processing.ts), which auto-calibrates against its
+// first 100 samples. This mainly exposes STATIONARY-person detection via
+// spatial clustering; the temporal motion gate already covers moving
+// targets, so this is not the primary presence signal.
+//
+// IMPORTANT CAVEAT this calibration does NOT fix: per DETECTION_REPORT.md
+// ("Single-antenna caveat") and the AoA UI copy across the client, the
+// MUSIC/AoA *angle* feeding this point cloud is synthetic-only on the
+// current single-antenna hardware — it carries no physically valid spatial
+// aperture. Calibrating `energyThreshold` only calibrates the MAGNITUDE
+// judgment ("is there real reflected energy here at all", used solely as
+// presence evidence via hasSingleNodePresenceEvidence's hasTrackedTarget
+// input) — it does NOT make the resulting point/cluster POSITION any more
+// physically meaningful. Do not present a calibrated energy threshold as
+// having fixed AoA accuracy; it has not.
+
+/**
+ * Empty-room / negative-control calibration for a magnitude-only energy
+ * threshold — same mean+k*sigma statistical method as
+ * scripts/calibrate-threshold.ts's PHANTOM_MOTION_THRESHOLD calibration,
+ * applied here to cluster energy (or raw MUSIC spectrum power) samples
+ * instead of temporal motion variance. Pure and unit-testable with
+ * synthetic OR real recorded empty-room samples — this function itself
+ * makes no live/network calls.
+ */
+export interface EnergyThresholdCalibration {
+  sampleCount: number;
+  mean: number;
+  sigma: number;
+  max: number;
+  /** mean + kSigma * sigma — the suggested absolute threshold. */
+  suggestedThreshold: number;
+}
+
+export function calibrateEnergyThreshold(
+  emptyRoomEnergySamples: number[],
+  kSigma: number = 3,
+): EnergyThresholdCalibration {
+  const samples = emptyRoomEnergySamples.filter((v) => Number.isFinite(v));
+  if (samples.length === 0) {
+    return { sampleCount: 0, mean: 0, sigma: 0, max: 0, suggestedThreshold: 0 };
+  }
+  const mean = samples.reduce((s, v) => s + v, 0) / samples.length;
+  const variance = samples.reduce((s, v) => s + (v - mean) * (v - mean), 0) / samples.length;
+  const sigma = Math.sqrt(variance);
+  const max = Math.max(...samples);
+  return { sampleCount: samples.length, mean, sigma, max, suggestedThreshold: mean + kSigma * sigma };
+}
+
+/** Env-overridable default so a calibration result can be applied without a
+ * code change, matching the DEFAULT_MOTION_THRESHOLD convention in
+ * node-fusion.ts. Unchanged (10) until a real empty-room capture exists —
+ * see docs/SPATIAL_CALIBRATION.md for status ([TO BE MEASURED]). */
+export const DEFAULT_SPATIAL_ENERGY_THRESHOLD = Number.parseFloat(
+  process.env.PHANTOM_SPATIAL_ENERGY_THRESHOLD ?? "10",
+);
+
 // ── DBSCAN Clustering ───────────────────────────────────────────────
 
 export class DBSCAN {
@@ -271,12 +334,18 @@ export class TrackingProcessor {
     private kalman: KalmanFilter;
     private lastTarget: TrackedTarget | null = null;
     private consecutiveMisses = 0;
+    /** Item 4: was a hardcoded literal `10` inline below; now configurable
+     * (default unchanged) so a real calibration result — see
+     * calibrateEnergyThreshold / DEFAULT_SPATIAL_ENERGY_THRESHOLD above —
+     * can be applied without editing this class. */
+    private energyThreshold: number;
 
     private pointBuffer: PointCloudPoint[] = [];
 
-    constructor() {
+    constructor(energyThreshold: number = DEFAULT_SPATIAL_ENERGY_THRESHOLD) {
         this.dbscan = new DBSCAN(0.8, 4); // eps=0.8m, minPts=4
         this.kalman = new KalmanFilter();
+        this.energyThreshold = energyThreshold;
     }
 
     public reset() {
@@ -323,7 +392,9 @@ export class TrackingProcessor {
         // 3. Update Kalman Filter
         this.kalman.predict(); // Always predict
 
-        if (bestCluster && maxEnergy > 10) { // Threshold for valid target
+        let acquiredThisTick = false;
+        if (bestCluster && maxEnergy > this.energyThreshold) { // Item 4: calibratable (see class field)
+            acquiredThisTick = true;
             // Calculate centroid
             let cx = 0, cy = 0, cz = 0;
             let totalWeight = 0;
@@ -346,8 +417,16 @@ export class TrackingProcessor {
             this.consecutiveMisses++;
         }
 
-        // 4. Return result if valid
-        if (this.consecutiveMisses < 10) { // Keep track for ~0.5s if lost
+        // 4. Return result if valid.
+        //
+        // PS-GAP-TRK-001 (found by tracking.test.ts, this session): coasting
+        // through misses is only legitimate if a target was ACTUALLY ACQUIRED
+        // at some point — without the acquired/lastTarget check below, a cold
+        // start with only sub-threshold noise clusters returned a fabricated
+        // target at the Kalman origin (confidence 0.9) for the first 10
+        // ticks, and that non-null return is precisely the `hasTrackedTarget`
+        // evidence ADR-057's single-node presence gate trusts.
+        if ((acquiredThisTick || this.lastTarget) && this.consecutiveMisses < 10) { // Keep track for ~0.5s if lost
             const state = this.kalman.getState();
             const speed = Math.sqrt(state.vx ** 2 + state.vz ** 2);
             const isMoving = speed > 0.1;

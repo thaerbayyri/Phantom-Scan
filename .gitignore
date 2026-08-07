@@ -32,6 +32,15 @@ data/operator.json
 data/audit/
 recordings/
 
+# Stray JSONL session-writer output at the repo root only (root-anchored, not
+# a blanket *.jsonl — data/sessions/*.jsonl etc. are handled by the rule
+# above and any future legitimate nested .jsonl content stays trackable).
+# Root-level JSONL here is always a test/tooling bug: phantom/runtime.py and
+# scripts/record-csi-udp.py both default their output_dir under data/, never
+# the repo root — see tests/test_phantom_cross_node_correlation.py's
+# output_dir="" fix (PhantomScan_FollowUp_Session_Report.md, Item D).
+/*.jsonl
+
 # Crash dumps and local scratch
 *.stackdump
 .tmp/

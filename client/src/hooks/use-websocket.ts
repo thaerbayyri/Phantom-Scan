@@ -535,7 +535,18 @@ export function useWebSocket() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      wsRef.current?.close();
+      // Detach handlers before closing: WebSocket.close() is async, so a
+      // late-firing onclose/onerror on this dead socket would otherwise still
+      // run — including scheduling a new setTimeout(connect, 2000) — spawning
+      // a zombie connection that reconnects forever with no owner to clean it
+      // up (e.g. navigating from the Dashboard route to /history and back).
+      if (wsRef.current) {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+      }
     };
   }, [connect]);
 

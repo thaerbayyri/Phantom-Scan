@@ -72,7 +72,15 @@ export function emptyTargetState(input: BuildTargetStateInput): TargetState {
   const nodeMode = input.nodeMode ?? resolveNodeMode(sourceMode);
   const lastUpdate = input.lastTruthfulUpdateMs ?? input.nowMs;
   const dataAge = Math.max(0, input.nowMs - lastUpdate);
-  const stale = dataAge >= LIVE_TARGET_STALE_TIMEOUT_MS;
+  // "stale" means recently aged out (within the hold/clear window this same
+  // lifecycle uses elsewhere — see resolveLiveHoldState). Past the clear
+  // timeout, dataAge only keeps growing forever with nothing to reset it, so
+  // without this upper bound a room that had exactly one detection at the
+  // start of an hours-long session would report "stale" — never "none" —
+  // for the rest of it, even though it is by then indistinguishable from a
+  // room that was simply always empty.
+  const stale =
+    dataAge >= LIVE_TARGET_STALE_TIMEOUT_MS && dataAge < LIVE_TARGET_CLEAR_TIMEOUT_MS;
   const state: StateKind = stale ? "stale" : "none";
 
   return {

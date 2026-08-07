@@ -102,9 +102,13 @@ export function MetricsPanel({
       />
       <MetricCard
         icon={Target}
-        label="Peak AoA"
+        // PS-GAP-MUSIC-001 Task 2B relabel: this value is the temporal-MUSIC
+        // signature peak (steering coordinate), not a measured spatial
+        // angle — single-antenna nodes carry no spatial aperture, so a
+        // degree unit here would imply a bearing that is not being measured.
+        label="Signature Peak"
         value={peakAngle}
-        unit="°"
+        unit=""
         color="bg-chart-4/20 text-chart-4"
         testId="metric-peak-aoa"
       />

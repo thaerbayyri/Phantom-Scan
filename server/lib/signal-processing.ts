@@ -68,6 +68,57 @@ function powerIterationEigen(
       v = w.map(c => scale(c, 1 / norm));
     }
 
+    // ── PS-GAP-MUSIC-001 fix (deflation guard) ────────────────────────────
+    // When the deflated residual collapses (rank-deficient R — e.g. a rank-1
+    // single-snapshot covariance), the `norm < 1e-10` break above used to
+    // leave `v` as the RAW SEEDED START VECTOR: input-independent AND not
+    // orthogonal to the already-extracted signal eigenvector, so the "noise
+    // subspace" was a fixed fake basis and the MUSIC spectrum was bit-for-bit
+    // identical for any input. The mathematically correct behavior for a
+    // rank-deficient covariance is that the remaining eigenvectors span the
+    // ORTHOGONAL COMPLEMENT of the already-extracted ones — any orthonormal
+    // basis of that complement is valid. So: Gram-Schmidt-orthogonalize v
+    // against every previously extracted eigenvector (deterministic
+    // canonical-basis fallback if v was entirely inside their span). The
+    // noise projector then genuinely depends on the input's signal subspace,
+    // restoring input dependence.
+    for (const u of eigenvectors) {
+      let proj: Complex = { re: 0, im: 0 };
+      for (let i = 0; i < n; i++) {
+        proj = add(proj, mul(conj(u[i]), v[i]));
+      }
+      for (let i = 0; i < n; i++) {
+        v[i] = sub(v[i], mul(u[i], proj));
+      }
+    }
+    norm = Math.sqrt(v.reduce((sum, c) => sum + c.re * c.re + c.im * c.im, 0));
+    if (norm > 1e-8) {
+      v = v.map(c => scale(c, 1 / norm));
+    } else {
+      // v was (numerically) entirely inside the span of the extracted
+      // eigenvectors. Deterministically pick the first canonical basis
+      // vector with a non-trivial component in the orthogonal complement.
+      for (let basis = 0; basis < n; basis++) {
+        const cand: Complex[] = Array(n)
+          .fill(null)
+          .map((_, i) => (i === basis ? { re: 1, im: 0 } : { re: 0, im: 0 }));
+        for (const u of eigenvectors) {
+          let proj: Complex = { re: 0, im: 0 };
+          for (let i = 0; i < n; i++) {
+            proj = add(proj, mul(conj(u[i]), cand[i]));
+          }
+          for (let i = 0; i < n; i++) {
+            cand[i] = sub(cand[i], mul(u[i], proj));
+          }
+        }
+        const candNorm = Math.sqrt(cand.reduce((sum, c) => sum + c.re * c.re + c.im * c.im, 0));
+        if (candNorm > 1e-6) {
+          v = cand.map(c => scale(c, 1 / candNorm));
+          break;
+        }
+      }
+    }
+
     // Compute eigenvalue: v^H * A * v
     const Av: Complex[] = Array(n).fill(null).map(() => ({ re: 0, im: 0 }));
     for (let i = 0; i < n; i++) {
@@ -95,8 +146,16 @@ function powerIterationEigen(
   return { eigenvalues, eigenvectors };
 }
 
-// MUSIC algorithm for Angle of Arrival estimation
-// Uses proper noise subspace estimation and MUSIC pseudo-spectrum
+// MUSIC pseudo-spectrum over a TEMPORAL sample window.
+//
+// HONESTY NOTE (PS-GAP-MUSIC-001 / Task 0 finding, 2026-08-07): in production
+// (`websocket.ts` `sampleBuffer`) the input is a rolling window of
+// time-sequential single-antenna CSI scalars — interleaved from two
+// clock-unsynchronized nodes — NOT spatially distinct antenna channels. No
+// eigen-math can recover a physical angle-of-arrival from this input; the
+// "angle" axis is a steering-vector correlation coordinate over the temporal
+// window (a signal SIGNATURE), not a measured spatial direction. The UI
+// labels it accordingly. See PhantomScan_MUSIC_Fix_Session_Report.md.
 export function computeMUSICSpectrum(
   samples: Complex[],
   angleMin: number,
@@ -109,21 +168,43 @@ export function computeMUSICSpectrum(
     return [];
   }
 
-  // Build covariance matrix R = E[x * x^H]
-  // Using sample covariance with averaging over sliding windows
-  const R: Complex[][] = Array(N)
+  // Degenerate input (flat/empty signal): return the honest empty spectrum
+  // (the client's AoASpectrum component renders "no live stream" for an
+  // empty spectrum) instead of a plausible-looking fake curve.
+  let inputPower = 0;
+  for (const s of samples) inputPower += s.re * s.re + s.im * s.im;
+  if (inputPower < 1e-12) {
+    return [];
+  }
+
+  // ── PS-GAP-MUSIC-001 fix (covariance rank) ──────────────────────────────
+  // The old code claimed "averaging over sliding windows" but actually built
+  // R from ONE outer product, R = x·x^H — exactly rank 1, which triggered
+  // the deflation collapse fixed in powerIterationEigen. Now genuinely
+  // average over K forward sub-window snapshots of length M:
+  //     R = (1/K) Σ_k x_k · x_k^H,  x_k = samples[k .. k+M-1]
+  // For a real varied signal this gives rank up to K, a genuine noise
+  // subspace, and a spectrum that actually depends on the input.
+  const M = Math.max(3, Math.floor(N / 2));
+  const K = N - M + 1;
+  const R: Complex[][] = Array(M)
     .fill(null)
     .map(() =>
-      Array(N)
+      Array(M)
         .fill(null)
         .map(() => ({ re: 0, im: 0 }))
     );
 
-  // Compute spatial covariance matrix
-  for (let i = 0; i < N; i++) {
-    for (let j = 0; j < N; j++) {
-      // R[i][j] = samples[i] * conj(samples[j])
-      R[i][j] = mul(samples[i], conj(samples[j]));
+  for (let k = 0; k < K; k++) {
+    for (let i = 0; i < M; i++) {
+      for (let j = 0; j < M; j++) {
+        R[i][j] = add(R[i][j], mul(samples[k + i], conj(samples[k + j])));
+      }
+    }
+  }
+  for (let i = 0; i < M; i++) {
+    for (let j = 0; j < M; j++) {
+      R[i][j] = scale(R[i][j], 1 / K);
     }
   }
 
@@ -149,9 +230,9 @@ export function computeMUSICSpectrum(
     const angle = angleMin + (i * (angleMax - angleMin)) / (numAngles - 1);
     const theta = (angle * Math.PI) / 180;
 
-    // Steering vector a(theta)
+    // Steering vector a(theta) — over the M-element sub-window, matching R.
     const a: Complex[] = [];
-    for (let n = 0; n < N; n++) {
+    for (let n = 0; n < M; n++) {
       const phase = -2 * Math.PI * d * n * Math.sin(theta);
       a.push(fromPolar(1, phase));
     }
@@ -163,7 +244,7 @@ export function computeMUSICSpectrum(
     for (const noiseVec of En) {
       // Project steering vector onto noise eigenvector
       let projection: Complex = { re: 0, im: 0 };
-      for (let k = 0; k < N; k++) {
+      for (let k = 0; k < M; k++) {
         projection = add(projection, mul(conj(noiseVec[k]), a[k]));
       }
       // Add |projection|^2 to denominator
