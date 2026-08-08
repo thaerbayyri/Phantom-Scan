@@ -66,6 +66,20 @@ sensing tasks:
 | **Vital signs (breathing/heart rate)** | [`phantom/dsp.py`](../../phantom/dsp.py) `extract_phases`, `unwrap_phase_series`, `RespirationBandFilter` | `atan2(Q,I)` → unwrap → bandpass-filter 0.1–0.5 Hz to isolate the breathing-rate phase oscillation |
 | **1-D on-axis position (two-node)** | [`phantom/dsp.py`](../../phantom/dsp.py) `dual_node_on_axis_position` | Uses **amplitude balance** between nodes, not phase — phase isn't used here since the two ESP32 nodes aren't phase-synchronized to each other |
 
+> **Hardware-reality caveat on the AoA row above:** the multi-antenna spatial
+> MUSIC pipeline described there — a covariance matrix built from
+> inter-antenna phase differences, with a steering vector
+> `a(θ) = e^{-j·2π·d·n·sin(θ)}` — requires more than one antenna per node.
+> This project's actual hardware has exactly **1 Rx antenna per ESP32-S3
+> node**, so there is no inter-antenna phase geometry available on the live
+> path. The general educational content above is standard WiFi-sensing
+> theory, not a description of what this repo's live pipeline computes. What
+> `computeMUSICSpectrum` in `server/lib/signal-processing.ts` actually does
+> is documented in its HONESTY NOTE (~line 151): it runs MUSIC over a
+> *temporal* window of single-antenna samples, producing a signal
+> **signature**, not a spatial angle. The live UI reflects this in the
+> relabeled `aoa-spectrum.tsx` panel ("Signal Signature (temporal MUSIC)").
+
 Note the asymmetry: within a single node's antenna pair, phase differences
 are trustworthy (same clock, same packet) and drive AoA/ranging. Across the
 two separate ESP32 nodes, there's no shared clock, so

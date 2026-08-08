@@ -825,8 +825,8 @@ DATAFLOW_DIAGRAM = r"""
                nodeFeatures | heatmap | doppler | vitals
                                v
                client/src (React + Three.js dashboard)
-               RadialScene, distance meter, AoA/Doppler
-               views, Board-DSP card, identity card
+               RadialScene, distance meter, Signal
+               Signature/Doppler views, Board-DSP card, identity card
 """
 
 
@@ -951,7 +951,7 @@ def chapter_5(doc: Document) -> list[int]:
     add_bullet(doc, "Radar scene: node beacons, axis line, fused target marker, motion vector, wall plane at the estimated wall distance.")
     add_bullet(doc, "Distance meter: range to nearest node, wall distance, and compass bearing readouts.")
     add_bullet(doc, "Target identity card: human/mechanical classification with probability and per-node approaching/receding trends.")
-    add_bullet(doc, "Spectral panels: MUSIC AoA spectrum and time-angle heatmap, Doppler spectrogram (replay/synthetic-capable analysis views).")
+    add_bullet(doc, "Spectral panels: Signal Signature (temporal MUSIC) spectrum and subcarrier heatmap, Doppler spectrogram (replay/synthetic-capable analysis views).")
     add_bullet(doc, "Board DSP card: the firmware's own 1 Hz presence/motion/respiration/heart-rate estimates, shown verbatim and independent of host fusion.")
     add_bullet(doc, "Vitals monitor, metrics panel, scan controller, and top bar with connection and recording status.")
     add_bullet(doc, "Supporting routes: login, history, activity, and report pages.")

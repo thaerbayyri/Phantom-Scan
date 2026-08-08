@@ -669,7 +669,9 @@ export function startUDPServer() {
             let p2_re = 0;
             let p2_im = 0;
 
-            // If the firmware sends 2 antennas (unlikely based on current code, but future proofing)
+            // Defensive parse only: this hardware has exactly 1 antenna per node and
+            // never sends a second; this branch is unreachable in practice, kept only
+            // so a malformed/corrupt packet with numAntennas>1 doesn't crash the parser.
             if (parsed.numAntennas > 1) {
                 p2_re = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2);
                 p2_im = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2 + 1);

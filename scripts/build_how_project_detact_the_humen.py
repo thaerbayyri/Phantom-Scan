@@ -241,6 +241,10 @@ def build_doc() -> Document:
         doc,
         "Phantom Scan computes a MUSIC spectrum from the processed CSI sample buffer. The MUSIC algorithm is a subspace-based direction-estimation method that searches for the angle with the strongest consistent signal structure relative to noise. The system then selects the highest peak in that spectrum as the dominant angle of arrival. This gives the host a directional cue about where the reflective or moving disturbance lies relative to the sensing geometry."
     )
+    add_paragraph(
+        doc,
+        "Hardware-reality caveat: on this project's actual hardware, each node has exactly one Rx antenna, so no true spatial angle-of-arrival is physically possible. The MUSIC output described above is computed over a temporal window of single-antenna samples and is a signal signature, not a measured spatial bearing. Directional and positional information instead comes from the two-node energy-balance projection onto the fixed 3 m node baseline (a one-dimensional, on-axis estimate)."
+    )
 
     add_heading(doc, "4.4 Point Cloud and Tracking", 2)
     add_paragraph(

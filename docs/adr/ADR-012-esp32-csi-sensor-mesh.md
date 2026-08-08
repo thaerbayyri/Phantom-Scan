@@ -3,6 +3,16 @@
 ## Status
 Accepted — Partially Implemented (firmware + aggregator working, see ADR-018)
 
+## Status Update (2026-08-08): Two-Node Reality
+
+**The actual current/shipped hardware is exactly 2 nodes with a fixed 3 m
+baseline** (`NODE_ANCHORS` / `NODE_SEPARATION_M` in `shared/schema.ts`,
+N1=(-1.5,0)/N2=(+1.5,0)) — not the N-node mesh this ADR envisions. N-node
+mesh expansion (arbitrary node count, distributed triangulation) remains a
+Phase-2/future concept described below, not current reality. Treat
+`shared/schema.ts`'s `NODE_ANCHORS`/`NODE_SEPARATION_M` as the current
+ground truth for deployed node geometry.
+
 ## Date
 2026-02-28
 

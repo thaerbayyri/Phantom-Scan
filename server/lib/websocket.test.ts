@@ -231,3 +231,70 @@ test("resolveLiveNodeMode: both nodes stale resolves single_node (no separate 'n
   server.hardwareNodeLastSeenMs.set(2, Date.now() - 2000);
   assert.equal(server.resolveLiveNodeMode(), "single_node");
 });
+
+// ── PS-GHOST-001: single-node presence gate must use the validated motion
+// metric, not the separately auto-calibrated MotionGate ────────────────────
+// Real single-node empty-room recordings showed the presence gate lit up on
+// ~98-99% of ticks with nobody in the room (data/sessions/
+// emty_2026-07-20T18-21-17-566Z.csv: motion_n2 avg 0.375/max 0.507 against
+// fused_motion_threshold 0.6 — a continuous ghost target under the OLD
+// motionResult.motionDetected wiring, which free-ran its own ~2.4s
+// auto-calibrated scalar threshold instead of this validated metric). Fixed
+// by routing single-node presence through nodeMotionFor() + the same
+// threshold the two-node fused gate already uses. These lock in both
+// directions: real-scale noise must NOT trip the gate, real-scale motion
+// still must.
+function ingestNoisyAmplitudes(
+  server: any,
+  nodeId: number,
+  jitter: number[],
+  count: number,
+) {
+  const baseTs = Date.now();
+  for (let i = 0; i < count; i++) {
+    server.ingestSample({
+      timestamp: baseTs + i * 35,
+      h1: { re: 1, im: 1 },
+      h2: { re: 1, im: 1 },
+      rssi: -45,
+      nodeId,
+      amplitudes: [
+        jitter[i % jitter.length],
+        jitter[(i + 4) % jitter.length],
+        jitter[(i + 8) % jitter.length],
+      ],
+    });
+  }
+}
+
+test("singleNodeMotionDetected: realistic empty-room node2 noise (node1 silent) does not trip the gate", () => {
+  const server = newProcessingServer();
+  // Small fluctuation around a baseline amplitude -- the same order of
+  // magnitude of temporal variance real empty-room CSI noise shows (motion
+  // ~0.4-0.5 on the 0-1 scale, still under the 0.6 threshold).
+  const emptyRoomJitter = [15, 17, 13, 16.5, 13.5, 17.5, 12.5, 16, 14, 15.5, 16.8, 13.2];
+  ingestNoisyAmplitudes(server, 2, emptyRoomJitter, 40);
+
+  assert.equal(server.resolveLiveNodeMode(), "single_node", "sanity: node 1 never reported");
+  assert.equal(
+    server.singleNodeMotionDetected(),
+    false,
+    "realistic empty-room node noise must not trip the single-node presence gate",
+  );
+});
+
+test("singleNodeMotionDetected: real moving-target-scale node motion still trips the gate (no over-correction)", () => {
+  const server = newProcessingServer();
+  // Wide swings around the same baseline -- the same order of magnitude of
+  // temporal variance a real moving person produces (motion comfortably
+  // above the 0.6 threshold).
+  const movingJitter = [5, 25, 2, 28, 4, 26, 3, 27, 6, 24, 2, 29];
+  ingestNoisyAmplitudes(server, 2, movingJitter, 40);
+
+  assert.equal(server.resolveLiveNodeMode(), "single_node", "sanity: node 1 never reported");
+  assert.equal(
+    server.singleNodeMotionDetected(),
+    true,
+    "real moving-scale motion must still trip the single-node presence gate after the fix",
+  );
+});

@@ -273,7 +273,7 @@ Dashboard surfaces:
 | Component | What it shows |
 |---|---|
 | Radar / point cloud (`RadialScene.tsx`, `point-cloud-3d.tsx`) | Live target position on the N1–N2 axis, node beacons, distance/trend labels |
-| AoA heatmap & spectrum | Angle-of-arrival energy per node |
+| Signal Signature heatmap & spectrum | Temporal MUSIC signature per node (not spatial angle — see aoa-spectrum.tsx honesty note) |
 | Vitals monitor | Breathing/heart-rate estimates |
 | Node Features / Board DSP card | Firmware-computed metrics, shown independently for cross-checking |
 | AI Advisory panel | Optional AI-sidecar output, clearly marked non-authoritative |

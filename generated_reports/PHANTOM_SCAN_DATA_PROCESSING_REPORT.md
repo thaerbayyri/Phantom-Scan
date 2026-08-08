@@ -1,3 +1,5 @@
+> **STALE SNAPSHOT (generated 2026-07-14, pre-dates the 2026-08-07 MUSIC/AoA honesty relabeling — see aoa-spectrum.tsx and README.md for current panel names/behavior). Regenerate via the corresponding script in scripts/ before treating this as current.**
+
 # Phantom Scan Data Processing Report
 
 Date: 2026-07-10

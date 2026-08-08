@@ -423,6 +423,13 @@ export default function ReportPage({ params }: { params?: { id?: string } }) {
                                                     <span className="text-muted-foreground"> m</span>
                                                 </div>
                                             </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-amber-200/70">
+                                                NOT A ROOM POSITION — X is a 1-D on-axis projection onto the 3&nbsp;m
+                                                N1&ndash;N2 baseline; in two-node fused mode Z is architecturally fixed
+                                                at 0 (both node anchors share z=0), not an independently measured
+                                                second spatial dimension. Single-antenna nodes cannot resolve
+                                                off-axis position or front/back.
+                                            </p>
                                         </div>
 
                                         {/* Kinematic summary */}

@@ -19,7 +19,9 @@
 /** ADR-018 header size in bytes. */
 #define CSI_HEADER_SIZE 32
 
-/** Maximum frame buffer size (header + 4 antennas * 256 subcarriers * 2 bytes). */
+/** Maximum frame buffer size: header + generous upper bound (4x oversized vs. the
+ *  1 antenna * 256 subcarriers this hardware actually sends) to safely absorb any
+ *  malformed/oversized packet. Not a reflection of expected antenna count. */
 #define CSI_MAX_FRAME_SIZE (CSI_HEADER_SIZE + 4 * 256 * 2)
 
 /** Maximum number of channels in the hop table (ADR-029). */

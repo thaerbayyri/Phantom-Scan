@@ -473,12 +473,16 @@ export function RadialScene({
         dampVector3(smoothedPosition.current, rawTargetVec, decayRate, delta);
         smoothedSpeed.current = dampScalar(smoothedSpeed.current, radialTarget.speed, DECAY_RATES.speed, delta);
     });
-    // Human skeleton overlay: rendered when the target is presentable AND the
-    // micro-Doppler classifier commits to "human" (label requires humanProb
-    // > 0.65; the JSX below applies the label check). Uses the AI poseFrame
-    // skeleton when streaming, else HumanMesh's procedural wireframe figure.
-    // The abstract dot stays underneath as the authoritative position anchor.
-    const canRenderConfidentHuman = canRenderTarget;
+    // Human skeleton/wireframe overlay is a body-shape claim
+    // (shared/target-presentation.ts: canPresentVolumetricTarget) — CSI on
+    // this 1-antenna-per-node hardware cannot honestly support one, whether
+    // driven by the AI poseFrame skeleton or HumanMesh's procedural
+    // walk/breathe fallback for when no poseFrame is streaming. That gate is
+    // hardcoded to false today (dashboard.tsx already withholds poseFrame via
+    // it); mirror the same false here so the procedural fallback can't render
+    // a body either. The abstract dot remains the sole, honest position
+    // anchor. Flip this only alongside canPresentVolumetricTarget.
+    const canRenderConfidentHuman = false;
     // Mechanical (fan/machine) volumetric overlay remains disabled.
     const canRenderVolumetricOverlay = false;
     const spatialSummary = useMemo(

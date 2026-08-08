@@ -329,12 +329,27 @@ class MotionGate:
 
 # ═══════════════════════════════════════════════════════════════════
 #  ISAR / MUSIC Processor — Virtual antenna array AoA estimation
+#
+#  HONESTY NOTE (offline/reference tool, not on the live path): this class
+#  treats the MUSIC peak as a spatial angle for offline-analysis and
+#  demonstration purposes only. On the real hardware (1 antenna per ESP32
+#  node), there is no physical antenna array and no inter-antenna phase
+#  geometry, so this is not a physically valid spatial angle-of-arrival —
+#  it is a temporal signal signature. See the matching HONESTY NOTE above
+#  `computeMUSICSpectrum` in server/lib/signal-processing.ts (the live TS
+#  pipeline) for the canonical framing.
 # ═══════════════════════════════════════════════════════════════════
 
 class ISARMUSICProcessor:
     """
     Inverse Synthetic Aperture Radar (ISAR) with Smoothed MUSIC algorithm
     for Angle of Arrival (AoA) estimation using a single ESP32.
+
+    OFFLINE/REFERENCE CAVEAT: this treats the MUSIC peak as a spatial angle
+    for offline-analysis/demonstration purposes only. On the real
+    single-antenna-per-node hardware this is not a physically valid spatial
+    angle — see the HONESTY NOTE above this class and in
+    server/lib/signal-processing.ts.
 
     Since we have limited physical antennas, we construct a "virtual"
     spatial antenna array by buffering consecutive time samples. The
@@ -1012,6 +1027,10 @@ class CSIFilterPipeline:
 
         if music_result["ready"]:
             # Use MUSIC peak angle for bearing
+            # NOTE: peakAngle is a temporal MUSIC signature bin, not a physically
+            # valid spatial angle on this 1-antenna-per-node hardware — treated as
+            # theta here for offline/reference visualization only, not a truthful
+            # bearing.
             theta = math.radians(music_result["peakAngle"])
         else:
             # Fallback to simple phase-diff during MUSIC warm-up

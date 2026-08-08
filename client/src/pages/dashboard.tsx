@@ -202,6 +202,7 @@ export default function Dashboard() {
                 bearingRad={targetBearing}
                 targetState={targetState ?? null}
                 hasLivePosition={livePositionVisible}
+                presentationCaveat={livePositionCaveat}
               />
               <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
               <NodeFeaturesCard nodeFeatures={nodeFeatures} />

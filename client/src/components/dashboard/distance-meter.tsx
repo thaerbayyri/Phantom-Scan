@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Ruler } from "lucide-react";
 import type { TargetState } from "@shared/schema";
+import type { TargetPresentationCaveat } from "@shared/target-presentation";
 import { bearingToCardinal } from "@shared/bearing";
 
 interface DistanceMeterProps {
@@ -9,6 +10,7 @@ interface DistanceMeterProps {
     bearingRad?: number;
     targetState?: TargetState | null;
     hasLivePosition?: boolean;
+    presentationCaveat?: TargetPresentationCaveat | null;
     className?: string;
 }
 
@@ -24,11 +26,18 @@ export function DistanceMeter({
     bearingRad,
     targetState,
     hasLivePosition = false,
+    presentationCaveat,
     className = "",
 }: DistanceMeterProps) {
     const distanceM = distanceCm / 100;
     const maxRange = 8; // meters
     const hasTruthfulDistance = hasLivePosition;
+    // Fused mode's node anchors both sit at z=0 (shared/schema.ts
+    // NODE_ANCHORS), so radialTarget.theta collapses to due-east/due-west
+    // only — not a real compass bearing. Label it honestly as which side of
+    // the baseline the target is on, matching the caveat text below.
+    const isFusedAxisOnly = targetState?.node_mode === "fused_two_node";
+    const bearingLabel = isFusedAxisOnly ? "Axis Side" : "Bearing";
 
     // Color gradient: green (far) → orange (mid) → red (close)
     const ratio = Math.min(1, distanceM / maxRange);
@@ -121,7 +130,7 @@ export function DistanceMeter({
                             <>
                                 <span className="text-white/20">|</span>
                                 <div className="flex items-center gap-1">
-                                    <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">Bearing</span>
+                                    <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">{bearingLabel}</span>
                                     <span className="font-black text-primary text-sm animate-pulse-slow">
                                         {bearingToCardinal(bearingRad)}
                                     </span>
@@ -130,6 +139,13 @@ export function DistanceMeter({
                         )}
                     </div>
                 </div>
+
+                {hasTruthfulDistance && presentationCaveat && (
+                    <div className="w-full max-w-[220px] border-t border-white/10 pt-2 text-center text-[9px] leading-relaxed text-amber-100/80">
+                        <div className="font-semibold tracking-[0.14em] text-amber-300">{presentationCaveat.primary}</div>
+                        <div className="mt-0.5 text-slate-400">{presentationCaveat.secondary}</div>
+                    </div>
+                )}
 
             </CardContent>
         </Card>

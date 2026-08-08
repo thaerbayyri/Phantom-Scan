@@ -54,6 +54,12 @@ export const channelEstimateSchema = z.object({
 export type ChannelEstimate = z.infer<typeof channelEstimateSchema>;
 
 // AoA spectrum point
+//
+// HONESTY NOTE: "angle"/"AoA" naming is kept for wire-compatibility only.
+// On this single-antenna-per-node hardware, this is a temporal MUSIC
+// signature index/bin, not a physical spatial angle. See the HONESTY NOTE
+// above `computeMUSICSpectrum` in server/lib/signal-processing.ts and the
+// relabeled aoa-spectrum.tsx panel for the canonical explanation.
 export const aoaSpectrumPointSchema = z.object({
   angle: z.number(), // degrees
   power: z.number(), // dB
@@ -61,6 +67,11 @@ export const aoaSpectrumPointSchema = z.object({
 export type AoASpectrumPoint = z.infer<typeof aoaSpectrumPointSchema>;
 
 // ISAR frame containing AoA results
+//
+// HONESTY NOTE: field/type names ("AoA", "peakAngle") are kept for
+// wire-compatibility only. This hardware has 1 antenna per node, so these
+// values are a temporal MUSIC signature, not a physical spatial angle. See
+// server/lib/signal-processing.ts's HONESTY NOTE and aoa-spectrum.tsx.
 export const isarFrameSchema = z.object({
   timestamp: z.number(),
   spectrum: z.array(aoaSpectrumPointSchema),
@@ -89,6 +100,12 @@ export const gestureEventSchema = z.object({
 export type GestureEvent = z.infer<typeof gestureEventSchema>;
 
 // Heatmap data (Time vs Angle)
+//
+// HONESTY NOTE: the "angles" field name is kept for wire-compatibility only.
+// On this single-antenna-per-node hardware these are temporal MUSIC
+// signature bins, not physical spatial angles. See server/lib/signal-
+// processing.ts's HONESTY NOTE and aoa-spectrum.tsx for the canonical
+// explanation.
 export const heatmapDataSchema = z.object({
   times: z.array(z.number()),
   angles: z.array(z.number()),

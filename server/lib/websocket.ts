@@ -1076,7 +1076,7 @@ export class SignalProcessingServer {
         });
       } else if (
         nodeMode === "single_node" &&
-        !hasSingleNodePresenceEvidence(motionResult.motionDetected, Boolean(trackedTarget), classification)
+        !hasSingleNodePresenceEvidence(this.singleNodeMotionDetected(), Boolean(trackedTarget), classification)
       ) {
         // ADR-057: single-node mode previously had NO presence gate at all —
         // the MUSIC-spectrum point cloud and DBSCAN/Kalman tracker can both
@@ -1480,6 +1480,35 @@ export class SignalProcessingServer {
     return this.activeHardwareNodeIds().length >= 2
       ? "fused_two_node"
       : "single_node";
+  }
+
+  /**
+   * Single-node presence-gate motion evidence — PS-GHOST-001.
+   *
+   * Previously fed from `this.motionGate` (server/lib/signal-processing.ts),
+   * a SEPARATE scalar-amplitude gate that free-runs on `dynamicAmplitude`
+   * with its own auto-calibrated threshold (3σ over just the first ~100
+   * samples, ~2.4s at ~42fps) whenever `motionGateEnabled` is false — the
+   * live config default (`websocket.ts` config, `motionGateEnabled: false`).
+   * That short, single-session auto-calibration window is far less robust
+   * than the two-node fused gate's threshold (DEFAULT_MOTION_THRESHOLD,
+   * empirically calibrated against a real empty-room + fan negative control
+   * — see node-fusion.ts). Real empty-room recordings in single_node mode
+   * (`data/sessions/emty_room_test_2026-07-20T18-18-51-892Z.csv`,
+   * `emty_2026-07-20T18-21-17-566Z.csv`) show `motionResult.motionDetected`
+   * true on 98-99% of ticks with nobody in the room — a continuous ghost
+   * target via `hasSingleNodePresenceEvidence`'s `motionDetected` input.
+   *
+   * Fixed by reusing the SAME validated per-node motion metric and threshold
+   * the fused path already uses (`nodeMotionFor` + `fusedTargetMotionThreshold`)
+   * for whichever single node is currently active, instead of the separate
+   * under-calibrated scalar gate. `this.motionGate` itself is untouched —
+   * `motionResult` still feeds the `motionStatus` broadcast unchanged.
+   */
+  private singleNodeMotionDetected(): boolean {
+    return this.activeHardwareNodeIds().some(
+      (nodeId) => this.nodeMotionFor(nodeId).motion >= this.config.fusedTargetMotionThreshold,
+    );
   }
 
   // ── Two-node fusion (Phantom Balance Fusion) ───────────────────────────────

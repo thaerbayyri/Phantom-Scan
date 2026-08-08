@@ -188,7 +188,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm">Array Length</Label>
+                      <Label className="text-sm">Window Length (samples)</Label>
                       <Input
                         type="number"
                         value={config.arrayLength}
@@ -202,7 +202,7 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm">AoA Range (degrees)</Label>
+                      <Label className="text-sm">Signature Range (display only)</Label>
                       <div className="flex items-center gap-2">
                         <Input
                           type="number"
@@ -236,8 +236,10 @@ export function ControlPanel({ config, onConfigChange }: ControlPanelProps) {
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground p-2 bg-muted rounded-md">
-                      MUSIC algorithm calculates AoA using consecutive time samples
-                      as a spatial antenna array.
+                      MUSIC computes a spectrum over consecutive time samples from a
+                      single antenna per node — a temporal signal signature, not a
+                      true spatial angle-of-arrival (this hardware has no antenna
+                      array).
                     </div>
                   </CardContent>
                 </AccordionContent>

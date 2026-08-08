@@ -480,6 +480,12 @@ class SessionReporter:
                 f"  Bounding Box: X=[{bb.get('x_min', 0):.2f}, {bb.get('x_max', 0):.2f}]  "
                 f"Z=[{bb.get('z_min', 0):.2f}, {bb.get('z_max', 0):.2f}]", 10
             )
+            write_line(
+                "  NOT A ROOM POSITION: X is a 1-D on-axis projection onto the "
+                "3 m two-node baseline; Z is architecturally fixed at 0 in "
+                "fused two-node mode (both node anchors share z=0), not an "
+                "independently measured second spatial dimension.", 8
+            )
         write_line("")
 
         # Kinematic
