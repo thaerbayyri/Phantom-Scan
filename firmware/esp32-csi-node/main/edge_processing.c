@@ -837,12 +837,13 @@ static void process_frame(const edge_ring_slot_t *slot)
 
         if ((s_frame_count % 200) == 0) {
             ESP_LOGI(TAG, "Vitals: br=%.1f hr=%.1f motion=%.4f pres=%s "
-                     "fall=%s persons=%u frames=%lu",
+                     "fall=%s persons=%u frames=%lu phase=%.4f rad (sc=%u)",
                      s_breathing_bpm, s_heartrate_bpm, s_motion_energy,
                      s_presence_detected ? "YES" : "no",
                      s_fall_detected ? "YES" : "no",
                      (unsigned)s_latest_pkt.n_persons,
-                     (unsigned long)s_frame_count);
+                     (unsigned long)s_frame_count,
+                     primary_phase, (unsigned)s_top_k[0]);
         }
     }
 

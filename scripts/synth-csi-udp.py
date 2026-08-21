@@ -17,21 +17,31 @@ MAGIC = 0xC511_0001
 
 
 def build_packet(node_id: int, seq: int, freq_mhz: int, rssi: int,
-                 amps: list[float], phases: list[float]) -> bytes:
+                 amps: list[float], phases: list[float], device_ts_us: int) -> bytes:
+    """Pack the ADR-018 32-byte header (schema v1) that
+    csi_collector.c's csi_serialize_frame() produces and
+    udp-server.ts's parseCsiPacket() requires by default.
+
+    device_ts_us mirrors esp_timer_get_time(): microseconds since the
+    device booted, NOT wall-clock epoch time (epoch ms overflows the
+    header's device_ts_ms u32 field)."""
     n_ant = 1
     n_sc = len(amps)
+    device_ts_ms = device_ts_us // 1000
     header = struct.pack(
-        "<I B B B B H I b b I",
+        "<IBBBHIIbbBQI",
         MAGIC,
+        1,             # schema_version
         node_id,
         n_ant,
         n_sc,
-        0,           # reserved
         freq_mhz,
         seq,
         rssi,
-        -95,         # noise_floor
-        0,           # reserved/padding
+        -95,           # noise_floor
+        6,             # channel
+        device_ts_us,
+        device_ts_ms,
     )
     iq = bytearray()
     for amp, phase in zip(amps, phases):
@@ -51,6 +61,9 @@ def main() -> None:
     p.add_argument("--n-sc", type=int, default=52)
     p.add_argument("--motion-after-s", type=float, default=-1.0,
                    help="if >=0, inject amplitude jitter after this many seconds")
+    p.add_argument("--node-id", type=int, default=42,
+                   help="runtime node_id in the frame header (live server only accepts 1 or 2 "
+                        "per CANONICAL_NODE_HARDWARE_IDS in shared/schema.ts)")
     args = p.parse_args()
 
     random.seed(42)
@@ -78,8 +91,8 @@ def main() -> None:
             for k in range(args.n_sc):
                 amps[k] += random.gauss(0.0, 8.0)
                 phases[k] += random.gauss(0.0, 0.3)
-        pkt = build_packet(node_id=42, seq=seq, freq_mhz=2412, rssi=-55,
-                           amps=amps, phases=phases)
+        pkt = build_packet(node_id=args.node_id, seq=seq, freq_mhz=2412, rssi=-55,
+                           amps=amps, phases=phases, device_ts_us=int(elapsed * 1_000_000))
         sock.sendto(pkt, (args.host, args.port))
         seq += 1
         time.sleep(period)

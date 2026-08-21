@@ -1,5 +1,6 @@
 import dgram from "dgram";
 import { signalServer } from "./websocket";
+import { phaseTestLogger } from "./phase-test-logger";
 import type { CSISample } from "@shared/schema";
 import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
 
@@ -561,6 +562,7 @@ export function startUDPServer() {
     let compressedFrameCount = 0;
     let lastLogTime = Date.now();
     let lastUnknownMagicLogMs = 0;
+    const lastPhaseLogMsByNode = new Map<number, number>();
 
     server.on("message", (msg, rinfo) => {
         const kind = classifyPacketMagic(msg);
@@ -692,6 +694,22 @@ export function startUDPServer() {
                     bestH2 = { re: p1_re, im: p1_im };
                 }
             }
+        }
+
+        const phaseRad = Math.atan2(bestH1.im, bestH1.re);
+        if (phaseTestLogger.isEnabled()) {
+            phaseTestLogger.log(parsed.nodeId, parsed.seq, parsed.rssi, phaseRad);
+        }
+
+        // Live phase readout in the npm run terminal, throttled per node to
+        // ~1 Hz so it stays readable at the 20-50 Hz CSI packet rate.
+        const nowPhaseMs = Date.now();
+        const lastPhaseLogMs = lastPhaseLogMsByNode.get(parsed.nodeId) ?? 0;
+        if (nowPhaseMs - lastPhaseLogMs >= 1000) {
+            lastPhaseLogMsByNode.set(parsed.nodeId, nowPhaseMs);
+            console.log(
+                `[Phase] node=${parsed.nodeId} phase=${phaseRad.toFixed(4)} rad rssi=${parsed.rssi}dBm`,
+            );
         }
 
         // One CSISample per packet: scalar h1/h2 (dominant subcarrier) feed the

@@ -19,7 +19,7 @@ interface TargetIdentityCardProps {
  * (none/idle/moving/degraded), nearest-node badge, and the spatial/motion
  * sentence from summarizeTargetSpatial — plus the honesty caveat banner.
  */
- export function TargetIdentityCard({
+export function TargetIdentityCard({
     identity,
     targetState,
     radialTarget,
