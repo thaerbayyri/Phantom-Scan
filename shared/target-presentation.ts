@@ -49,8 +49,9 @@ export function canPresentLiveTargetPosition(
 }
 
 /**
- * Honesty label that must accompany a rendered position: fused mode is an
- * on-axis projection (front/back ambiguous), single-node mode is an
+ * Honesty label that must accompany a rendered position: fused_two_node is
+ * an on-axis projection (front/back ambiguous), fused_room is a weighted
+ * room centroid (not RF-ranged/multilateration), single-node mode is an
  * unvalidated bearing. Null when nothing is being presented.
  */
 export function getLivePositionCaveat(
@@ -64,6 +65,13 @@ export function getLivePositionCaveat(
     return {
       primary: "ON-AXIS ESTIMATE - NOT ROOM POSITION",
       secondary: "front/back ambiguous - off-axis subjects project onto the baseline",
+    };
+  }
+
+  if (input.targetState.node_mode === "fused_room") {
+    return {
+      primary: "ROOM-CENTROID ESTIMATE - NOT RF-RANGED POSITION",
+      secondary: "perturbation-weighted centroid across active nodes, not true multilateration/ranging",
     };
   }
 

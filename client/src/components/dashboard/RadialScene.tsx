@@ -1,8 +1,9 @@
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Text, Billboard } from "@react-three/drei";
+import { Text, Billboard, Line } from "@react-three/drei";
 import * as THREE from "three";
-import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState, SensorNode } from "@shared/schema";
+import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState, SensorNode, SignalField } from "@shared/schema";
+import { ROOM_WIDTH_M, ROOM_DEPTH_M } from "@shared/schema";
 import { summarizeTargetSpatial } from "@shared/target-spatial";
 import { canPresentAxisMotionVector } from "@shared/target-presentation";
 import { headingVectorFromAngle } from "@shared/bearing";
@@ -103,8 +104,13 @@ function PolarGrid() {
 //  ESP32 Beacon — glowing node at origin
 // ═══════════════════════════════════════════════════════════════════
 
-// Distinct colors per node so N1/N2 are visually separable.
-const NODE_COLORS: Record<number, string> = { 1: "#00ffcc", 2: "#ff7ac6" };
+// Distinct colors per node so all 4 anchors are visually separable.
+const NODE_COLORS: Record<number, string> = {
+    1: "#00ffcc",
+    2: "#ff7ac6",
+    3: "#ffd166",
+    4: "#7dd3fc",
+};
 
 /**
  * One glowing sphere per ESP32 node anchor. Its pulse amplitude, emissive
@@ -229,6 +235,72 @@ function NodeAxis({ a, b }: { a: SensorNode; b: SensorNode }) {
         <lineSegments geometry={geometry}>
             <lineBasicMaterial color="#00ffaa" transparent opacity={0.35} />
         </lineSegments>
+    );
+}
+
+/**
+ * Closed perimeter line through all active node anchors (fused_room mode,
+ * 3-4 active nodes) — replaces the single N1-N2 axis with an actual room
+ * outline. Relies on `nodes` already being in perimeter order (1->2->3->4->1,
+ * see shared/schema.ts's NODE_ANCHORS comment) rather than sorting by
+ * position, so a 3-active-node subset still traces a sensible partial loop.
+ */
+function RoomBoundary({ nodes }: { nodes: SensorNode[] }) {
+    const points = useMemo(() => {
+        const pts = nodes.map((n) => new THREE.Vector3(n.x, 0.02, n.z));
+        if (pts.length > 0) pts.push(pts[0].clone());
+        return pts;
+    }, [nodes]);
+    if (points.length < 2) return null;
+    // drei's <Line> (not raw JSX <line>, which TS resolves to the SVG
+    // intrinsic element) draws a continuous connected polyline through points.
+    return <Line points={points} color="#00ffaa" transparent opacity={0.3} />;
+}
+
+function signalFieldIntensityColor(t: number): THREE.Color {
+    // blue (low) -> green (mid) -> red (high), same convention as RuView's
+    // floor-grid reference (F:\RuView-0.8.2-esp32\ui\components\gaussian-splats.js).
+    const clamped = Math.min(1, Math.max(0, t));
+    return clamped < 0.5
+        ? new THREE.Color(0, clamped * 2, 1 - clamped * 2)
+        : new THREE.Color((clamped - 0.5) * 2, 1 - (clamped - 0.5) * 2, 0);
+}
+
+/**
+ * Floor-plane intensity grid for fused_room mode, adapted from RuView's
+ * gaussian-splats.js floor-grid pattern (Three.js Points colored by a
+ * spatial signal_field array) — ported to react-three-fiber. Rendering aid
+ * only (see shared/schema.ts's signalFieldSchema HONESTY NOTE), not a
+ * physical measurement.
+ */
+function SignalFieldGrid({ signalField }: { signalField: SignalField | null }) {
+    const geometry = useMemo(() => {
+        if (!signalField || signalField.values.length === 0) return null;
+        const { gridWidth, gridDepth, cellSizeM, values } = signalField;
+        const max = values.reduce((m, v) => Math.max(m, v), 0) || 1;
+        const positions: number[] = [];
+        const colors: number[] = [];
+        for (let gz = 0; gz < gridDepth; gz++) {
+            const cz = -ROOM_DEPTH_M / 2 + (gz + 0.5) * cellSizeM;
+            for (let gx = 0; gx < gridWidth; gx++) {
+                const cx = -ROOM_WIDTH_M / 2 + (gx + 0.5) * cellSizeM;
+                positions.push(cx, 0.005, cz);
+                const c = signalFieldIntensityColor(values[gz * gridWidth + gx] / max);
+                colors.push(c.r, c.g, c.b);
+            }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        return geo;
+    }, [signalField]);
+
+    if (!geometry) return null;
+
+    return (
+        <points geometry={geometry}>
+            <pointsMaterial size={0.12} vertexColors transparent opacity={0.55} sizeAttenuation />
+        </points>
     );
 }
 
@@ -411,6 +483,7 @@ interface RadialSceneProps {
     poseFrame: PoseFrame | null;
     targetState: TargetState | null;
     nodes?: SensorNode[];
+    signalField?: SignalField | null;
     showLivePosition?: boolean;
 }
 
@@ -426,6 +499,7 @@ export function RadialScene({
     poseFrame,
     targetState,
     nodes = [],
+    signalField = null,
     showLivePosition = false,
 }: RadialSceneProps) {
     const label = radialTarget?.label ?? "unknown";
@@ -490,6 +564,7 @@ export function RadialScene({
         [radialTarget, nodes, targetState],
     );
     const fusedNodes = targetState?.node_mode === "fused_two_node" && nodes.length >= 2;
+    const fusedRoom = targetState?.node_mode === "fused_room" && nodes.length >= 3;
     const midpointEmphasis = spatialSummary?.presentationMode === "fused_axis" && spatialSummary.balanceZone === "midpoint"
         ? 1
         : 0.25;
@@ -533,7 +608,8 @@ export function RadialScene({
                         </group>
                     ))}
                     {fusedNodes && <NodeAxisField a={nodes[0]} b={nodes[1]} emphasis={midpointEmphasis} />}
-                    {nodes.length >= 2 && <NodeAxis a={nodes[0]} b={nodes[1]} />}
+                    {fusedNodes && <NodeAxis a={nodes[0]} b={nodes[1]} />}
+                    {fusedRoom && <RoomBoundary nodes={nodes} />}
                     {canRenderTarget && radialTarget && (
                         <TargetLinks target={radialTarget} nodes={nodes} />
                     )}
@@ -542,6 +618,7 @@ export function RadialScene({
                 <ESPBeacon />
             )}
             <FloorPlane />
+            {fusedRoom && <SignalFieldGrid signalField={signalField} />}
             <AmbientPoints points={points} />
 
             {/* Wall plane at detected reflection distance. 1-D range indicator:
@@ -572,8 +649,10 @@ export function RadialScene({
                     {showAxisMotionVector && (
                         <TargetMotionVector target={fusedArrowTarget ?? radialTarget} />
                     )}
-                    {/* 1-D honesty label: the dot is an on-axis projection. */}
-                    {targetState?.node_mode === "fused_two_node" && (
+                    {/* Honesty label: the dot is a perturbation-proxy estimate, not
+                        RF-ranged/multilateration position — on-axis for 2 nodes,
+                        a weighted room centroid for 3-4 (see fuseNodeTargets). */}
+                    {(targetState?.node_mode === "fused_two_node" || targetState?.node_mode === "fused_room") && (
                         <Billboard position={[radialTarget.x, 0.95, radialTarget.z]} follow={true}>
                             <Text
                                 fontSize={0.11}
@@ -582,7 +661,7 @@ export function RadialScene({
                                 anchorX="center"
                                 anchorY="middle"
                             >
-                                axis projection
+                                {targetState.node_mode === "fused_room" ? "room-centroid estimate" : "axis projection"}
                             </Text>
                         </Billboard>
                     )}

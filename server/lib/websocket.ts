@@ -16,8 +16,9 @@ import type {
   PoseFrame,
   SensorNode,
   NodeFeatureState,
+  SignalField,
 } from "@shared/schema";
-import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
+import { NODE_ANCHORS, NODE_SEPARATION_M, ROOM_WIDTH_M, ROOM_DEPTH_M } from "@shared/schema";
 import { compassBearingRad } from "@shared/bearing";
 
 /**
@@ -32,6 +33,7 @@ const MOTION_WINDOW_MS = Number.parseInt(
 );
 import {
   fuseTwoNodeTarget,
+  fuseNodeTargets,
   computeNodeMotionFromMatrix,
   computeNodeTrends,
   computeFallbackVelocity,
@@ -41,6 +43,7 @@ import {
   wasSuppressedByClassifier,
   DEFAULT_MOTION_THRESHOLD,
   type FusedTarget,
+  type NodeFuseSample,
   type NodeTrend,
   type ClassifierGateInput,
   type ClassifierCorroboration,
@@ -167,6 +170,16 @@ export class SignalProcessingServer {
     trends: { 1: NodeTrend; 2: NodeTrend };
     atMs: number;
   } | null = null;
+
+  // fused_room (3-4 active nodes) per-tick snapshot — same single-source-of-
+  // truth role as fusedSnapshot above, but for the 2-D room centroid: both
+  // the radialTarget broadcast and buildSensorNodes' distanceM read this.
+  // Per-node trend arrows are NOT computed for fused_room in this pass
+  // (stays "stable" in buildSensorNodes) — only the target position/velocity.
+  private roomFusedSnapshot: { x: number; z: number; atMs: number } | null = null;
+  private roomFusedVelPrevX: number | null = null;
+  private roomFusedVelPrevZ: number | null = null;
+  private roomFusedVelPrevMs = 0;
 
   // Recording state
   private isRecording = false;
@@ -392,6 +405,23 @@ export class SignalProcessingServer {
           console.warn(`[WS][SEC] non-AI client ${clientId} sent vitalSigns — ignored (PS-AUDIT-014)`);
         }
         break;
+      case "calibrateBaseline":
+        // Operator-triggered "Calibrate Empty Room" action (AIAdvisoryPanel).
+        // Only relayed from a non-AI (dashboard) client to any connected AI
+        // sidecar — it resets the sidecar's own activity-state motion
+        // baseline (scripts/ai_inference.py), never a deterministic value.
+        if (client && !client.isAI) {
+          this.broadcastToAI("calibrateBaseline", null);
+          void this.auditClientAction(client, "ai_baseline_calibration_requested");
+        }
+        break;
+      case "calibrationAck":
+        // Relay from the AI sidecar back to dashboard clients so the UI can
+        // confirm the calibration happened.
+        if (client?.isAI) {
+          this.broadcast("calibrationAck", message.data);
+        }
+        break;
     }
   }
 
@@ -462,8 +492,11 @@ export class SignalProcessingServer {
     // Session header: log the active anchor geometry so replays/reports are
     // interpretable (same discipline as adapter logging).
     console.log(
-      `[NODES] anchors N1=(${NODE_ANCHORS[1].x},${NODE_ANCHORS[1].z}) ` +
-        `N2=(${NODE_ANCHORS[2].x},${NODE_ANCHORS[2].z}) sep=${NODE_SEPARATION_M}m`,
+      "[NODES] anchors " +
+        Object.entries(NODE_ANCHORS)
+          .map(([id, a]) => `N${id}=(${a.x},${a.z})`)
+          .join(" ") +
+        ` room=${ROOM_WIDTH_M}x${ROOM_DEPTH_M}m sep(N1-N2)=${NODE_SEPARATION_M}m`,
     );
 
     // Process at ~20 FPS
@@ -976,7 +1009,10 @@ export class SignalProcessingServer {
       // In fused_two_node mode the target is placed on the N1–N2 line by the
       // cross-node motion ratio. `r`/`theta` become display-only; `distanceCm`
       // stays physically meaningful (range to the nearest node).
-      const fused = nodeMode === "fused_two_node" ? this.computeFusedTarget(classification) : null;
+      const fused =
+        nodeMode === "fused_two_node" || nodeMode === "fused_room"
+          ? this.computeFusedTarget(classification)
+          : null;
       // Item 1: single-node mode has no FusedTarget to carry the corroboration
       // reason, so evaluate it directly for observability/state-reason purposes
       // (hasSingleNodePresenceEvidence below applies the same decision to gate).
@@ -991,13 +1027,33 @@ export class SignalProcessingServer {
       if (fused) {
         radX = fused.x;
         radZ = fused.z;
-        // Snapshot is the single source both broadcasts read this tick.
-        const velMps = this.updateFusedSnapshot(fused.balance, fused.x);
-        targetVx = velMps;
-        targetVz = 0;
-        speed = Math.abs(velMps); // m/s along the axis
-        fusedBalance = fused.balance;
-        fusedBalanceLinear = fused.balanceLinear;
+        if (fused.balance !== undefined) {
+          // fused_two_node: on-axis balance snapshot — single source both
+          // the radialTarget broadcast and buildSensorNodes read this tick.
+          const velMps = this.updateFusedSnapshot(fused.balance, fused.x);
+          targetVx = velMps;
+          targetVz = 0;
+          speed = Math.abs(velMps); // m/s along the axis
+          fusedBalance = fused.balance;
+          fusedBalanceLinear = fused.balanceLinear;
+        } else {
+          // fused_room: true 2-D centroid — track velocity with the same
+          // pure helper the single-node fallback path uses (computeFallbackVelocity),
+          // keyed to the fused position instead of the raw single-node estimate.
+          const nowRoomMs = Date.now();
+          const prevRoomSample =
+            this.roomFusedVelPrevX === null || this.roomFusedVelPrevZ === null
+              ? null
+              : { x: this.roomFusedVelPrevX, z: this.roomFusedVelPrevZ, atMs: this.roomFusedVelPrevMs };
+          const roomVel = computeFallbackVelocity(prevRoomSample, { x: fused.x, z: fused.z }, nowRoomMs);
+          targetVx = roomVel.vx;
+          targetVz = roomVel.vz;
+          speed = roomVel.speed;
+          this.roomFusedVelPrevX = fused.x;
+          this.roomFusedVelPrevZ = fused.z;
+          this.roomFusedVelPrevMs = nowRoomMs;
+          this.roomFusedSnapshot = { x: fused.x, z: fused.z, atMs: nowRoomMs };
+        }
         fusedDistanceCm = fused.distToNearestNodeM * 100;
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
       }
@@ -1054,8 +1110,8 @@ export class SignalProcessingServer {
         classifierCorroboration,
       };
 
-      if (nodeMode === "fused_two_node" && !fused) {
-        // Two nodes active but this window's cross-node perturbation didn't
+      if ((nodeMode === "fused_two_node" || nodeMode === "fused_room") && !fused) {
+        // Nodes active but this window's cross-node perturbation didn't
         // clear the motion gate. Reset the node-specific balance/trend
         // labels immediately, but HOLD the last known target through the
         // same live→stale_hold(1.5s)→cleared(5s) lifecycle used for a live
@@ -1224,8 +1280,9 @@ export class SignalProcessingServer {
     if (this.isRecording) {
       // Cap at 5000 samples to prevent unbounded memory growth
       if (this.recordingBuffer.length < 5000) {
-        const motion1 = this.nodeMotionFor(1).motion;
-        const motion2 = this.nodeMotionFor(2).motion;
+        const nodeIds = Object.keys(NODE_ANCHORS).map(Number);
+        const nodeMotion = Object.fromEntries(nodeIds.map((id) => [id, this.nodeMotionFor(id).motion]));
+        const nodeFps = Object.fromEntries(nodeIds.map((id) => [id, this.nodeFpsFor(id)]));
         this.recordingBuffer.push(
           buildRecordingRow({
             sample: {
@@ -1236,8 +1293,8 @@ export class SignalProcessingServer {
             radialTarget: this.currentRadialTarget,
             targetState: this.currentTargetState,
             fusedSnapshot: this.fusedSnapshot,
-            nodeMotion: { 1: motion1, 2: motion2 },
-            nodeFps: { 1: this.nodeFpsFor(1), 2: this.nodeFpsFor(2) },
+            nodeMotion,
+            nodeFps,
             syncMarker: this.pendingSyncMarker,
             groundTruthTag: this.activeGroundTruthTag,
             classifierCorroboration: this.lastTickClassifierCorroboration,
@@ -1475,11 +1532,16 @@ export class SignalProcessingServer {
     return active.sort((a, b) => a - b);
   }
 
-  /** fused_two_node only when BOTH boards are live; otherwise single_node (UI shows "degraded"). */
+  /**
+   * fused_room when 3+ boards are live (weighted-centroid room fusion),
+   * fused_two_node when exactly 2 are live (on-axis balance), otherwise
+   * single_node (UI shows "degraded").
+   */
   private resolveLiveNodeMode(): TargetState["node_mode"] {
-    return this.activeHardwareNodeIds().length >= 2
-      ? "fused_two_node"
-      : "single_node";
+    const activeCount = this.activeHardwareNodeIds().length;
+    if (activeCount >= 3) return "fused_room";
+    if (activeCount === 2) return "fused_two_node";
+    return "single_node";
   }
 
   /**
@@ -1514,7 +1576,7 @@ export class SignalProcessingServer {
   // ── Two-node fusion (Phantom Balance Fusion) ───────────────────────────────
   private recordNodeAmplitude(sample: CSISample): void {
     const nodeId = sample.nodeId ?? 1;
-    if (nodeId !== 1 && nodeId !== 2) return; // only the two anchored nodes
+    if (!(nodeId in NODE_ANCHORS)) return; // only nodes with a configured anchor
     const t = sample.timestamp ?? Date.now();
     let win = this.nodeAmpWindow.get(nodeId);
     if (!win) {
@@ -1559,6 +1621,43 @@ export class SignalProcessingServer {
   private computeFusedTarget(
     classifier?: ClassifierGateInput,
   ): (FusedTarget & { maxMotion: number }) | null {
+    const activeIds = this.activeHardwareNodeIds();
+
+    // fused_room (3-4 active nodes): weighted-centroid across all active
+    // anchors — see fuseNodeTargets for the generalized math. balance/
+    // balanceLinear are left undefined (no single axis to project onto).
+    if (activeIds.length >= 3) {
+      const samples: NodeFuseSample[] = activeIds.map((id) => {
+        const m = this.nodeMotionFor(id);
+        return {
+          id,
+          r: computeGainNormalizedPerturbation(m.absStd, m.mean),
+          motion: m.motion,
+          anchor: NODE_ANCHORS[id],
+        };
+      });
+      const fusedRoom = fuseNodeTargets(samples, {
+        motionThreshold: this.config.fusedTargetMotionThreshold,
+        classifier,
+      });
+      // fuseNodeTargets doesn't expose a separate "gate passed but classifier
+      // vetoed" signal the way wasSuppressedByClassifier does for the 2-node
+      // path; approximate it by re-checking corroboration directly so the
+      // fused_room hold-reason label stays informative.
+      this.lastFusedVetoedByClassifier =
+        Math.max(...samples.map((s) => s.motion), 0) >= this.config.fusedTargetMotionThreshold &&
+        evaluateClassifierCorroboration(classifier).suppress;
+      if (!fusedRoom) return null;
+      const maxMotion = Math.max(...samples.map((s) => s.motion));
+      return {
+        x: fusedRoom.x,
+        z: fusedRoom.z,
+        distToNearestNodeM: fusedRoom.distToNearestNodeM,
+        classifierCorroboration: fusedRoom.classifierCorroboration,
+        maxMotion,
+      };
+    }
+
     const m1 = this.nodeMotionFor(1);
     const m2 = this.nodeMotionFor(2);
     const fuseInput = {
@@ -1618,6 +1717,10 @@ export class SignalProcessingServer {
     this.fusedSnapshot = null;
     this.prevFusedX = null;
     this.prevFusedMs = 0;
+    this.roomFusedSnapshot = null;
+    this.roomFusedVelPrevX = null;
+    this.roomFusedVelPrevZ = null;
+    this.roomFusedVelPrevMs = 0;
   }
 
   /**
@@ -1643,8 +1746,14 @@ export class SignalProcessingServer {
       processing && this.fusedSnapshot && Date.now() - this.fusedSnapshot.atMs <= 1500
         ? this.fusedSnapshot
         : null;
+    // fused_room equivalent: same 1.5s freshness window, straight-line
+    // distance (no single axis to project onto) — see roomFusedSnapshot.
+    const roomSnap =
+      processing && this.roomFusedSnapshot && Date.now() - this.roomFusedSnapshot.atMs <= 1500
+        ? this.roomFusedSnapshot
+        : null;
     const nodes: SensorNode[] = [];
-    for (const key of [1, 2] as const) {
+    for (const key of Object.keys(NODE_ANCHORS).map(Number).sort((a, b) => a - b)) {
       const anchor = NODE_ANCHORS[key];
       const motion = !processing
         ? 0
@@ -1657,9 +1766,14 @@ export class SignalProcessingServer {
         active: active.has(key),
         rssi: this.nodeLastRssi.get(key) ?? -100,
         source: "live",
-        // Along-axis distance from the fused target to THIS node.
-        distanceM: snap ? Math.abs(snap.x - anchor.x) : undefined,
-        trend: snap ? snap.trends[key] : "stable",
+        distanceM: snap
+          ? Math.abs(snap.x - anchor.x) // on-axis distance (fused_two_node)
+          : roomSnap
+            ? Math.hypot(roomSnap.x - anchor.x, roomSnap.z - anchor.z) // straight-line (fused_room)
+            : undefined,
+        // fused_room doesn't compute per-node approach/recede trends in this
+        // pass (only the 2-D position/velocity) — stays "stable".
+        trend: snap ? snap.trends[key as 1 | 2] ?? "stable" : "stable",
       });
     }
     return nodes;
@@ -1724,17 +1838,64 @@ export class SignalProcessingServer {
     return out.sort((a, b) => a.node_id - b.node_id);
   }
 
+  private static readonly SIGNAL_FIELD_GRID = 20;
+
+  /**
+   * Spatial intensity grid for the dashboard's floor-glow visualization
+   * (fused_room mode only, 3-4 active nodes) — inverse-distance-weighted
+   * spread of each active node's gain-normalized perturbation across the
+   * room. Rendering aid only, same perturbation-proxy honesty as the rest
+   * of the fusion math (see fuseNodeTargets) — never fed back into
+   * localization. Skipped entirely outside fused_room (cheap no-op check).
+   */
+  private buildSignalField(): SignalField | null {
+    if (this.resolveLiveNodeMode() !== "fused_room") return null;
+    const activeIds = this.activeHardwareNodeIds();
+    if (activeIds.length === 0) return null;
+
+    const samples = activeIds.map((id) => {
+      const m = this.nodeMotionFor(id);
+      return { anchor: NODE_ANCHORS[id], r: computeGainNormalizedPerturbation(m.absStd, m.mean) };
+    });
+
+    const gridWidth = SignalProcessingServer.SIGNAL_FIELD_GRID;
+    const gridDepth = SignalProcessingServer.SIGNAL_FIELD_GRID;
+    const cellW = ROOM_WIDTH_M / gridWidth;
+    const cellD = ROOM_DEPTH_M / gridDepth;
+    const values: number[] = new Array(gridWidth * gridDepth);
+    for (let gz = 0; gz < gridDepth; gz++) {
+      const cz = -ROOM_DEPTH_M / 2 + (gz + 0.5) * cellD;
+      for (let gx = 0; gx < gridWidth; gx++) {
+        const cx = -ROOM_WIDTH_M / 2 + (gx + 0.5) * cellW;
+        let num = 0;
+        let den = 0;
+        for (const s of samples) {
+          const d = Math.max(0.25, Math.hypot(cx - s.anchor.x, cz - s.anchor.z));
+          const w = 1 / (d * d);
+          num += s.r * w;
+          den += w;
+        }
+        values[gz * gridWidth + gx] = den > 0 ? num / den : 0;
+      }
+    }
+    return { gridWidth, gridDepth, cellSizeM: cellW, values };
+  }
+
   private broadcastNodes(): void {
     this.broadcast("nodes", this.buildSensorNodes());
     // Rebroadcast firmware metrics on the node tick so a board that goes
     // silent ages out client-side (its own 1 Hz receipts stop arriving).
     this.broadcast("nodeFeatures", this.buildNodeFeatureStates());
+    const signalField = this.buildSignalField();
+    if (signalField) {
+      this.broadcast("signalField", signalField);
+    }
 
     // fps sanity: warn (≤ every 10 s) if an active node isn't near the ~40 fps
     // the 3 s window assumes. Ties to the firmware self-ping lineage question.
     const now = Date.now();
     if (now - this.lastNodeFpsLogMs > 10000) {
-      for (const key of [1, 2] as const) {
+      for (const key of Object.keys(NODE_ANCHORS).map(Number)) {
         const win = this.nodeAmpWindow.get(key);
         if (win && win.length > 5) {
           const spanS = Math.max(0.001, (win[win.length - 1].t - win[0].t) / 1000);

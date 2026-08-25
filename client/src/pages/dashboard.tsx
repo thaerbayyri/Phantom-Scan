@@ -49,9 +49,12 @@ export default function Dashboard() {
     vitalSigns,
     advisoryIdentity,
     advisoryVitalSigns,
+    lastCalibratedAt,
+    calibrateBaseline,
     poseFrame,
     nodes,
     nodeFeatures,
+    signalField,
   } = useWebSocket();
 
   // Presentation gates: every target-related widget below renders ONLY what
@@ -158,6 +161,7 @@ export default function Dashboard() {
             poseFrame={volumetricTargetVisible ? poseFrame : null}
             targetState={targetState}
             nodes={nodes}
+            signalField={signalField}
             showLivePosition={livePositionVisible}
           />
         </div>
@@ -206,7 +210,12 @@ export default function Dashboard() {
               />
               <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
               <NodeFeaturesCard nodeFeatures={nodeFeatures} />
-              <AIAdvisoryPanel identity={advisoryIdentity} vitals={advisoryVitalSigns} />
+              <AIAdvisoryPanel
+                identity={advisoryIdentity}
+                vitals={advisoryVitalSigns}
+                onCalibrate={calibrateBaseline}
+                lastCalibratedAt={lastCalibratedAt}
+              />
             </section>
           </div>
         </main>

@@ -79,7 +79,7 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   "rm -rf build sdkconfig && idf.py set-target esp32s3 && idf.py build"
 
 # Flash
-python -m esptool --chip esp32s3 --port COM7 --baud 460800 \
+python -m esptool --chip esp32s3 --port COM6 --baud 460800 \
   write_flash --flash_mode dio --flash_size 8MB \
   0x0 firmware/esp32-csi-node/build/bootloader/bootloader.bin \
   0x8000 firmware/esp32-csi-node/build/partition_table/partition-table.bin \

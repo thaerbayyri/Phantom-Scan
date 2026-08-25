@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   fuseTwoNodeTarget,
+  fuseNodeTargets,
   biasBalanceTowardNearestNode,
   computeLinearBalance,
   computeNodeMotionFromMatrix,
@@ -17,6 +18,74 @@ import {
   type NodeTrend,
   type ClassifierGateInput,
 } from "./node-fusion";
+
+// 4m x 6m room, one anchor per corner, perimeter order 1->2->3->4->1 —
+// mirrors shared/schema.ts's NODE_ANCHORS.
+const ROOM_ANCHORS = {
+  1: { x: -2, z: -3 },
+  2: { x: 2, z: -3 },
+  3: { x: 2, z: 3 },
+  4: { x: -2, z: 3 },
+} as const;
+const ROOM_MOVING_THRESHOLD = 0.12;
+
+test("fuseNodeTargets: motion concentrated at node 3 centroids near node 3's anchor", () => {
+  const t = fuseNodeTargets(
+    [
+      { id: 1, r: 1, motion: 1, anchor: ROOM_ANCHORS[1] },
+      { id: 2, r: 1, motion: 1, anchor: ROOM_ANCHORS[2] },
+      { id: 3, r: 100, motion: 1, anchor: ROOM_ANCHORS[3] },
+      { id: 4, r: 1, motion: 1, anchor: ROOM_ANCHORS[4] },
+    ],
+    { motionThreshold: ROOM_MOVING_THRESHOLD },
+  );
+  assert.ok(t);
+  assert.ok(Math.abs(t!.x - ROOM_ANCHORS[3].x) < 0.5, `x ${t!.x}`);
+  assert.ok(Math.abs(t!.z - ROOM_ANCHORS[3].z) < 0.5, `z ${t!.z}`);
+  assert.equal(t!.nearestNodeId, 3);
+});
+
+test("fuseNodeTargets: motion split evenly across all 4 nodes centroids near room center", () => {
+  const t = fuseNodeTargets(
+    [
+      { id: 1, r: 10, motion: 1, anchor: ROOM_ANCHORS[1] },
+      { id: 2, r: 10, motion: 1, anchor: ROOM_ANCHORS[2] },
+      { id: 3, r: 10, motion: 1, anchor: ROOM_ANCHORS[3] },
+      { id: 4, r: 10, motion: 1, anchor: ROOM_ANCHORS[4] },
+    ],
+    { motionThreshold: ROOM_MOVING_THRESHOLD },
+  );
+  assert.ok(t);
+  assert.ok(Math.abs(t!.x) < 1e-9, `x ${t!.x} should be at room center`);
+  assert.ok(Math.abs(t!.z) < 1e-9, `z ${t!.z} should be at room center`);
+});
+
+test("fuseNodeTargets: below-threshold motion at all nodes returns null (empty-room gate)", () => {
+  const t = fuseNodeTargets(
+    [
+      { id: 1, r: 0.01, motion: 0.02, anchor: ROOM_ANCHORS[1] },
+      { id: 2, r: 0.01, motion: 0.02, anchor: ROOM_ANCHORS[2] },
+      { id: 3, r: 0.01, motion: 0.02, anchor: ROOM_ANCHORS[3] },
+      { id: 4, r: 0.01, motion: 0.02, anchor: ROOM_ANCHORS[4] },
+    ],
+    { motionThreshold: ROOM_MOVING_THRESHOLD },
+  );
+  assert.equal(t, null);
+});
+
+test("fuseNodeTargets: confident mechanical classification suppresses an otherwise-passing energy gate", () => {
+  const t = fuseNodeTargets(
+    [
+      { id: 1, r: 1, motion: 1, anchor: ROOM_ANCHORS[1] },
+      { id: 3, r: 1, motion: 1, anchor: ROOM_ANCHORS[3] },
+    ],
+    {
+      motionThreshold: ROOM_MOVING_THRESHOLD,
+      classifier: { label: "mechanical", humanProb: 0.05 },
+    },
+  );
+  assert.equal(t, null);
+});
 
 const ANCHORS = { 1: { x: -1.5, z: 0 }, 2: { x: 1.5, z: 0 } } as const;
 // Motion well above threshold so these tests isolate the localization math.

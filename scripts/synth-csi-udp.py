@@ -62,7 +62,7 @@ def main() -> None:
     p.add_argument("--motion-after-s", type=float, default=-1.0,
                    help="if >=0, inject amplitude jitter after this many seconds")
     p.add_argument("--node-id", type=int, default=42,
-                   help="runtime node_id in the frame header (live server only accepts 1 or 2 "
+                   help="runtime node_id in the frame header (live server only accepts 1-4 "
                         "per CANONICAL_NODE_HARDWARE_IDS in shared/schema.ts)")
     args = p.parse_args()
 

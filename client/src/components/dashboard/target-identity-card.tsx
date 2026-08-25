@@ -99,7 +99,13 @@ export function TargetIdentityCard({
                     <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-[10px] font-mono text-cyan-100">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="uppercase tracking-[0.16em] text-cyan-300/80">{spatialSummary.zoneLabel}</div>
-                            <div className="text-[9px] text-slate-400 uppercase">{spatialSummary.presentationMode === "fused_axis" ? "fused axis" : "single node"}</div>
+                            <div className="text-[9px] text-slate-400 uppercase">
+                                {spatialSummary.presentationMode === "fused_axis"
+                                    ? "fused axis"
+                                    : spatialSummary.presentationMode === "fused_room"
+                                        ? "fused room"
+                                        : "single node"}
+                            </div>
                         </div>
                         <div className="mt-1 text-cyan-100">{spatialSummary.motionLabel}</div>
                         <div className="mt-1 text-slate-300">{spatialSummary.detailLabel}</div>

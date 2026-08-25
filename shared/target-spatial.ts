@@ -18,7 +18,7 @@ export interface TargetSpatialSummary {
   motionLabel: string;
   nearestNodeId: number | null;
   distances: NodeDistanceSummary[];
-  presentationMode: "fused_axis" | "single_node";
+  presentationMode: "fused_axis" | "fused_room" | "single_node";
   balanceZone?: "near_n1" | "midpoint" | "near_n2";
   projectionLabel?: string;
 }
@@ -94,6 +94,30 @@ export function summarizeTargetSpatial(
 
   if (!nearest) {
     return null;
+  }
+
+  // Fused room mode (3-4 active nodes): a true 2-D weighted-centroid
+  // position, not an on-axis projection — see fuseNodeTargets. Zone/detail
+  // read from straight-line distances to every active node.
+  if (targetState.node_mode === "fused_room") {
+    const detailLabel = distances
+      .map((distance) => `N${distance.nodeId} ${roundDistance(distance.distanceM)}`)
+      .join(" • ");
+    const motionLabel = radialTarget.isMoving
+      ? approaching
+        ? `Toward N${approaching.node_id}`
+        : "Moving through the room"
+      : `Holding near N${nearest.nodeId}`;
+
+    return {
+      zoneLabel: `Near N${nearest.nodeId}`,
+      detailLabel,
+      motionLabel,
+      nearestNodeId: nearest.nodeId,
+      distances,
+      presentationMode: "fused_room",
+      projectionLabel: "room-centroid estimate",
+    };
   }
 
   // Single-node fallback: only a nearest-node distance and a cardinal

@@ -259,13 +259,17 @@ export interface FusedTarget {
   z: number;
   /** 0 → at node 1, 0.5 → midpoint, 1 → at node 2. Contrast-shaped (see
    * BALANCE_CONTRAST_EXPONENT) — this is the DISPLAY value; it is what
-   * positions the on-screen target, not the canonical linear ratio. */
-  balance: number;
+   * positions the on-screen target, not the canonical linear ratio.
+   * Undefined when this target came from `fuseNodeTargets` (3+ nodes) —
+   * a single axis-balance scalar has no meaning once the target is a true
+   * 2-D room centroid. */
+  balance?: number;
   /** Canonical, undecorated balance = r2/(r1+r2) — independent of
    * BALANCE_CONTRAST_EXPONENT and BALANCE_BIAS_EXPONENT. Authoritative
    * cross-check value (PS-AUDIT-003/011, ADR-054); never drives the
-   * on-screen target position, which remains `balance` above. */
-  balanceLinear: number;
+   * on-screen target position, which remains `balance` above. Undefined
+   * for the same reason as `balance` above when N > 2 nodes fused it. */
+  balanceLinear?: number;
   /** Range to the NEAREST node anchor in meters (physically meaningful). */
   distToNearestNodeM: number;
   /** Whether the optional classifier corroborated, contradicted, or was
@@ -482,6 +486,116 @@ export function computeFallbackVelocity(
  * alone. Omitting `classifier` (existing call sites) is fully backward
  * compatible — behavior is unchanged from before this gate existed.
  */
+// ── N-node room fusion (fused_room mode, 3-4 active nodes) ─────────────────
+
+/**
+ * Per-node input sample for `fuseNodeTargets`: this node's raw unsaturated
+ * perturbation (`r`, same quantity as `r1`/`r2` above), its saturated display
+ * motion (feeds the presence gate), and its fixed anchor position.
+ */
+export interface NodeFuseSample {
+  id: number;
+  r: number;
+  motion: number;
+  anchor: NodeAnchor;
+}
+
+export interface FusedRoomTarget {
+  x: number;
+  z: number;
+  /** Per-node contrast-weighted share (sums to 1) — generalizes `balance`. */
+  weights: Record<number, number>;
+  nearestNodeId: number;
+  /** Range to the NEAREST node anchor in meters (physically meaningful). */
+  distToNearestNodeM: number;
+  classifierCorroboration: ClassifierCorroboration;
+}
+
+/**
+ * Fuse 3+ nodes into a 2-D position via a contrast-weighted centroid of the
+ * active node anchors: `pos = Σ(anchor_i · r_i^p) / Σ(r_i^p)`.
+ *
+ * This is the direct N-node generalization of `fuseTwoNodeTarget`'s balance
+ * math: expanding `n1·(1-balance) + n2·balance` with
+ * `balance = r2^p/(r1^p+r2^p)` gives exactly `n1·r1^p/(r1^p+r2^p) +
+ * n2·r2^p/(r1^p+r2^p)` — a 2-point weighted centroid with weight `r_i^p`.
+ * Same perturbation-proxy honesty as the 2-node case: this is NOT RF
+ * ranging/multilateration, just where the strongest CSI perturbation sits
+ * relative to the node ring. Unlike `fuseTwoNodeTarget`, no
+ * `biasBalanceTowardNearestNode` display squeeze is applied here — that step
+ * only makes sense projected onto a single N1-N2 axis; the contrast exponent
+ * alone does the equivalent "pull toward the dominant node" work in 2-D.
+ *
+ * Returns `null` under the same empty-room gate as `fuseTwoNodeTarget`: no
+ * node's saturated motion clears the threshold, or there is no perturbation
+ * energy at all.
+ */
+export function fuseNodeTargets(
+  samples: NodeFuseSample[],
+  opts: {
+    motionThreshold?: number;
+    contrastExponent?: number;
+    classifier?: ClassifierGateInput;
+    mechanicalRejectHumanProbMax?: number;
+  } = {},
+): FusedRoomTarget | null {
+  const clean = samples.map((s) => ({
+    ...s,
+    r: Number.isFinite(s.r) ? Math.max(0, s.r) : 0,
+    motion: Number.isFinite(s.motion) ? s.motion : 0,
+  }));
+  if (clean.length === 0) {
+    return null;
+  }
+
+  const threshold = opts.motionThreshold ?? DEFAULT_MOTION_THRESHOLD;
+  const totalR = clean.reduce((sum, s) => sum + s.r, 0);
+  const maxMotion = clean.reduce((max, s) => Math.max(max, s.motion), 0);
+  const energyGatePassed = maxMotion >= threshold && totalR > EPS;
+
+  const { suppress, corroboration } = evaluateClassifierCorroboration(
+    opts.classifier,
+    opts.mechanicalRejectHumanProbMax,
+  );
+  if (!energyGatePassed || suppress) {
+    return null;
+  }
+
+  const p = opts.contrastExponent ?? BALANCE_CONTRAST_EXPONENT;
+  const weighted = clean.map((s) => ({ ...s, w: Math.pow(s.r, p) }));
+  const totalW = weighted.reduce((sum, s) => sum + s.w, 0);
+
+  const weights: Record<number, number> = {};
+  let x = 0;
+  let z = 0;
+  if (totalW > EPS) {
+    for (const s of weighted) {
+      const share = s.w / totalW;
+      weights[s.id] = share;
+      x += s.anchor.x * share;
+      z += s.anchor.z * share;
+    }
+  } else {
+    // No node clearly dominates (degenerate all-zero perturbation) — fall
+    // back to a plain unweighted centroid of the active anchors.
+    for (const s of weighted) weights[s.id] = 1 / weighted.length;
+    x = weighted.reduce((sum, s) => sum + s.anchor.x, 0) / weighted.length;
+    z = weighted.reduce((sum, s) => sum + s.anchor.z, 0) / weighted.length;
+  }
+
+  let nearestNodeId = clean[0].id;
+  let distToNearestNodeM = Infinity;
+  for (const s of clean) {
+    const d = Math.hypot(x - s.anchor.x, z - s.anchor.z);
+    if (d < distToNearestNodeM) {
+      distToNearestNodeM = d;
+      nearestNodeId = s.id;
+    }
+  }
+
+  return { x, z, weights, nearestNodeId, distToNearestNodeM, classifierCorroboration: corroboration };
+}
+
 export function hasSingleNodePresenceEvidence(
   motionDetected: boolean,
   hasTrackedTarget: boolean,

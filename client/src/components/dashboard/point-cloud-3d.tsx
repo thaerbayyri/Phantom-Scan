@@ -1,6 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import type { PointCloudPoint, RadialTarget, PoseFrame, TargetState, SensorNode } from "@shared/schema";
+import type { PointCloudPoint, RadialTarget, PoseFrame, TargetState, SensorNode, SignalField } from "@shared/schema";
 import { RadialScene } from "./RadialScene";
 
 interface PointCloud3DProps {
@@ -9,6 +9,7 @@ interface PointCloud3DProps {
   poseFrame?: PoseFrame | null;
   targetState?: TargetState | null;
   nodes?: SensorNode[];
+  signalField?: SignalField | null;
   showLivePosition?: boolean;
   className?: string;
 }
@@ -24,6 +25,7 @@ export function PointCloud3D({
   poseFrame,
   targetState,
   nodes,
+  signalField,
   showLivePosition = false,
   className = "",
 }: PointCloud3DProps) {
@@ -37,6 +39,7 @@ export function PointCloud3D({
           poseFrame={poseFrame ?? null}
           targetState={targetState ?? null}
           nodes={nodes ?? []}
+          signalField={signalField ?? null}
           showLivePosition={showLivePosition}
         />
         <OrbitControls

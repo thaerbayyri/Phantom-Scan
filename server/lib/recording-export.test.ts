@@ -84,8 +84,9 @@ test("visible fused rows reuse the same displayed position contract", () => {
   assert.equal(row.z_disp_m, radialTarget.z);
   assert.equal(row.x, row.x_disp_m);
   assert.equal(row.z, row.z_disp_m);
-  assert.equal(row.distance_n1_m, 2.25);
-  assert.equal(row.distance_n2_m, 0.75);
+  // NODE_ANCHORS[1].x = -2, NODE_ANCHORS[2].x = 2 (4m x 6m room corners).
+  assert.equal(row.distance_n1_m, 2.75);
+  assert.equal(row.distance_n2_m, 1.25);
   assert.equal(row.trend_n1, "receding");
   assert.equal(row.trend_n2, "approaching");
   assert.equal(row.target_visible, 1);

@@ -1,10 +1,17 @@
 import type { TargetIdentity, VitalSigns } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sparkles, Gauge } from "lucide-react";
 
 interface AIAdvisoryPanelProps {
     identity: TargetIdentity | null;
     vitals: VitalSigns | null;
+    /** Resets the AI sidecar's activity-state motion baseline (walking/
+     * rapid_change heuristic only) — no model weight is touched. Omit to
+     * hide the "Calibrate Empty Room" control entirely. */
+    onCalibrate?: () => void;
+    /** Wall-clock ms of the last calibration ack, or null if none yet. */
+    lastCalibratedAt?: number | null;
 }
 
 /**
@@ -16,14 +23,16 @@ interface AIAdvisoryPanelProps {
  * be mistaken for the deterministic verdict. Renders nothing when no AI
  * sidecar is connected, so a dashboard without one sees zero UI change.
  */
-export function AIAdvisoryPanel({ identity, vitals }: AIAdvisoryPanelProps) {
+export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedAt }: AIAdvisoryPanelProps) {
     if (!identity && !vitals) {
         return null;
     }
 
     const label = identity?.label ?? "unknown";
+    const calibratedSecondsAgo = lastCalibratedAt ? Math.max(0, Math.round((Date.now() - lastCalibratedAt) / 1000)) : null;
     const humanProb = identity?.humanProb ?? 0.5;
     const mechProb = identity?.mechanicalProb ?? 0.5;
+    const activityState = identity?.activityState;
 
     return (
         <Card className="min-w-0 border-dashed border-purple-400/40 bg-purple-950/10">
@@ -56,6 +65,16 @@ export function AIAdvisoryPanel({ identity, vitals }: AIAdvisoryPanelProps) {
                         Model label: {label}
                     </div>
                 )}
+                {activityState && activityState !== "unknown" && (
+                    <div
+                        className={`text-[10px] font-mono uppercase ${
+                            activityState === "rapid_change" ? "text-amber-300" : "text-purple-300/80"
+                        }`}
+                        title="Motion-energy heuristic only — not derived from pose or body shape."
+                    >
+                        Activity: {activityState === "rapid_change" ? "abrupt signal change" : activityState}
+                    </div>
+                )}
                 {vitals && (
                     <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-muted-foreground">
                         <div>HR: {vitals.heartRateBpm > 0 ? vitals.heartRateBpm : "--"} bpm</div>
@@ -68,6 +87,26 @@ export function AIAdvisoryPanel({ identity, vitals }: AIAdvisoryPanelProps) {
                     Model-derived output from the AI sidecar. Never gates or overrides the
                     deterministic verdict shown in Target Identity above.
                 </div>
+                {onCalibrate && (
+                    <div className="flex items-center justify-between gap-2 border-t border-purple-400/15 pt-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onCalibrate}
+                            className="h-7 gap-1.5 border-purple-400/30 text-[10px]"
+                            title="Stand in an empty room, then click this to reset the sidecar's activity-state motion baseline to current ambient noise. Does not retrain any model weight."
+                            data-testid="btn-calibrate-empty-room"
+                        >
+                            <Gauge className="h-3 w-3" />
+                            Calibrate Empty Room
+                        </Button>
+                        {calibratedSecondsAgo !== null && (
+                            <span className="text-[9px] text-purple-300/60">
+                                calibrated {calibratedSecondsAgo}s ago
+                            </span>
+                        )}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

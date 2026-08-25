@@ -32,6 +32,7 @@ import json
 import socket
 import struct
 import threading
+from collections import deque
 import numpy as np
 import torch
 import torch.nn as nn
@@ -193,6 +194,13 @@ last_inference_time = 0.0
 # Per-node previous window mean for temporal-delta motion energy.
 node_prev_means = {}
 
+# Per-node short history of motion_raw, used only for the activity-state
+# heuristic below (trend/ratio detection across inference cycles).
+node_motion_history = {}
+ACTIVITY_HISTORY_LEN = 6      # ~1.2s of samples at the 5Hz inference throttle
+WALK_MOTION_THRESHOLD = 0.02  # sustained motion energy consistent with locomotion
+RAPID_CHANGE_RATIO = 3.0      # this-sample vs recent-baseline ratio to flag an abrupt change
+
 # ─── Model Loading ────────────────────────────────────────────────────
 
 print("[AI] Loading models...")
@@ -337,6 +345,25 @@ def extract_features_8d(mags_history, rssi_history, fs, prev_window_mean=None):
     vitals = {"breathing": breathing, "heart_rate": heart_rate, "reliable": vitals_reliable}
     return features_std, motion, current_window_mean, vitals
 
+def classify_activity(node_id, motion_raw):
+    """Motion-energy-only activity heuristic. Advisory, not pose-derived.
+
+    "rapid_change" means an abrupt jump in CSI motion energy relative to this
+    node's recent baseline — it is NOT a validated fall-detection signal. The
+    same signature equally fits sitting down, leaving the sensing field, or a
+    reflector (door/curtain) moving, and 1-antenna CSI cannot discriminate
+    those cases. Callers must not present it as a fall/injury claim."""
+    hist = node_motion_history.setdefault(node_id, deque(maxlen=ACTIVITY_HISTORY_LEN))
+    baseline = (sum(hist) / len(hist)) if hist else motion_raw
+    ratio = (motion_raw / baseline) if baseline > 1e-6 else 1.0
+    hist.append(motion_raw)
+
+    if ratio >= RAPID_CHANGE_RATIO and motion_raw > WALK_MOTION_THRESHOLD:
+        return "rapid_change"
+    if motion_raw >= WALK_MOTION_THRESHOLD:
+        return "walking"
+    return "stationary"
+
 def _estimate_fs(timestamps):
     """Estimate sampling rate (Hz) from millisecond timestamps."""
     if len(timestamps) < 2:
@@ -391,6 +418,8 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
     if present:
         label = "human" if motion_raw > 0.005 else "mechanical"
 
+    activity_state = classify_activity(node_id, motion_raw)
+
     return {
         "node_id": node_id,
         "coords": coords_raw,           # [34] (x, z) pairs
@@ -398,6 +427,7 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
         "presence_prob": presence_prob,
         "present": present,
         "label": label,
+        "activity_state": activity_state,
         "vitals": vitals,
         "current_mean": current_mean,
         "embedding": z,
@@ -459,6 +489,19 @@ def fuse_and_emit():
     if advisory_label == "human":
         human_prob = max(human_prob, presence_prob)
 
+    # Fused activity tag: motion-energy heuristic only (see classify_activity
+    # docstring) — "unknown" when nothing is present, since there is no
+    # target to have an activity state.
+    activity_states = [r["activity_state"] for r in results]
+    if not present_any:
+        activity_state = "unknown"
+    elif "rapid_change" in activity_states:
+        activity_state = "rapid_change"
+    elif "walking" in activity_states:
+        activity_state = "walking"
+    else:
+        activity_state = "stationary"
+
     if not (ws_connected and ws is not None):
         return
     try:
@@ -475,6 +518,7 @@ def fuse_and_emit():
                 "periodicity": periodicity,
                 "presenceProb": presence_prob,
                 "advisoryLabel": advisory_label,
+                "activityState": activity_state,
             },
         }))
         ws.send(json.dumps({
@@ -488,7 +532,7 @@ def fuse_and_emit():
         nodes_str = "+".join(str(r["node_id"]) for r in results)
         pp_str = f"{presence_prob:.2f}" if pp else "n/a"
         print(f"[AI] Fused nodes={nodes_str} advisory_label={advisory_label} "
-              f"presence={pp_str} motion={motion:.4f} "
+              f"activity={activity_state} presence={pp_str} motion={motion:.4f} "
               f"resp={breathing:.1f} hr={heart:.0f} rel={vitals_reliable}")
     except Exception as e:
         print(f"[WS] Send error: {e}")
@@ -571,13 +615,42 @@ def parse_csi_packet(data: bytes) -> dict:
         mags = np.array(mags)
     return {"node_id": node_id, "mags": mags, "rssi": rssi, "timestamp": time.time() * 1000}
 
+# ─── Baseline calibration ("Calibrate Empty Room") ─────────────────────
+
+def _run_calibration():
+    """Reset the rolling motion baseline classify_activity() compares
+    against, to the room's condition at the moment this is called.
+
+    This does NOT retrain any model weight (embedding/pose/presence-head/
+    LoRA all stay exactly as loaded from disk) — it only clears the short
+    per-node history so the next sample becomes its own baseline, one
+    reasonable to run while standing in an empty room so ambient noise
+    (fan, HVAC) captured right now stops reading as "walking"/"rapid_change"
+    afterward."""
+    calibrated = list(node_motion_history.keys())
+    for hist in node_motion_history.values():
+        hist.clear()
+    print(f"[AI] Calibrated activity baseline for nodes={calibrated}")
+    if ws_connected and ws is not None:
+        try:
+            ws.send(json.dumps({
+                "type": "calibrationAck",
+                "data": {"nodes": calibrated, "t": time.time()},
+            }))
+        except Exception as e:
+            print(f"[WS] calibrationAck send error: {e}")
+
 # ─── WebSocket Client ──────────────────────────────────────────────────
 
 def on_message(ws_conn, message):
     # Process WS rawSamples regardless of UDP — hardware can use both paths.
     try:
         msg = json.loads(message)
-        if msg.get("type") != "rawSample":
+        msg_type = msg.get("type")
+        if msg_type == "calibrateBaseline":
+            _run_calibration()
+            return
+        if msg_type != "rawSample":
             return
         data = msg.get("data")
         if not data:

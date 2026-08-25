@@ -18,6 +18,7 @@ import type {
   PoseFrame,
   SensorNode,
   NodeFeatureState,
+  SignalField,
 } from "@shared/schema";
 
 interface WSState {
@@ -40,9 +41,16 @@ interface WSState {
   // deterministic verdict — see server/lib/websocket.ts's isAI-gated relay.
   advisoryIdentity: TargetIdentity | null;
   advisoryVitalSigns: VitalSigns | null;
+  // Wall-clock (ms) of the last AI-sidecar baseline calibration ack, or null
+  // if none has happened this session. Advisory-only bookkeeping, same as
+  // advisoryIdentity/advisoryVitalSigns above.
+  lastCalibratedAt: number | null;
   poseFrame: PoseFrame | null;
   nodes: SensorNode[];
   nodeFeatures: NodeFeatureState[];
+  // fused_room only (3-4 active nodes) — spatial intensity grid for the
+  // dashboard's floor-glow visualization. Null outside fused_room.
+  signalField: SignalField | null;
   isConnected: boolean;
   error: string | null;
 }
@@ -134,6 +142,7 @@ function buildClearedSceneState(
     advisoryVitalSigns: null as VitalSigns | null,
     poseFrame: null as PoseFrame | null,
     nodeFeatures: [] as NodeFeatureState[],
+    signalField: null as SignalField | null,
     // Node beacons are only cleared on socket death: on Stop the server
     // intentionally keeps sending quiesced beacons (honest node presence).
     ...(opts.clearNodes ? { nodes: [] as SensorNode[] } : {}),
@@ -166,9 +175,11 @@ export function useWebSocket() {
     vitalSigns: null,
     advisoryIdentity: null,
     advisoryVitalSigns: null,
+    lastCalibratedAt: null,
     poseFrame: null,
     nodes: [],
     nodeFeatures: [],
+    signalField: null,
     isConnected: false,
     error: null,
   });
@@ -436,6 +447,24 @@ export function useWebSocket() {
         }));
         break;
 
+      // fused_room spatial intensity grid — see RadialScene's SignalFieldGrid.
+      case "signalField":
+        setState((prev) => ({
+          ...prev,
+          signalField: (message.data as SignalField) ?? null,
+        }));
+        break;
+
+      // Ack from the AI sidecar that it reset its activity-state motion
+      // baseline (see scripts/ai_inference.py classify_activity /
+      // _run_calibration). Does not touch any deterministic/model weight.
+      case "calibrationAck":
+        setState((prev) => ({
+          ...prev,
+          lastCalibratedAt: Date.now(),
+        }));
+        break;
+
       case "reportReady":
         console.log("Report is ready and available from history/report views.");
         break;
@@ -517,6 +546,15 @@ export function useWebSocket() {
     sendMessage("markSyncEvent", null);
   }, [sendMessage]);
 
+  // Asks the AI sidecar to reset the rolling motion baseline its
+  // walking/rapid_change activity heuristic compares against, so ambient
+  // room noise (fan, HVAC) captured right now stops reading as motion.
+  // Relayed server-side to AI clients only (server/lib/websocket.ts); no
+  // deterministic/model weight is touched.
+  const calibrateBaseline = useCallback(() => {
+    sendMessage("calibrateBaseline", null);
+  }, [sendMessage]);
+
   useEffect(() => {
     connect();
     // Defense-in-depth staleness watchdog: if the socket stays open but the
@@ -559,6 +597,7 @@ export function useWebSocket() {
     startRecording,
     stopRecording,
     markSyncEvent,
+    calibrateBaseline,
     reconnect: connect,
   };
 }

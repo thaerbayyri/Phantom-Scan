@@ -27,16 +27,20 @@ export const csiSampleSchema = z.object({
 export type CSISample = z.infer<typeof csiSampleSchema>;
 
 // Canonical hardware IDs (single source of truth, PS-AUDIT-005). The wire
-// protocol keeps the runtime node id as u8 (1/2); the live authority maps it
+// protocol keeps the runtime node id as u8 (1-4); the live authority maps it
 // immediately to these stable board identities.
 export const CANONICAL_NODE_HARDWARE_IDS: Record<number, number> = {
   1: 29052,
   2: 44260,
+  3: 51234,
+  4: 67891,
 };
 
 export const HARDWARE_ID_TO_RUNTIME_NODE_ID: Record<number, number> = {
   29052: 1,
   44260: 2,
+  51234: 3,
+  67891: 4,
 };
 
 export function mapRuntimeNodeIdToHardwareId(nodeId: number): number | undefined {
@@ -218,6 +222,12 @@ export const targetIdentitySchema = z.object({
   mechanicalProb: z.number(),
   periodicity: z.number().optional(),
   highFreqRatio: z.number().optional(),
+  // Advisory-only, motion-energy heuristic (AI sidecar). NOT derived from pose
+  // or body shape. "rapid_change" flags an abrupt CSI motion-energy jump —
+  // this is deliberately not labeled as a fall signal: the same signature
+  // equally fits sitting down, leaving the sensing field, or a moved
+  // reflector (door/curtain), and this hardware cannot discriminate those.
+  activityState: z.enum(["stationary", "walking", "rapid_change", "unknown"]).optional(),
 });
 export type TargetIdentity = z.infer<typeof targetIdentitySchema>;
 
@@ -269,13 +279,16 @@ export type RadialTarget = z.infer<typeof radialTargetSchema>;
 // Target presence/movement state machine (built in server/lib/target-state.ts):
 //   none     — empty room / nothing detectable
 //   stale    — last detection aged past 1.5 s; position no longer trusted
-//   idle     — target present (two-node) but not moving
-//   moving   — target present (two-node) and in motion
+//   idle     — target present (fused) but not moving
+//   moving   — target present (fused) and in motion
 //   degraded — only one node live; presence evidence but untrustworthy position
 export const targetStateSchema = z.object({
   state: z.enum(["none", "stale", "idle", "moving", "degraded"]),
   source_mode: z.enum(["live", "replay", "synthetic"]),
-  node_mode: z.enum(["single_node", "fused_two_node"]),
+  // single_node: 1 node live. fused_two_node: exactly 2 nodes live — 1-D
+  // on-axis placement (fuseTwoNodeTarget). fused_room: 3-4 nodes live —
+  // perturbation-weighted centroid across all active anchors (fuseNodeTargets).
+  node_mode: z.enum(["single_node", "fused_two_node", "fused_room"]),
   target_visible: z.boolean(),
   position_confident: z.boolean(),
   position: z
@@ -296,15 +309,24 @@ export const targetStateSchema = z.object({
 });
 export type TargetState = z.infer<typeof targetStateSchema>;
 
-// ── Two-node ESP32-S3 geometry (fixed anchors) ──────────────────
-// Fixed node anchor positions in radar/world meters (origin at center, +Z = north).
-// 3 m apart on the E–W axis, centered — the target's balance-fused position slides
-// along the line between them. Single source of truth for server + client.
+// ── Multi-node ESP32-S3 geometry (fixed anchors) ──────────────────
+// Fixed node anchor positions in radar/world meters (origin at room center,
+// +Z = north). Nodes 1-4 sit one per corner of a ROOM_WIDTH_M x ROOM_DEPTH_M
+// rectangle, in perimeter order 1->2->3->4->1 (this order matters — it's what
+// lets the client draw a clean room-boundary polygon instead of a crossed
+// shape). With only nodes 1+2 live (fused_two_node), the target slides along
+// the N1-N2 line; with 3-4 live (fused_room) it's a weighted centroid across
+// all active anchors. Single source of truth for server + client.
+export const ROOM_WIDTH_M = 4;
+export const ROOM_DEPTH_M = 6;
 export const NODE_ANCHORS: Record<number, { x: number; z: number }> = {
-  1: { x: -1.5, z: 0 },
-  2: { x: 1.5, z: 0 },
+  1: { x: -ROOM_WIDTH_M / 2, z: -ROOM_DEPTH_M / 2 },
+  2: { x: ROOM_WIDTH_M / 2, z: -ROOM_DEPTH_M / 2 },
+  3: { x: ROOM_WIDTH_M / 2, z: ROOM_DEPTH_M / 2 },
+  4: { x: -ROOM_WIDTH_M / 2, z: ROOM_DEPTH_M / 2 },
 };
-export const NODE_SEPARATION_M = 3;
+// N1-N2 separation (still meaningful for fused_two_node mode).
+export const NODE_SEPARATION_M = ROOM_WIDTH_M;
 
 // A sensor node marker broadcast to the UI: anchor position + live activity.
 export const sensorNodeSchema = z.object({
@@ -315,9 +337,11 @@ export const sensorNodeSchema = z.object({
   active: z.boolean(),           // seen within the live freshness window
   rssi: z.number(),              // last RSSI seen for this node (dBm)
   source: z.enum(["live", "synthetic"]),
-  // Along-axis distance from the fused target to THIS node (meters). Only set
-  // while a live fused target exists. Honest limit: assumes the person is on
-  // the N1–N2 line; an off-axis person reads a wrong on-line distance.
+  // Straight-line distance from the fused target to THIS node (meters). Only
+  // set while a live fused target exists. Under fused_two_node this is an
+  // on-axis distance (honest limit: assumes the person is on the N1-N2 line,
+  // an off-axis person reads a wrong on-line distance); under fused_room it
+  // is a true straight-line distance to this node's anchor.
   distanceM: z.number().optional(),
   // Is the fused target moving toward or away from THIS node (sign of
   // d(balance)/dt with a deadband)? "stable" when idle or below deadband.
@@ -359,6 +383,20 @@ export const targetDebugSchema = z.object({
   node_motion: z.record(z.string(), z.number()).optional(),
 });
 export type TargetDebug = z.infer<typeof targetDebugSchema>;
+
+// Spatial signal-intensity grid over the room (fused_room mode only) — an
+// inverse-distance-weighted spread of each active node's motion/perturbation
+// value across ROOM_WIDTH_M x ROOM_DEPTH_M, for the dashboard's floor-glow
+// visualization. NOT a physical RF field measurement (same perturbation-proxy
+// honesty as the rest of the fusion math) — it's a rendering aid, never fed
+// back into localization. `values` is row-major, length gridWidth*gridDepth.
+export const signalFieldSchema = z.object({
+  gridWidth: z.number(),
+  gridDepth: z.number(),
+  cellSizeM: z.number(),
+  values: z.array(z.number()),
+});
+export type SignalField = z.infer<typeof signalFieldSchema>;
 
 // 3D Pose Keypoint
 export const poseKeypointSchema = z.object({
@@ -402,6 +440,7 @@ export const wsMessageTypeSchema = z.enum([
   "targetDebug",
   "nodes",
   "nodeFeatures",
+  "signalField",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
 
@@ -423,6 +462,7 @@ export const streamFrameSchema = z.object({
     targetDebugSchema,
     z.array(sensorNodeSchema),
     nodeFeatureStatesSchema,
+    signalFieldSchema,
   ]),
 });
 export type StreamFrame = z.infer<typeof streamFrameSchema>;
