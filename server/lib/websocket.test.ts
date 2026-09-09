@@ -232,6 +232,21 @@ test("resolveLiveNodeMode: both nodes stale resolves single_node (no separate 'n
   assert.equal(server.resolveLiveNodeMode(), "single_node");
 });
 
+test("two-node fusion uses the active pair when nodes 3 and 4 are the live sensors", () => {
+  const server = newProcessingServer();
+  const movingJitter = [5, 25, 2, 28, 4, 26, 3, 27, 6, 24, 2, 29];
+  ingestNoisyAmplitudes(server, 3, movingJitter, 40);
+  ingestNoisyAmplitudes(server, 4, movingJitter, 40);
+
+  assert.deepEqual(server.activeHardwareNodeIds(), [3, 4]);
+  assert.equal(server.resolveLiveNodeMode(), "fused_two_node");
+
+  const fused = server.computeFusedTarget();
+  assert.ok(fused, "the live N3/N4 pair must produce a fused target");
+  assert.ok(Math.abs(fused!.x) < 0.01, `x=${fused!.x} should stay on the N3-N4 line`);
+  assert.ok(Math.abs(fused!.z - 3) < 0.01, `z=${fused!.z} should use the N3/N4 anchors`);
+});
+
 // ── PS-GHOST-001: single-node presence gate must use the validated motion
 // metric, not the separately auto-calibrated MotionGate ────────────────────
 // Real single-node empty-room recordings showed the presence gate lit up on
@@ -296,5 +311,59 @@ test("singleNodeMotionDetected: real moving-target-scale node motion still trips
     server.singleNodeMotionDetected(),
     true,
     "real moving-scale motion must still trip the single-node presence gate after the fix",
+  );
+});
+
+// ── PS-GHOST-001 (Part 2): the motionStatus broadcast must also use the
+// validated per-node metric, not MotionGate's own known-unreliable
+// auto-calibrated result. MotionGate was left wired to this broadcast when
+// the presence-gate consumer above was fixed (see
+// PhantomScan_GhostTarget_Fix.md), so the dashboard's live motion indicator
+// could still contradict an actual empty-room test until this fix.
+test("motionStatus broadcast: known-unreliable MotionGate false positive does not reach the dashboard in an empty room", () => {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+
+  // Stub MotionGate to reproduce the exact real-hardware failure: its own
+  // free-running auto-calibration claims motion even though the room is
+  // empty (98-99% false-positive rate measured on real recordings).
+  server.motionGate.update = () => ({ motionDetected: true, variance: 1, threshold: 0.05 });
+
+  const emptyRoomJitter = [15, 17, 13, 16.5, 13.5, 17.5, 12.5, 16, 14, 15.5, 16.8, 13.2];
+  ingestNoisyAmplitudes(server, 2, emptyRoomJitter, 40);
+
+  server.processFrame();
+
+  const motionStatusMsgs = dashboard.sent.filter((m: Captured) => m.type === "motionStatus");
+  assert.ok(motionStatusMsgs.length > 0, "sanity: motionStatus must have broadcast");
+  const last = motionStatusMsgs[motionStatusMsgs.length - 1];
+  assert.equal(
+    (last.data as { motionDetected: boolean }).motionDetected,
+    false,
+    "the broadcast must follow the validated per-node metric, not the stubbed known-unreliable MotionGate result",
+  );
+});
+
+test("motionStatus broadcast: manual motionGateEnabled threshold is not overridden", () => {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+  server.config.motionGateEnabled = true;
+  server.config.motionThreshold = 0.01;
+
+  server.motionGate.update = () => ({ motionDetected: true, variance: 1, threshold: 0.01 });
+
+  const emptyRoomJitter = [15, 17, 13, 16.5, 13.5, 17.5, 12.5, 16, 14, 15.5, 16.8, 13.2];
+  ingestNoisyAmplitudes(server, 2, emptyRoomJitter, 40);
+
+  server.processFrame();
+
+  const motionStatusMsgs = dashboard.sent.filter((m: Captured) => m.type === "motionStatus");
+  const last = motionStatusMsgs[motionStatusMsgs.length - 1];
+  assert.equal(
+    (last.data as { motionDetected: boolean }).motionDetected,
+    true,
+    "an operator-enabled manual threshold must keep using MotionGate's own result, unchanged",
   );
 });

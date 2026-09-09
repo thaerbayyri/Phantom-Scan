@@ -16,6 +16,7 @@ import type {
   PoseFrame,
   SensorNode,
   NodeFeatureState,
+  NodeSignalState,
   SignalField,
 } from "@shared/schema";
 import { NODE_ANCHORS, NODE_SEPARATION_M, ROOM_WIDTH_M, ROOM_DEPTH_M } from "@shared/schema";
@@ -155,8 +156,13 @@ export class SignalProcessingServer {
   // per-subcarrier amplitude frame (falls back to a 1-element frame from the
   // scalar h1 when the packet carried no vector).
   private nodeAmpWindow: Map<number, { t: number; amps: number[] }[]> = new Map();
+  /** Latest max-power-subcarrier amplitude/phase per node, for the nodeSignal
+   * dashboard readout — a live diagnostic, not a spatial measurement. */
+  private nodeLastSignal: Map<number, { amplitude: number; phaseDeg: number; t: number }> =
+    new Map();
   private nodeLastRssi: Map<number, number> = new Map();
   private prevFusedX: number | null = null;
+  private prevFusedZ: number | null = null;
   private prevFusedMs = 0;
   private lastNodeFpsLogMs = 0;
   private lastIdleDebugMs = 0;
@@ -166,8 +172,10 @@ export class SignalProcessingServer {
   private fusedSnapshot: {
     balance: number;
     x: number;
+    z: number;
     velMps: number; // signed: >0 toward N2
-    trends: { 1: NodeTrend; 2: NodeTrend };
+    endpointIds: [number, number];
+    trends: Record<number, NodeTrend>;
     atMs: number;
   } | null = null;
 
@@ -229,12 +237,28 @@ export class SignalProcessingServer {
   private prevNodeModeForFallback: TargetState["node_mode"] | null = null;
 
   // ── Session report accumulation ──
+  // Phase-1 bug audit: reportDistances/reportSpeeds/reportPositionsX/Z/reportLabels
+  // used to store one entry per processed frame (~20 FPS) for the entire
+  // session with no cap — an unbounded memory leak on long-running sessions,
+  // unlike every other per-tick buffer in this file. Replaced with running
+  // whole-session aggregates (sum/count/min/max) that give the exact same
+  // getSessionReport() output, plus small bounded "recent" windows for the
+  // periodic-summary event below, which only ever looked at the last 200
+  // samples anyway.
   private reportStartTime = 0;
-  private reportDistances: number[] = [];
-  private reportSpeeds: number[] = [];
-  private reportLabels: string[] = [];
-  private reportPositionsX: number[] = [];
-  private reportPositionsZ: number[] = [];
+  private reportRecentDistances: number[] = [];
+  private reportRecentSpeeds: number[] = [];
+  private reportDistanceCount = 0;
+  private reportDistanceSum = 0;
+  private reportDistanceMin = Infinity;
+  private reportDistanceMax = -Infinity;
+  private reportSpeedCount = 0;
+  private reportSpeedSum = 0;
+  private reportPosXMin = Infinity;
+  private reportPosXMax = -Infinity;
+  private reportPosZMin = Infinity;
+  private reportPosZMax = -Infinity;
+  private reportLabelCounts: Record<string, number> = {};
   private reportEvents: { time: number; elapsed: number; description: string; distance?: number }[] = [];
   private reportLastLabel = "";
   private reportLastMoving = false;
@@ -466,11 +490,19 @@ export class SignalProcessingServer {
 
     // Reset report accumulation
     this.reportStartTime = Date.now();
-    this.reportDistances = [];
-    this.reportSpeeds = [];
-    this.reportLabels = [];
-    this.reportPositionsX = [];
-    this.reportPositionsZ = [];
+    this.reportRecentDistances = [];
+    this.reportRecentSpeeds = [];
+    this.reportDistanceCount = 0;
+    this.reportDistanceSum = 0;
+    this.reportDistanceMin = Infinity;
+    this.reportDistanceMax = -Infinity;
+    this.reportSpeedCount = 0;
+    this.reportSpeedSum = 0;
+    this.reportPosXMin = Infinity;
+    this.reportPosXMax = -Infinity;
+    this.reportPosZMin = Infinity;
+    this.reportPosZMax = -Infinity;
+    this.reportLabelCounts = {};
     this.reportEvents = [];
     this.reportLastLabel = "";
     this.reportLastMoving = false;
@@ -813,8 +845,21 @@ export class SignalProcessingServer {
       this.config.motionGateEnabled ? this.config.motionThreshold : undefined
     );
 
+    // PS-GHOST-001 (Part 2): motionResult.motionDetected comes from MotionGate's
+    // own free-running ~100-sample auto-calibration, confirmed via real
+    // empty-room recordings to false-positive on 98-99% of ticks. The
+    // presence-gate consumer was already switched to the validated per-node
+    // motion metric (singleNodeMotionDetected); apply the same fallback to this
+    // broadcast so the dashboard's motion indicator doesn't contradict an actual
+    // empty-room/negative-control test. Only overridden when motionGateEnabled
+    // is false (the live default) — an operator who explicitly enables the gate
+    // with a manual threshold gets that manual value, unchanged.
+    const motionDetected = this.config.motionGateEnabled
+      ? motionResult.motionDetected
+      : this.nodeMotionFor(sample.nodeId ?? 1).motion >= this.config.fusedTargetMotionThreshold;
+
     // Broadcast motion status every frame
-    this.broadcast("motionStatus", motionResult);
+    this.broadcast("motionStatus", { ...motionResult, motionDetected });
 
     // Motion-gate now affects motion classification only.
     // A stationary but truthful target should remain visible as idle/degraded,
@@ -970,6 +1015,7 @@ export class SignalProcessingServer {
       const nodeMode = this.resolveLiveNodeMode();
       if (this.prevNodeModeForFallback !== null && this.prevNodeModeForFallback !== nodeMode) {
         this.invalidateFallbackVelocity();
+        this.clearFusedSnapshot();
       }
       this.prevNodeModeForFallback = nodeMode;
 
@@ -1030,7 +1076,8 @@ export class SignalProcessingServer {
         if (fused.balance !== undefined) {
           // fused_two_node: on-axis balance snapshot — single source both
           // the radialTarget broadcast and buildSensorNodes read this tick.
-          const velMps = this.updateFusedSnapshot(fused.balance, fused.x);
+          const activePair = this.activeHardwareNodeIds();
+          const velMps = this.updateFusedSnapshot(fused.balance, fused.x, fused.z, [activePair[0], activePair[1]]);
           targetVx = velMps;
           targetVz = 0;
           speed = Math.abs(velMps); // m/s along the axis
@@ -1108,6 +1155,10 @@ export class SignalProcessingServer {
         // Item 1: observability for the corroborating classifier gate — see
         // evaluateClassifierCorroboration (server/lib/node-fusion.ts).
         classifierCorroboration,
+        // Phase-1 bug audit: `fused` is only truthy after computeFusedTarget
+        // succeeded on real cross-node measurement; otherwise x/z came from
+        // the synthetic single-antenna MUSIC AoA angle (see tracking.ts).
+        positionBasis: fused ? "fused_1d" : "synthetic_single_node_aoa",
       };
 
       if ((nodeMode === "fused_two_node" || nodeMode === "fused_room") && !fused) {
@@ -1173,11 +1224,30 @@ export class SignalProcessingServer {
       // ── Report data accumulation ──
       // (reportFrameCount is incremented once per processed frame at the end
       // of processFrame — counting here too double-counted ISAR frames.)
-      this.reportDistances.push(pdpResult.distanceCm);
-      this.reportSpeeds.push(speed);
-      this.reportPositionsX.push(radX);
-      this.reportPositionsZ.push(radZ);
-      this.reportLabels.push(classification.label);
+      this.reportDistanceCount++;
+      this.reportDistanceSum += pdpResult.distanceCm;
+      if (pdpResult.distanceCm < this.reportDistanceMin) this.reportDistanceMin = pdpResult.distanceCm;
+      if (pdpResult.distanceCm > this.reportDistanceMax) this.reportDistanceMax = pdpResult.distanceCm;
+      this.reportRecentDistances.push(pdpResult.distanceCm);
+      if (this.reportRecentDistances.length > 200) {
+        this.reportRecentDistances = this.reportRecentDistances.slice(-200);
+      }
+
+      this.reportSpeedCount++;
+      this.reportSpeedSum += speed;
+      this.reportRecentSpeeds.push(speed);
+      if (this.reportRecentSpeeds.length > 200) {
+        this.reportRecentSpeeds = this.reportRecentSpeeds.slice(-200);
+      }
+
+      if (radX < this.reportPosXMin) this.reportPosXMin = radX;
+      if (radX > this.reportPosXMax) this.reportPosXMax = radX;
+      if (radZ < this.reportPosZMin) this.reportPosZMin = radZ;
+      if (radZ > this.reportPosZMax) this.reportPosZMax = radZ;
+
+      if (classification.label !== "unknown") {
+        this.reportLabelCounts[classification.label] = (this.reportLabelCounts[classification.label] || 0) + 1;
+      }
 
       const now = Date.now();
       const elapsed = (now - this.reportStartTime) / 1000;
@@ -1240,8 +1310,8 @@ export class SignalProcessingServer {
 
       // ── Event: Periodic summary every 200 frames (~10s) ──
       if (this.reportFrameCount - this.reportLastSummaryFrame >= 200) {
-        const recentDist = this.reportDistances.slice(-200);
-        const recentSpeed = this.reportSpeeds.slice(-200);
+        const recentDist = this.reportRecentDistances;
+        const recentSpeed = this.reportRecentSpeeds;
         const avgD = recentDist.reduce((s, v) => s + v, 0) / recentDist.length / 100;
         const avgS = recentSpeed.reduce((s, v) => s + v, 0) / recentSpeed.length;
         this.reportEvents.push({
@@ -1388,6 +1458,7 @@ export class SignalProcessingServer {
     this.sendToClient(clientId, "vitalSigns", this.currentVitalSigns);
     this.sendToClient(clientId, "nodes", this.buildSensorNodes());
     this.sendToClient(clientId, "nodeFeatures", this.buildNodeFeatureStates());
+    this.sendToClient(clientId, "nodeSignal", this.buildNodeSignalStates());
   }
 
   /**
@@ -1518,6 +1589,7 @@ export class SignalProcessingServer {
   private broadcastTargetState(targetState: TargetState) {
     this.currentTargetState = targetState;
     this.broadcast("targetState", targetState);
+    this.broadcast("nodeSignal", this.buildNodeSignalStates());
     this.updateTargetDebug();
   }
 
@@ -1590,6 +1662,11 @@ export class SignalProcessingServer {
         ? sample.amplitudes
         : [magnitude(sample.h1)];
     win.push({ t, amps });
+    this.nodeLastSignal.set(nodeId, {
+      amplitude: magnitude(sample.h1),
+      phaseDeg: (phase(sample.h1) * 180) / Math.PI,
+      t,
+    });
     const cutoff = t - MOTION_WINDOW_MS; // fixed window by timestamp (yield-independent)
     while (win.length && win[0].t < cutoff) win.shift();
     this.nodeLastRssi.set(nodeId, sample.rssi ?? -100);
@@ -1658,8 +1735,9 @@ export class SignalProcessingServer {
       };
     }
 
-    const m1 = this.nodeMotionFor(1);
-    const m2 = this.nodeMotionFor(2);
+    const [firstId, secondId] = activeIds;
+    const m1 = this.nodeMotionFor(firstId);
+    const m2 = this.nodeMotionFor(secondId);
     const fuseInput = {
       // Gain-normalized (per-node absStd/mean), not raw absStd — PS-BEHTEST-004:
       // raw absStd scales linearly with any per-node gain/RSSI mismatch, which
@@ -1669,7 +1747,7 @@ export class SignalProcessingServer {
       r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
       motion1: m1.motion,
       motion2: m2.motion,
-      anchors: { 1: NODE_ANCHORS[1], 2: NODE_ANCHORS[2] },
+      anchors: { 1: NODE_ANCHORS[firstId], 2: NODE_ANCHORS[secondId] },
       motionThreshold: this.config.fusedTargetMotionThreshold,
       // Item 1: corroborating (not primary) evidence — see evaluateClassifierCorroboration.
       classifier,
@@ -1685,29 +1763,48 @@ export class SignalProcessingServer {
    * Returns the signed axis velocity (m/s, >0 toward N2). Both broadcasts
    * (radialTarget and nodes) must read `this.fusedSnapshot`, never recompute.
    */
-  private updateFusedSnapshot(balance: number, x: number): number {
+  private updateFusedSnapshot(balance: number, x: number, z: number, endpointIds: [number, number]): number {
     const now = Date.now();
     let velMps = 0;
-    if (this.prevFusedX !== null && this.prevFusedMs > 0) {
+    if (this.prevFusedX !== null && this.prevFusedZ !== null && this.prevFusedMs > 0) {
       const dt = (now - this.prevFusedMs) / 1000;
       if (dt > 0) {
+        const firstAnchor = NODE_ANCHORS[endpointIds[0]];
+        const secondAnchor = NODE_ANCHORS[endpointIds[1]];
+        const axisX = secondAnchor.x - firstAnchor.x;
+        const axisZ = secondAnchor.z - firstAnchor.z;
+        const axisLength = Math.hypot(axisX, axisZ);
         // Near the endpoints the biased balance compresses displacement, which
         // under-reports speed; boost velocity up to +35% as |balance-0.5|→0.5
         // so approach/recede trends still trigger close to a node.
         const endpointStrength = Math.min(1, Math.abs(balance - 0.5) * 2);
         const endpointBoost = 1 + Math.pow(endpointStrength, 0.8) * 0.35;
-        velMps = ((x - this.prevFusedX) / dt) * endpointBoost;
+        const axisDisplacement =
+          ((x - this.prevFusedX) * axisX + (z - this.prevFusedZ) * axisZ) / axisLength;
+        velMps = (axisDisplacement / dt) * endpointBoost;
       }
     }
     this.prevFusedX = x;
+    this.prevFusedZ = z;
     this.prevFusedMs = now;
 
-    const prevTrends = this.fusedSnapshot?.trends ?? { 1: "stable" as NodeTrend, 2: "stable" as NodeTrend };
+    const prevTrends = this.fusedSnapshot
+      ? {
+          1: this.fusedSnapshot.trends[endpointIds[0]] ?? "stable",
+          2: this.fusedSnapshot.trends[endpointIds[1]] ?? "stable",
+        }
+      : { 1: "stable" as NodeTrend, 2: "stable" as NodeTrend };
+    const endpointTrends = computeNodeTrends(velMps, prevTrends);
     this.fusedSnapshot = {
       balance,
       x,
+      z,
       velMps,
-      trends: computeNodeTrends(velMps, prevTrends),
+      endpointIds,
+      trends: {
+        [endpointIds[0]]: endpointTrends[1],
+        [endpointIds[1]]: endpointTrends[2],
+      },
       atMs: now,
     };
     return velMps;
@@ -1716,6 +1813,7 @@ export class SignalProcessingServer {
   private clearFusedSnapshot(): void {
     this.fusedSnapshot = null;
     this.prevFusedX = null;
+    this.prevFusedZ = null;
     this.prevFusedMs = 0;
     this.roomFusedSnapshot = null;
     this.roomFusedVelPrevX = null;
@@ -1767,13 +1865,13 @@ export class SignalProcessingServer {
         rssi: this.nodeLastRssi.get(key) ?? -100,
         source: "live",
         distanceM: snap
-          ? Math.abs(snap.x - anchor.x) // on-axis distance (fused_two_node)
+          ? Math.hypot(snap.x - anchor.x, snap.z - anchor.z) // distance to the active pair's projected target
           : roomSnap
             ? Math.hypot(roomSnap.x - anchor.x, roomSnap.z - anchor.z) // straight-line (fused_room)
             : undefined,
         // fused_room doesn't compute per-node approach/recede trends in this
         // pass (only the 2-D position/velocity) — stays "stable".
-        trend: snap ? snap.trends[key as 1 | 2] ?? "stable" : "stable",
+        trend: snap ? snap.trends[key] ?? "stable" : "stable",
       });
     }
     return nodes;
@@ -1833,6 +1931,24 @@ export class SignalProcessingServer {
         hr_conf: s.hrConf,
         age_ms: age,
         ...(s.rssi !== undefined ? { rssi: s.rssi } : {}),
+      });
+    }
+    return out.sort((a, b) => a.node_id - b.node_id);
+  }
+
+  /** Live per-node amplitude/phase readout — the max-power subcarrier from
+   * the most recent CSI frame per node, same "fresh" window as nodeFeatures. */
+  private buildNodeSignalStates(): NodeSignalState[] {
+    const now = Date.now();
+    const out: NodeSignalState[] = [];
+    for (const [nodeId, s] of Array.from(this.nodeLastSignal.entries())) {
+      const age = now - s.t;
+      if (age > SignalProcessingServer.NODE_FEATURE_FRESH_MS) continue;
+      out.push({
+        node_id: nodeId,
+        amplitude: s.amplitude,
+        phase_deg: s.phaseDeg,
+        age_ms: age,
       });
     }
     return out.sort((a, b) => a.node_id - b.node_id);
@@ -2047,28 +2163,22 @@ export class SignalProcessingServer {
     const now = Date.now();
     const durationS = this.reportStartTime > 0 ? (now - this.reportStartTime) / 1000 : 0;
 
-    // Classification majority vote
-    const labelCounts: Record<string, number> = {};
-    for (const l of this.reportLabels) {
-      if (l !== "unknown") labelCounts[l] = (labelCounts[l] || 0) + 1;
-    }
+    // Classification majority vote (counted incrementally at push-time —
+    // Phase-1 bug audit: avoids storing every per-tick label for the session)
+    const labelCounts = this.reportLabelCounts;
     const dominantLabel = Object.entries(labelCounts).sort((a, b) => b[1] - a[1])[0];
     const totalValid = Object.values(labelCounts).reduce((s, v) => s + v, 0);
 
-    // Spatial metrics
-    const distances = this.reportDistances;
-    const minDist = distances.length > 0 ? Math.min(...distances) : 0;
-    const maxDist = distances.length > 0 ? Math.max(...distances) : 0;
-    const avgDist = distances.length > 0 ? distances.reduce((s, v) => s + v, 0) / distances.length : 0;
+    // Spatial metrics — running aggregates rather than stored per-tick
+    // arrays (Phase-1 bug audit: unbounded array growth on long sessions).
+    const hasSamples = this.reportDistanceCount > 0;
+    const minDist = hasSamples ? this.reportDistanceMin : 0;
+    const maxDist = hasSamples ? this.reportDistanceMax : 0;
+    const avgDist = hasSamples ? this.reportDistanceSum / this.reportDistanceCount : 0;
 
     // Kinematic
-    const speeds = this.reportSpeeds;
-    const avgSpeed = speeds.length > 0 ? speeds.reduce((s, v) => s + v, 0) / speeds.length : 0;
-    const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : 0;
-
-    // Bounding box
-    const posX = this.reportPositionsX;
-    const posZ = this.reportPositionsZ;
+    const avgSpeed = this.reportSpeedCount > 0 ? this.reportSpeedSum / this.reportSpeedCount : 0;
+    const maxSpeed = this.reportPeakSpeed;
 
     // Deduplicate consecutive identical events
     const deduped = this.reportEvents.filter((e, i) =>
@@ -2100,10 +2210,10 @@ export class SignalProcessingServer {
         maxDistanceCm: Math.round(maxDist * 10) / 10,
         avgDistanceCm: Math.round(avgDist * 10) / 10,
         boundingBox: {
-          xMin: posX.length > 0 ? Math.round(Math.min(...posX) * 100) / 100 : 0,
-          xMax: posX.length > 0 ? Math.round(Math.max(...posX) * 100) / 100 : 0,
-          zMin: posZ.length > 0 ? Math.round(Math.min(...posZ) * 100) / 100 : 0,
-          zMax: posZ.length > 0 ? Math.round(Math.max(...posZ) * 100) / 100 : 0,
+          xMin: hasSamples ? Math.round(this.reportPosXMin * 100) / 100 : 0,
+          xMax: hasSamples ? Math.round(this.reportPosXMax * 100) / 100 : 0,
+          zMin: hasSamples ? Math.round(this.reportPosZMin * 100) / 100 : 0,
+          zMax: hasSamples ? Math.round(this.reportPosZMax * 100) / 100 : 0,
         },
       },
       kinematicData: {

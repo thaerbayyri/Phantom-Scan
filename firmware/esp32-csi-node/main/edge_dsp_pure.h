@@ -217,6 +217,58 @@ bool edge_evaluate_human_presence(bool motion_present,
                                    float resp_conf,
                                    float period_cv);
 
+/**
+ * Minimum outlier margin (in window sigmas) between the single largest
+ * sample seen during an adaptive-calibration accumulation window and that
+ * window's own mean, above which the window is rejected as contaminated
+ * (see edge_evaluate_calibration_window). Deliberately much larger than
+ * EDGE_CALIB_SIGMA_MULT (3.0, used for the resulting presence threshold
+ * itself): for a window of EDGE_CALIB_FRAMES=1200 i.i.d. samples, extreme-
+ * value theory puts the expected max deviation of genuinely empty-room
+ * noise at roughly sqrt(2*ln(1200)) ~= 3.8 sigma, so an 8-sigma floor should
+ * essentially never reject a truly empty, steady-state window while still
+ * catching a transient contaminating spike (a person walking through, or a
+ * mechanical mover switching on) whose motion-energy peak is realistically
+ * many multiples of ambient noise. PLACEHOLDER pending real-hardware
+ * empty-room + negative-control validation, same caveat as
+ * EDGE_RESP_PERIOD_CV_MIN — see PHANTOM_SCAN_REMEDIATION_REPORT.md.
+ */
+#define EDGE_CALIB_REJECT_SIGMA_MULT 8.0f
+
+/**
+ * Validate a completed adaptive-calibration accumulation window before
+ * calibration_update (edge_processing.c) locks its mean+k*sigma in as the
+ * live presence threshold. The window is assumed to have been captured in
+ * an empty room; this function looks for evidence it wasn't.
+ *
+ * A contaminating motion event during the supposed-empty boot window (an
+ * occupant walking through, or a mechanical mover such as a fan/HVAC
+ * cycling on) shows up as one or a few samples far above the window's own
+ * mean+sigma envelope, even though the same event also inflates the
+ * window's mean and sigma themselves (diluted by the other ~1200 samples,
+ * so the inflation is real but partial) — a check based on mean/sigma alone
+ * would partially hide the very contamination it's supposed to detect.
+ * Comparing the window's single largest sample against its own mean/sigma
+ * catches this: the max is dominated by the spike, not the dilution.
+ *
+ * This only detects the "contamination" failure direction (room not empty
+ * during boot). It cannot detect the opposite direction (a genuinely quiet
+ * but unrepresentative window setting too low a threshold) — that failure
+ * mode has no spike signature to key off and is out of scope here.
+ *
+ * @param mean       Window mean motion energy.
+ * @param sigma      Window standard deviation of motion energy (the
+ *                   caller's divide-by-zero floor, e.g. 0.001f when
+ *                   variance <= 0, applies before this is called).
+ * @param max_sample Largest single motion-energy sample observed during the
+ *                   window (running max, tracked alongside sum/sum_sq).
+ * @return true when the window looks like steady-state ambient noise (safe
+ *         to lock in as the calibrated threshold); false when a
+ *         contaminating spike was detected and the caller should discard
+ *         the window and re-accumulate.
+ */
+bool edge_evaluate_calibration_window(float mean, float sigma, float max_sample);
+
 #ifdef __cplusplus
 }
 #endif

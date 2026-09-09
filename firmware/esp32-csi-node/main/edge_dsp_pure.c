@@ -216,3 +216,10 @@ bool edge_evaluate_human_presence(bool motion_present,
 
     return in_band && confident && natural_jitter;
 }
+
+bool edge_evaluate_calibration_window(float mean, float sigma, float max_sample)
+{
+    float deviation = max_sample - mean;
+    if (deviation <= 0.0f) return true; /* max never below mean; degenerate guard */
+    return deviation <= EDGE_CALIB_REJECT_SIGMA_MULT * sigma;
+}

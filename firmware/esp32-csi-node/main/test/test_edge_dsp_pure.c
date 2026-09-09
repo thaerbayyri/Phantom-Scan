@@ -225,6 +225,80 @@ static void test_period_cv_gate_boundaries(void)
     CHECK(edge_evaluate_human_presence(true, true, 15.0f, 1.0f, -1.0f) == true);
 }
 
+/* ---- Adaptive-calibration contamination-spike gate (edge_processing.c's
+ * calibration_update): a window that looks like genuine steady-state
+ * ambient noise must be accepted, while a window containing one large
+ * contaminating spike (e.g. a person walking through during the supposed-
+ * empty boot window) must be rejected so the board retries instead of
+ * permanently locking in a bad threshold. ---- */
+static void test_calibration_window_accepts_clean_flat_window(void)
+{
+    /* Degenerate flat window: var<=0 in the caller, so sigma arrives here
+     * pre-floored at 0.001f (mirrors calibration_update's own guard); the
+     * max sample equals the mean (no variance at all). */
+    bool ok = edge_evaluate_calibration_window(/*mean=*/0.01f, /*sigma=*/0.001f,
+                                                /*max_sample=*/0.01f);
+    printf("[calib clean flat]  mean=0.0100 sigma=0.0010 max=0.0100 accepted=%d\n", ok);
+    CHECK(ok == true);
+}
+
+static void test_calibration_window_accepts_typical_noisy_window(void)
+{
+    /* Realistic steady-state ambient noise: max sample a few sigma above
+     * mean, well inside the reject margin. */
+    bool ok = edge_evaluate_calibration_window(/*mean=*/0.01f, /*sigma=*/0.003f,
+                                                /*max_sample=*/0.028f); /* ~6 sigma */
+    printf("[calib clean noisy] mean=0.0100 sigma=0.0030 max=0.0280 accepted=%d\n", ok);
+    CHECK(ok == true);
+}
+
+static void test_calibration_window_rejects_contaminating_spike(void)
+{
+    /* Simulates calibration_update's own mean/sigma computation over a
+     * 1200-sample window where sample #600 is a large motion spike (a
+     * person walking through) and the other 1199 samples are quiet ambient
+     * noise -- i.e. this exercises the SAME arithmetic calibration_update
+     * performs, not hand-picked numbers, so it demonstrates the spike is
+     * still decisively caught even after dilution inflates mean/sigma. */
+    const int n = 1200;
+    float sum = 0.0f, sum_sq = 0.0f, max_sample = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float v = (i == 600) ? 5.0f /* contaminating spike */ : 0.01f;
+        sum += v;
+        sum_sq += v * v;
+        if (v > max_sample) max_sample = v;
+    }
+    float mean = sum / (float)n;
+    float var = (sum_sq / (float)n) - (mean * mean);
+    float sigma = (var > 0.0f) ? sqrtf(var) : 0.001f;
+
+    bool ok = edge_evaluate_calibration_window(mean, sigma, max_sample);
+    printf("[calib spike]       mean=%.5f sigma=%.5f max=%.4f accepted=%d "
+           "(expect rejected)\n", mean, sigma, max_sample, ok);
+    CHECK(ok == false);
+}
+
+static void test_calibration_window_reject_margin_boundary(void)
+{
+    /* Exactly at the reject margin: accepted (inclusive boundary). */
+    float sigma = 0.01f;
+    float mean = 0.02f;
+    float max_at_boundary = mean + EDGE_CALIB_REJECT_SIGMA_MULT * sigma;
+    CHECK(edge_evaluate_calibration_window(mean, sigma, max_at_boundary) == true);
+
+    /* Just past the reject margin: rejected. */
+    float max_past_boundary = max_at_boundary + 0.001f;
+    CHECK(edge_evaluate_calibration_window(mean, sigma, max_past_boundary) == false);
+}
+
+static void test_calibration_window_degenerate_max_below_mean(void)
+{
+    /* max_sample < mean should never happen in real accumulation (the max
+     * is one of the summed samples, so it's always >= mean), but the guard
+     * must not misbehave if called with an inconsistent/degenerate input. */
+    CHECK(edge_evaluate_calibration_window(0.02f, 0.001f, 0.01f) == true);
+}
+
 /* ---- B2: sample-rate correctness across the canonical 3-7 Hz measured-CSI
  * range (PHANTOM_SCAN_BEHAVIORAL_TEST_REPORT.md). The pure estimator takes
  * fs as an explicit parameter (verified: no hardcoded frequency literal in
@@ -367,6 +441,11 @@ int main(void)
 {
     test_gate_boundaries();
     test_period_cv_gate_boundaries();
+    test_calibration_window_accepts_clean_flat_window();
+    test_calibration_window_accepts_typical_noisy_window();
+    test_calibration_window_rejects_contaminating_spike();
+    test_calibration_window_reject_margin_boundary();
+    test_calibration_window_degenerate_max_below_mean();
     test_broadband_motion_alone_is_not_human();
     test_breathing_band_sets_human_present();
     test_cardiac_only_cannot_flip_negative_respiratory_verdict();

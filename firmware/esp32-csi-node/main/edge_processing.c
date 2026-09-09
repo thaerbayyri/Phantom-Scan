@@ -225,6 +225,9 @@ static bool     s_calibrated;
 static float    s_calib_sum;
 static float    s_calib_sum_sq;
 static uint32_t s_calib_count;
+/** Running max sample this window, fed to edge_evaluate_calibration_window
+ *  for contamination-spike rejection (bootstrap-integrity guard). */
+static float    s_calib_max;
 static float    s_adaptive_threshold;
 
 /** Last vitals send timestamp. */
@@ -294,6 +297,10 @@ static void update_top_k(uint16_t n_subcarriers)
  * first EDGE_CALIB_FRAMES frames, then fixes the presence threshold at
  * mean + EDGE_CALIB_SIGMA_MULT * sigma (floored at 0.01) — the room must be
  * empty during boot calibration for presence detection to be meaningful.
+ * Windows that show evidence of a contaminating spike (a person or mover
+ * present during the supposed-empty window; see
+ * edge_evaluate_calibration_window) are rejected and re-accumulated rather
+ * than locked in, instead of trusting an unverified "room was empty" claim.
  */
 static void calibration_update(float motion)
 {
@@ -302,22 +309,39 @@ static void calibration_update(float motion)
     s_calib_sum += motion;
     s_calib_sum_sq += motion * motion;
     s_calib_count++;
+    if (motion > s_calib_max) {
+        s_calib_max = motion;
+    }
 
     if (s_calib_count >= EDGE_CALIB_FRAMES) {
         float mean = s_calib_sum / (float)s_calib_count;
         float var = (s_calib_sum_sq / (float)s_calib_count) - (mean * mean);
         float sigma = (var > 0.0f) ? sqrtf(var) : 0.001f;
 
-        s_adaptive_threshold = mean + EDGE_CALIB_SIGMA_MULT * sigma;
-        if (s_adaptive_threshold < 0.01f) {
-            s_adaptive_threshold = 0.01f;
-        }
+        if (edge_evaluate_calibration_window(mean, sigma, s_calib_max)) {
+            s_adaptive_threshold = mean + EDGE_CALIB_SIGMA_MULT * sigma;
+            if (s_adaptive_threshold < 0.01f) {
+                s_adaptive_threshold = 0.01f;
+            }
 
-        s_calibrated = true;
-        ESP_LOGI(TAG, "Adaptive calibration complete: mean=%.4f sigma=%.4f "
-                 "threshold=%.4f (from %lu frames)",
-                 mean, sigma, s_adaptive_threshold,
-                 (unsigned long)s_calib_count);
+            s_calibrated = true;
+            ESP_LOGI(TAG, "Adaptive calibration complete: mean=%.4f sigma=%.4f "
+                     "max=%.4f threshold=%.4f (from %lu frames)",
+                     mean, sigma, s_calib_max, s_adaptive_threshold,
+                     (unsigned long)s_calib_count);
+        } else {
+            ESP_LOGW(TAG, "Adaptive calibration window rejected: contaminating "
+                     "spike detected (mean=%.4f sigma=%.4f max=%.4f) - room may "
+                     "not have been empty during boot; retrying with a fresh "
+                     "window", mean, sigma, s_calib_max);
+            s_calib_sum = 0.0f;
+            s_calib_sum_sq = 0.0f;
+            s_calib_count = 0;
+            s_calib_max = 0.0f;
+            /* s_calibrated stays false: process_frame's Step 9 keeps using the
+             * existing 0.05f pre-calibration default until a clean window is
+             * found (reject-and-retry, not a new fallback value). */
+        }
     }
 }
 
@@ -1007,6 +1031,7 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     s_calib_sum = 0.0f;
     s_calib_sum_sq = 0.0f;
     s_calib_count = 0;
+    s_calib_max = 0.0f;
     s_adaptive_threshold = 0.05f;
 
     /* Reset multi-person state. */
