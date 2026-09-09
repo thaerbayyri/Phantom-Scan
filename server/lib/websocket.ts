@@ -49,6 +49,7 @@ import {
   type ClassifierGateInput,
   type ClassifierCorroboration,
 } from "./node-fusion";
+import { FusedPositionKalman } from "./fused-position-kalman";
 import {
   computeMUSICSpectrum,
   findSpectrumPeak,
@@ -188,6 +189,12 @@ export class SignalProcessingServer {
   private roomFusedVelPrevX: number | null = null;
   private roomFusedVelPrevZ: number | null = null;
   private roomFusedVelPrevMs = 0;
+
+  // Smooths the raw per-tick fused x/z (fused_two_node and fused_room both
+  // feed the same instance — mutually exclusive per tick) into a stable
+  // track; see fused-position-kalman.ts for the model and its data-derived
+  // starting Q/R. Reset alongside the snapshots on a node-mode flip.
+  private fusedKalman = new FusedPositionKalman();
 
   // Recording state
   private isRecording = false;
@@ -1071,13 +1078,22 @@ export class SignalProcessingServer {
       let fusedDistanceCm = pdpResult.distanceCm;
       let fusedConfidence: number | undefined;
       if (fused) {
-        radX = fused.x;
-        radZ = fused.z;
+        // Smooth the raw per-tick fused position before it reaches either
+        // broadcast — see fused-position-kalman.ts. Both radX/radZ (the
+        // on-screen dot) and the snapshots below must read the FILTERED
+        // value, not fused.x/z directly, or the marker stays as jittery as
+        // the raw signal despite the filter running.
+        const nowFusedMs = Date.now();
+        this.fusedKalman.predict(nowFusedMs);
+        this.fusedKalman.update([fused.x, fused.z]);
+        const filteredPos = this.fusedKalman.getState();
+        radX = filteredPos.x;
+        radZ = filteredPos.z;
         if (fused.balance !== undefined) {
           // fused_two_node: on-axis balance snapshot — single source both
           // the radialTarget broadcast and buildSensorNodes read this tick.
           const activePair = this.activeHardwareNodeIds();
-          const velMps = this.updateFusedSnapshot(fused.balance, fused.x, fused.z, [activePair[0], activePair[1]]);
+          const velMps = this.updateFusedSnapshot(fused.balance, filteredPos.x, filteredPos.z, [activePair[0], activePair[1]]);
           targetVx = velMps;
           targetVz = 0;
           speed = Math.abs(velMps); // m/s along the axis
@@ -1086,20 +1102,20 @@ export class SignalProcessingServer {
         } else {
           // fused_room: true 2-D centroid — track velocity with the same
           // pure helper the single-node fallback path uses (computeFallbackVelocity),
-          // keyed to the fused position instead of the raw single-node estimate.
-          const nowRoomMs = Date.now();
+          // keyed to the Kalman-filtered fused position instead of the raw
+          // single-node estimate.
           const prevRoomSample =
             this.roomFusedVelPrevX === null || this.roomFusedVelPrevZ === null
               ? null
               : { x: this.roomFusedVelPrevX, z: this.roomFusedVelPrevZ, atMs: this.roomFusedVelPrevMs };
-          const roomVel = computeFallbackVelocity(prevRoomSample, { x: fused.x, z: fused.z }, nowRoomMs);
+          const roomVel = computeFallbackVelocity(prevRoomSample, { x: filteredPos.x, z: filteredPos.z }, nowFusedMs);
           targetVx = roomVel.vx;
           targetVz = roomVel.vz;
           speed = roomVel.speed;
-          this.roomFusedVelPrevX = fused.x;
-          this.roomFusedVelPrevZ = fused.z;
-          this.roomFusedVelPrevMs = nowRoomMs;
-          this.roomFusedSnapshot = { x: fused.x, z: fused.z, atMs: nowRoomMs };
+          this.roomFusedVelPrevX = filteredPos.x;
+          this.roomFusedVelPrevZ = filteredPos.z;
+          this.roomFusedVelPrevMs = nowFusedMs;
+          this.roomFusedSnapshot = { x: filteredPos.x, z: filteredPos.z, atMs: nowFusedMs };
         }
         fusedDistanceCm = fused.distToNearestNodeM * 100;
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
@@ -1819,6 +1835,7 @@ export class SignalProcessingServer {
     this.roomFusedVelPrevX = null;
     this.roomFusedVelPrevZ = null;
     this.roomFusedVelPrevMs = 0;
+    this.fusedKalman.reset();
   }
 
   /**

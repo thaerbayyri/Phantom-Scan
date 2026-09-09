@@ -367,3 +367,64 @@ test("motionStatus broadcast: manual motionGateEnabled threshold is not overridd
     "an operator-enabled manual threshold must keep using MotionGate's own result, unchanged",
   );
 });
+
+// ── Kalman-filtered fused position wiring (fused_room / 4-node) ────────────
+// radX/radZ (the radialTarget broadcast, i.e. the on-screen dot) and
+// roomFusedSnapshot (buildSensorNodes' distance labels) must both read the
+// Kalman-filtered position from fusedKalman, not the raw fuseNodeTargets
+// output — previously they read fused.x/z directly, which would have left
+// the marker exactly as jittery as the raw signal despite the filter
+// running. See fused-position-kalman.ts for the filter itself (validated
+// separately against real recorded session data).
+
+test("fused_room: radialTarget broadcast and roomFusedSnapshot both reflect the Kalman-filtered position, not raw", () => {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+
+  // 4 active nodes so resolveLiveNodeMode() reports fused_room; the exact
+  // amplitude values don't matter here since computeFusedTarget is stubbed
+  // below -- getting a synthetic h1/h2 stream past the REAL micro-Doppler
+  // classifier gate is a separate concern already out of scope for every
+  // other fusion test in this file (they all call computeFusedTarget()
+  // directly for the same reason -- constant h1/h2 reads as "no
+  // micro-Doppler signature" and gets vetoed by classifier corroboration).
+  for (const nodeId of [1, 2, 3, 4]) {
+    ingestNoisyAmplitudes(server, nodeId, [10, 10, 10, 10], 20);
+  }
+  assert.equal(server.resolveLiveNodeMode(), "fused_room", "sanity: 4 active nodes must resolve to fused_room");
+
+  // Stub the raw fused position computeFusedTarget would have returned this
+  // tick (no `balance` field -> processFrame's fused_room branch) so this
+  // test isolates the wiring under test: does radX/radZ/roomFusedSnapshot
+  // actually read the Kalman-filtered output, or the raw value below?
+  const rawFused = { x: 1.23, z: -0.45, distToNearestNodeM: 1, classifierCorroboration: "inconclusive", maxMotion: 1 };
+  server.computeFusedTarget = () => rawFused;
+
+  // The MUSIC/point-cloud/DBSCAN/classification/fusion block only runs once
+  // this.sampleBuffer reaches config.arrayLength (16) -- one sample is
+  // pushed per processFrame() call, so the fusion path (and this stub)
+  // isn't reached at all until then.
+  for (let i = 0; i < server.config.arrayLength; i++) {
+    server.processFrame();
+  }
+
+  const filteredState = server.fusedKalman.getState();
+  assert.notEqual(filteredState.x, rawFused.x, "sanity: the filter must have actually moved away from a cold start");
+  assert.equal(
+    server.roomFusedSnapshot?.x,
+    filteredState.x,
+    "roomFusedSnapshot.x must be the filtered position, not raw fused.x",
+  );
+  assert.equal(
+    server.roomFusedSnapshot?.z,
+    filteredState.z,
+    "roomFusedSnapshot.z must be the filtered position, not raw fused.z",
+  );
+
+  const radialMsgs = dashboard.sent.filter((m: Captured) => m.type === "radialTarget");
+  assert.ok(radialMsgs.length > 0, "sanity: radialTarget must have broadcast once computeFusedTarget is stubbed truthy");
+  const lastRadial = radialMsgs[radialMsgs.length - 1].data as { x: number; z: number };
+  assert.equal(lastRadial.x, filteredState.x, "radialTarget.x must be the filtered position, not raw fused.x");
+  assert.equal(lastRadial.z, filteredState.z, "radialTarget.z must be the filtered position, not raw fused.z");
+});
