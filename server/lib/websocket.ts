@@ -1368,6 +1368,16 @@ export class SignalProcessingServer {
       if (this.recordingBuffer.length < 5000) {
         const nodeIds = Object.keys(NODE_ANCHORS).map(Number);
         const nodeMotion = Object.fromEntries(nodeIds.map((id) => [id, this.nodeMotionFor(id).motion]));
+        // Unclamped absStd/mean per node — motion_nX censors anything at or
+        // above the saturation ceiling; this is needed to tell "genuinely at
+        // the ceiling" apart from "clipped, could be far higher" when
+        // re-deriving MOTION_SATURATION_SCALE/DEFAULT_MOTION_THRESHOLD.
+        const nodeRawPerturbation = Object.fromEntries(
+          nodeIds.map((id) => {
+            const m = this.nodeMotionFor(id);
+            return [id, computeGainNormalizedPerturbation(m.absStd, m.mean)];
+          }),
+        );
         const nodeFps = Object.fromEntries(nodeIds.map((id) => [id, this.nodeFpsFor(id)]));
         this.recordingBuffer.push(
           buildRecordingRow({
@@ -1380,6 +1390,7 @@ export class SignalProcessingServer {
             targetState: this.currentTargetState,
             fusedSnapshot: this.fusedSnapshot,
             nodeMotion,
+            nodeRawPerturbation,
             nodeFps,
             syncMarker: this.pendingSyncMarker,
             groundTruthTag: this.activeGroundTruthTag,

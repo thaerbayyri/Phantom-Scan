@@ -60,6 +60,32 @@ test("recording CSV header includes the positional fidelity columns", () => {
   assert.ok(RECORDING_COLUMNS.includes("target_visible"));
   assert.ok(RECORDING_COLUMNS.includes("node1_fps"));
   assert.ok(RECORDING_COLUMNS.includes("gt_x_m"));
+  assert.ok(RECORDING_COLUMNS.includes("raw_perturbation_n1"));
+  assert.ok(RECORDING_COLUMNS.includes("raw_perturbation_n4"));
+});
+
+test("raw_perturbation_nX is exported unclamped, unlike the saturated motion_nX it's derived from", () => {
+  // A ratio far past the saturation ceiling (motion_nX clamps at 1.0) must
+  // still come through raw_perturbation_nX at its real, uncensored value --
+  // that's the whole point of this field (see its doc comment on RecordingRow).
+  const row = buildRecordingRow({
+    sample,
+    sessionStartMs: 10_000,
+    radialTarget,
+    targetState: fusedTargetState,
+    fusedSnapshot: null,
+    nodeMotion: { 1: 1.0, 2: 0.3 },
+    nodeRawPerturbation: { 1: 3.7, 2: 0.075 },
+    nodeFps: { 1: 24, 2: 25 },
+  });
+
+  assert.equal(row.motion_n1, 1.0, "sanity: motion_n1 is the clamped/saturated value");
+  assert.equal(
+    row.raw_perturbation_n1,
+    3.7,
+    "raw_perturbation_n1 must preserve the real ratio, not the clamped 1.0",
+  );
+  assert.equal(row.raw_perturbation_n2, 0.075);
 });
 
 test("visible fused rows reuse the same displayed position contract", () => {
@@ -71,11 +97,14 @@ test("visible fused rows reuse the same displayed position contract", () => {
     fusedSnapshot: {
       balance: 0.75,
       x: 0.75,
+      z: 0,
       velMps: 0.2,
+      endpointIds: [1, 2],
       trends: { 1: "receding", 2: "approaching" },
       atMs: 10_500,
     },
     nodeMotion: { 1: 0.3, 2: 0.4 },
+    nodeRawPerturbation: { 1: 0.03, 2: 0.04 },
     nodeFps: { 1: 24, 2: 25 },
   });
 
@@ -84,9 +113,9 @@ test("visible fused rows reuse the same displayed position contract", () => {
   assert.equal(row.z_disp_m, radialTarget.z);
   assert.equal(row.x, row.x_disp_m);
   assert.equal(row.z, row.z_disp_m);
-  // NODE_ANCHORS[1].x = -2, NODE_ANCHORS[2].x = 2 (4m x 6m room corners).
-  assert.equal(row.distance_n1_m, 2.75);
-  assert.equal(row.distance_n2_m, 1.25);
+  // Distances use the full 4m x 6m room geometry.
+  assert.equal(row.distance_n1_m, Math.hypot(2.75, 3));
+  assert.equal(row.distance_n2_m, Math.hypot(1.25, 3));
   assert.equal(row.trend_n1, "receding");
   assert.equal(row.trend_n2, "approaching");
   assert.equal(row.target_visible, 1);
@@ -106,11 +135,14 @@ test("gate-closed rows suppress position and distance fields atomically", () => 
     fusedSnapshot: {
       balance: 0.75,
       x: 0.75,
+      z: 0,
       velMps: 0.2,
+      endpointIds: [1, 2],
       trends: { 1: "receding", 2: "approaching" },
       atMs: 10_500,
     },
     nodeMotion: { 1: 0.3, 2: 0.4 },
+    nodeRawPerturbation: { 1: 0.03, 2: 0.04 },
     nodeFps: { 1: 24, 2: 25 },
   });
 
