@@ -1,17 +1,21 @@
-import type { TargetIdentity, VitalSigns } from "@shared/schema";
+import type { AdvisoryIdentity, AdvisoryVitalSigns } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Gauge } from "lucide-react";
 
 interface AIAdvisoryPanelProps {
-    identity: TargetIdentity | null;
-    vitals: VitalSigns | null;
+    identity: AdvisoryIdentity | null;
+    vitals: AdvisoryVitalSigns | null;
     /** Resets the AI sidecar's activity-state motion baseline (walking/
      * rapid_change heuristic only) — no model weight is touched. Omit to
      * hide the "Calibrate Empty Room" control entirely. */
     onCalibrate?: () => void;
     /** Wall-clock ms of the last calibration ack, or null if none yet. */
     lastCalibratedAt?: number | null;
+}
+
+function percent(value: number): string {
+    return `${Math.round(value * 100)}%`;
 }
 
 /**
@@ -28,11 +32,16 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
         return null;
     }
 
-    const label = identity?.label ?? "unknown";
+    const advisoryLabel = identity?.advisoryLabel ?? "unknown";
     const calibratedSecondsAgo = lastCalibratedAt ? Math.max(0, Math.round((Date.now() - lastCalibratedAt) / 1000)) : null;
     const humanProb = identity?.humanProb ?? 0.5;
     const mechProb = identity?.mechanicalProb ?? 0.5;
-    const activityState = identity?.activityState;
+    const heuristicActivity = identity?.activityState;
+    const modelActivity = identity?.advisoryActivity;
+    const hasRoomModel = Boolean(identity?.modelId);
+    const presenceProb = identity?.presenceProb;
+    const count = identity?.advisoryCount;
+    const vitalsShown = vitals?.vitalsReliable === true;
 
     return (
         <Card className="min-w-0 border-dashed border-purple-400/40 bg-purple-950/10">
@@ -61,26 +70,58 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
                     </div>
                 )}
                 {identity && (
-                    <div className="text-[10px] font-mono uppercase text-purple-300/80">
-                        Model label: {label}
+                    <div className="space-y-1 text-[10px] font-mono uppercase text-purple-300/80">
+                        <div>Advisory label: {advisoryLabel}</div>
+                        <div title="Presence head output. Uncalibrated unless a per-room presence model is loaded.">
+                            Presence: {presenceProb == null ? "n/a" : percent(presenceProb)}
+                            {presenceProb != null && identity.presenceCalibrated === false ? " (uncalibrated)" : ""}
+                        </div>
                     </div>
                 )}
-                {activityState && activityState !== "unknown" && (
+                {identity && hasRoomModel && (
+                    <div
+                        className="space-y-1 text-[10px] font-mono uppercase text-purple-300/80"
+                        title={`Per-room model ${identity.modelId} trained on labelled recordings of room ${identity.roomId ?? "?"}. Not valid in other rooms.`}
+                    >
+                        {modelActivity && (
+                            <div>
+                                Activity (room model): {modelActivity}
+                                {identity.advisoryActivityConfidence != null && ` · ${percent(identity.advisoryActivityConfidence)}`}
+                            </div>
+                        )}
+                        {count != null && (
+                            <div className={identity.countLowConfidence ? "text-amber-300" : undefined}>
+                                People (room model): {count}
+                                {identity.advisoryCountConfidence != null && ` · ${percent(identity.advisoryCountConfidence)}`}
+                                {identity.countLowConfidence ? " · low confidence" : ""}
+                            </div>
+                        )}
+                    </div>
+                )}
+                {identity && !hasRoomModel && (
+                    <div className="text-[10px] font-mono uppercase text-purple-300/50">
+                        No model trained for this room
+                    </div>
+                )}
+                {heuristicActivity && heuristicActivity !== "unknown" && (
                     <div
                         className={`text-[10px] font-mono uppercase ${
-                            activityState === "rapid_change" ? "text-amber-300" : "text-purple-300/80"
+                            heuristicActivity === "rapid_change" ? "text-amber-300" : "text-purple-300/80"
                         }`}
                         title="Motion-energy heuristic only — not derived from pose or body shape."
                     >
-                        Activity: {activityState === "rapid_change" ? "abrupt signal change" : activityState}
+                        Motion heuristic: {heuristicActivity === "rapid_change" ? "abrupt signal change" : heuristicActivity}
                     </div>
                 )}
                 {vitals && (
                     <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-muted-foreground">
-                        <div>HR: {vitals.heartRateBpm > 0 ? vitals.heartRateBpm : "--"} bpm</div>
+                        <div>HR: {vitalsShown && vitals.heartRateBpm != null ? vitals.heartRateBpm.toFixed(0) : "--"} bpm</div>
                         <div className="text-right">
-                            RR: {vitals.respirationRateRpm > 0 ? vitals.respirationRateRpm : "--"} rpm
+                            RR: {vitalsShown && vitals.respirationRateRpm != null ? vitals.respirationRateRpm.toFixed(0) : "--"} rpm
                         </div>
+                        {!vitalsShown && (
+                            <div className="col-span-2 text-[9px] text-purple-300/50">Vitals unreliable — not shown</div>
+                        )}
                     </div>
                 )}
                 <div className="border-t border-purple-400/15 pt-2 text-[9px] leading-relaxed text-purple-200/70">

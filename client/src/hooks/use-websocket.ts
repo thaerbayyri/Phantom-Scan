@@ -18,7 +18,10 @@ import type {
   PoseFrame,
   SensorNode,
   NodeFeatureState,
+  NodeSignalState,
   SignalField,
+  AdvisoryIdentity,
+  AdvisoryVitalSigns,
 } from "@shared/schema";
 
 interface WSState {
@@ -39,8 +42,8 @@ interface WSState {
   vitalSigns: VitalSigns | null;
   // AI sidecar advisory output only (PS-REMED-WP3-FOLLOWUP-01). Never the
   // deterministic verdict — see server/lib/websocket.ts's isAI-gated relay.
-  advisoryIdentity: TargetIdentity | null;
-  advisoryVitalSigns: VitalSigns | null;
+  advisoryIdentity: AdvisoryIdentity | null;
+  advisoryVitalSigns: AdvisoryVitalSigns | null;
   // Wall-clock (ms) of the last AI-sidecar baseline calibration ack, or null
   // if none has happened this session. Advisory-only bookkeeping, same as
   // advisoryIdentity/advisoryVitalSigns above.
@@ -48,6 +51,7 @@ interface WSState {
   poseFrame: PoseFrame | null;
   nodes: SensorNode[];
   nodeFeatures: NodeFeatureState[];
+  nodeSignal: NodeSignalState[];
   // fused_room only (3-4 active nodes) — spatial intensity grid for the
   // dashboard's floor-glow visualization. Null outside fused_room.
   signalField: SignalField | null;
@@ -138,10 +142,11 @@ function buildClearedSceneState(
     targetDebug: null as TargetDebug | null,
     targetState: buildClearedTargetState(reason),
     vitalSigns: null as VitalSigns | null,
-    advisoryIdentity: null as TargetIdentity | null,
-    advisoryVitalSigns: null as VitalSigns | null,
+    advisoryIdentity: null as AdvisoryIdentity | null,
+    advisoryVitalSigns: null as AdvisoryVitalSigns | null,
     poseFrame: null as PoseFrame | null,
     nodeFeatures: [] as NodeFeatureState[],
+    nodeSignal: [] as NodeSignalState[],
     signalField: null as SignalField | null,
     // Node beacons are only cleared on socket death: on Stop the server
     // intentionally keeps sending quiesced beacons (honest node presence).
@@ -179,6 +184,7 @@ export function useWebSocket() {
     poseFrame: null,
     nodes: [],
     nodeFeatures: [],
+    nodeSignal: [],
     signalField: null,
     isConnected: false,
     error: null,
@@ -413,14 +419,14 @@ export function useWebSocket() {
       case "advisoryIdentity":
         setState((prev) => ({
           ...prev,
-          advisoryIdentity: (message.data as TargetIdentity | null) ?? null,
+          advisoryIdentity: (message.data as AdvisoryIdentity | null) ?? null,
         }));
         break;
 
       case "advisoryVitalSigns":
         setState((prev) => ({
           ...prev,
-          advisoryVitalSigns: (message.data as VitalSigns | null) ?? null,
+          advisoryVitalSigns: (message.data as AdvisoryVitalSigns | null) ?? null,
         }));
         break;
 
@@ -444,6 +450,13 @@ export function useWebSocket() {
         setState((prev) => ({
           ...prev,
           nodeFeatures: (message.data as NodeFeatureState[]) ?? [],
+        }));
+        break;
+
+      case "nodeSignal":
+        setState((prev) => ({
+          ...prev,
+          nodeSignal: (message.data as NodeSignalState[]) ?? [],
         }));
         break;
 

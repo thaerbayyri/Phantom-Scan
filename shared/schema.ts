@@ -231,6 +231,38 @@ export const targetIdentitySchema = z.object({
 });
 export type TargetIdentity = z.infer<typeof targetIdentitySchema>;
 
+// AI sidecar output, relayed ONLY as "advisoryIdentity" (F1: never written to
+// the authoritative targetIdentity channel, never gates presence). Validated
+// at the WS boundary before relay. presenceProb is null when no calibrated
+// presence model is loaded; advisoryActivity/advisoryCount come from per-room
+// models trained on labelled recordings (scripts/train/) and are absent when
+// no model exists for this room.
+export const advisoryActivitySchema = z.enum(["empty", "still", "walking", "active", "unknown"]);
+export type AdvisoryActivity = z.infer<typeof advisoryActivitySchema>;
+export const advisoryIdentitySchema = targetIdentitySchema.extend({
+  advisoryLabel: z.enum(["human", "mechanical", "unknown"]).optional(),
+  presenceProb: z.number().min(0).max(1).nullable().optional(),
+  presenceCalibrated: z.boolean().optional(),
+  advisoryActivity: advisoryActivitySchema.optional(),
+  advisoryActivityConfidence: z.number().min(0).max(1).optional(),
+  advisoryCount: z.number().int().min(0).max(8).nullable().optional(),
+  advisoryCountConfidence: z.number().min(0).max(1).optional(),
+  countLowConfidence: z.boolean().optional(),
+  modelId: z.string().max(80).optional(),
+  roomId: z.string().max(80).optional(),
+  nodesFused: z.array(z.number().int()).max(8).optional(),
+});
+export type AdvisoryIdentity = z.infer<typeof advisoryIdentitySchema>;
+
+// AI sidecar vitals, relayed ONLY as "advisoryVitalSigns". Rates are null
+// when the estimate is unreliable — never a fabricated fallback value.
+export const advisoryVitalSignsSchema = z.object({
+  heartRateBpm: z.number().nullable(),
+  respirationRateRpm: z.number().nullable(),
+  vitalsReliable: z.boolean(),
+});
+export type AdvisoryVitalSigns = z.infer<typeof advisoryVitalSignsSchema>;
+
 // Radial target — CANONICAL COORDINATE CONVENTIONS (see shared/bearing.ts).
 // World frame: +x = east, +z = north, y = up. Origin at the array center.
 //   theta — COMPASS bearing: atan2(x, z); 0 = north (+z), +π/2 = east (+x),

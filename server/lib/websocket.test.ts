@@ -546,6 +546,81 @@ test("targetDebug reports fps and motion for every anchored node, not just 1 and
   }
 });
 
+// ── F1 (real check): AI advisories never change the deterministic output ───
+
+function deterministicTrace(withAiInjection: boolean) {
+  const { server, dashboard } = newFourNodeRoomServer();
+  const ai = makeClient("ai", { isAI: true });
+  wireClient(server, ai);
+  for (let i = 0; i < 12; i++) {
+    if (withAiInjection) {
+      server.handleMessage("ai", {
+        type: "targetIdentity",
+        data: {
+          label: "unknown",
+          humanProb: 1,
+          mechanicalProb: 0,
+          advisoryLabel: "human",
+          presenceProb: 1,
+          advisoryActivity: "active",
+          advisoryActivityConfidence: 1,
+          advisoryCount: 8,
+          advisoryCountConfidence: 1,
+        },
+      });
+      server.handleMessage("ai", {
+        type: "vitalSigns",
+        data: { heartRateBpm: 200, respirationRateRpm: 60, vitalsReliable: true },
+      });
+    }
+    server.processFrame();
+  }
+  const radial = dashboard.sent
+    .filter((m: Captured) => m.type === "radialTarget" && m.data)
+    .map((m: Captured) => {
+      const d = m.data as Record<string, unknown>;
+      return [d.x, d.z, d.label, d.isMoving, d.positionBasis];
+    });
+  const states = dashboard.sent
+    .filter((m: Captured) => m.type === "targetState")
+    .map((m: Captured) => {
+      const d = m.data as Record<string, unknown>;
+      return [d.state, d.target_visible, d.node_mode, JSON.stringify(d.position)];
+    });
+  return { radial, states, identity: server.currentTargetIdentity, vitals: server.currentVitalSigns };
+}
+
+test("F1: extreme AI advisories leave every deterministic broadcast byte-identical", () => {
+  const baseline = deterministicTrace(false);
+  const injected = deterministicTrace(true);
+  assert.ok(baseline.radial.length > 0, "sanity: deterministic path must have produced targets");
+  assert.deepEqual(injected.radial, baseline.radial);
+  assert.deepEqual(injected.states, baseline.states);
+  assert.deepEqual(injected.identity, baseline.identity);
+  assert.deepEqual(injected.vitals, baseline.vitals);
+});
+
+test("malformed AI advisory payloads are dropped at the WS boundary, not relayed", () => {
+  const server = newProcessingServer();
+  const ai = makeClient("ai", { isAI: true });
+  const dashboard = makeClient("dashboard");
+  wireClient(server, ai);
+  wireClient(server, dashboard);
+
+  server.handleMessage("ai", { type: "targetIdentity", data: { label: "alien", humanProb: "1" } });
+  server.handleMessage("ai", { type: "vitalSigns", data: { heartRateBpm: "fast" } });
+  server.handleMessage("ai", {
+    type: "vitalSigns",
+    data: { heartRateBpm: null, respirationRateRpm: null, vitalsReliable: false },
+  });
+
+  assert.deepEqual(
+    dashboard.sent.map((m: Captured) => m.type),
+    ["advisoryVitalSigns"],
+    "only the well-formed (null = unreliable) vitals message may be relayed",
+  );
+});
+
 test("trackActiveNodeSet reports join/leave transitions exactly once", () => {
   const server = newProcessingServer();
   ingestSampleFor(server, 1);

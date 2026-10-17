@@ -43,6 +43,16 @@ import websocket
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from phantom.protocol import CsiFrameV1, parse_csi_frame  # noqa: E402
+from phantom.sidecar import (  # noqa: E402
+    FUSION_WINDOW_S,
+    PerNodeThrottle,
+    fresh_results,
+    fuse_vitals,
+    route_ws_message,
+)
+from phantom.subcarriers import NUM_DATA_SUBCARRIERS, lltf_amplitudes  # noqa: E402
+
 # ─── Model Definitions ────────────────────────────────────────────────
 
 class Enc(nn.Module):
@@ -132,9 +142,13 @@ class LoRAAdapter:
 
 # ─── Settings ────────────────────────────────────────────────────────
 
-UDP_PORT = 5006
-UDP_HOST = "127.0.0.1"
-WS_URL = "ws://127.0.0.1:5000/ws"
+# Phase-1 bug audit: these were hardcoded, out of step with the TS side's
+# UDP_PORT env-var convention (server/lib/udp-server.ts). PY_SIDECAR_PORT/HOST
+# match the same env vars the TS forwarder now reads, so both sides move
+# together instead of requiring a hand-edit in lockstep.
+UDP_PORT = int(os.environ.get("PY_SIDECAR_PORT", "5006"))
+UDP_HOST = os.environ.get("PY_SIDECAR_HOST", "127.0.0.1")
+WS_URL = os.environ.get("PHANTOM_WS_URL", "ws://127.0.0.1:5000/ws")
 
 MODEL_DIR = os.path.join("ai model and densepose", "model")
 EMBED_WEIGHTS = os.path.join(MODEL_DIR, "csi-embed-v2.safetensors")
@@ -143,11 +157,29 @@ PRESENCE_HEAD = os.path.join(MODEL_DIR, "presence-head.json")
 NODE_ADAPTERS = {1: os.path.join(MODEL_DIR, "node-1.json"),
                  2: os.path.join(MODEL_DIR, "node-2.json")}
 
+def _env_flag(name):
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+# Opt-in model components. Defaults are OFF because each is unvalidated on
+# this hardware/room (see docs and the model README):
+#   * pose_v1: ~2.5% PCK@20, never rendered by the dashboard.
+#   * presence head: trained against RuView's feature standardization, which
+#     is not shipped — its probability is uncalibrated here.
+#   * node-1/2 LoRA adapters: trained for someone else's rooms, and none
+#     exist for nodes 3/4.
+POSE_ENABLED = _env_flag("PHANTOM_AI_POSE")
+PRESENCE_HEAD_ENABLED = _env_flag("PHANTOM_AI_PRESENCE_HEAD")
+LORA_ENABLED = _env_flag("PHANTOM_AI_LORA")
+# Synthetic 56-vectors from WS rawSample scalars, only while UDP is silent.
+WS_FALLBACK_ENABLED = _env_flag("PHANTOM_AI_WS_FALLBACK")
+
 # History length for sliding window
 HISTORY_LEN = 100
 
-# Dual-node output fusion: combine per-node results that are fresher than this.
-FUSION_WINDOW_S = 1.0
+# pose_v1 was trained on 56-subcarrier input; live frames carry 51 LLTF data
+# subcarriers, so pose input is resampled (pose is opt-in only).
+POSE_INPUT_SUBCARRIERS = 56
 
 # Default sampling rate assumption (Hz) when timestamps are unusable.
 DEFAULT_FS = 20.0
@@ -189,7 +221,10 @@ node_results_lock = threading.Lock()
 real_nodes = set()
 
 last_udp_time = 0.0
-last_inference_time = 0.0
+inference_throttle = PerNodeThrottle()
+# node_id -> "udp" | "ws_fallback": a node's history is cleared when its
+# source changes so synthetic and real frames are never mixed in one window.
+node_sources = {}
 
 # Per-node previous window mean for temporal-delta motion energy.
 node_prev_means = {}
@@ -240,10 +275,12 @@ except Exception as e:
     print(f"[ERROR] pose_v1 load failed: {e}")
 pose_model.eval()
 
-# 3. Presence head
+# 3. Presence head (opt-in: uncalibrated without RuView's standardizer)
 presence_head = None
 try:
-    if os.path.exists(PRESENCE_HEAD):
+    if not PRESENCE_HEAD_ENABLED:
+        print("[AI] Presence head disabled (set PHANTOM_AI_PRESENCE_HEAD=1 to enable; output is uncalibrated).")
+    elif os.path.exists(PRESENCE_HEAD):
         presence_head = PresenceHead(PRESENCE_HEAD)
         print(f"[AI] Loaded presence head (||w||={np.linalg.norm(presence_head.w):.2f}, bias={presence_head.b:.2f}).")
     else:
@@ -251,9 +288,11 @@ try:
 except Exception as e:
     print(f"[ERROR] Failed to load presence head: {e}")
 
-# 4. LoRA node adapters
+# 4. LoRA node adapters (opt-in: trained for other rooms; none for nodes 3/4)
 lora_adapters = {}
-for nid, path in NODE_ADAPTERS.items():
+if not LORA_ENABLED:
+    print("[AI] LoRA room adapters disabled (set PHANTOM_AI_LORA=1 to enable).")
+for nid, path in (NODE_ADAPTERS.items() if LORA_ENABLED else ()):
     try:
         if os.path.exists(path):
             lora_adapters[nid] = LoRAAdapter(path)
@@ -269,11 +308,12 @@ def estimate_vitals(mags_history, fs):
     """Estimate respiration (RPM) and heart rate (BPM) from the CSI amplitude
     time-series via band-pass + dominant-frequency detection.
 
-    Returns (respiration_rpm, heart_bpm, reliable)."""
-    mags = np.asarray(mags_history, dtype=np.float64)   # [T, 56]
+    Returns (respiration_rpm, heart_bpm, reliable); rates are None when no
+    band peak exists — never a fabricated "typical" fallback value."""
+    mags = np.asarray(mags_history, dtype=np.float64)   # [T, subcarriers]
     T = mags.shape[0]
     if T < 32 or fs <= 0:
-        return 14.0, 72.0, False
+        return None, None, False
 
     # 1-D vital signal: temporal variation of the mean amplitude across
     # subcarriers, linearly detrended to remove slow drift.
@@ -295,13 +335,13 @@ def estimate_vitals(mags_history, fs):
     rf, rp = dominant(0.1, 0.5)
     hf, hp = dominant(0.8, 2.0)
 
-    resp_rpm = rf * 60.0 if rf else 14.0
-    heart_bpm = hf * 60.0 if hf else 72.0
+    resp_rpm = float(rf * 60.0) if rf else None
+    heart_bpm = float(hf * 60.0) if hf else None
 
     # Reliable when both bands carry meaningful energy relative to the noise floor.
     noise = float(np.median(spec) + 1e-9)
     reliable = bool(rf and hf and rp > 3 * noise and hp > 3 * noise)
-    return float(resp_rpm), float(heart_bpm), reliable
+    return resp_rpm, heart_bpm, reliable
 
 # ─── Feature extraction ────────────────────────────────────────────────
 
@@ -328,13 +368,15 @@ def extract_features_8d(mags_history, rssi_history, fs, prev_window_mean=None):
     # Features 2-3: derived vitals
     breathing, heart_rate, vitals_reliable = estimate_vitals(mags_arr, fs)
 
-    # Features 4-7: auxiliary
+    # Features 4-7: auxiliary. person_count / fall have no measured source on
+    # this hardware — they were hardcoded 1.0 / 0.0 before; now explicitly 0
+    # (absent) so the encoder input carries no fabricated evidence.
     phase_variance = float(np.var(mags_arr))
-    person_count = 1.0
+    person_count = 0.0
     fall_detected = 0.0
     rssi_mean = float(np.mean(rssi_history))
 
-    features = np.array([presence, motion, breathing, heart_rate,
+    features = np.array([presence, motion, breathing or 0.0, heart_rate or 0.0,
                          phase_variance, person_count, fall_detected, rssi_mean])
 
     # Per-feature Z-score across the 8 features (preserves relative magnitude).
@@ -364,6 +406,16 @@ def classify_activity(node_id, motion_raw):
         return "walking"
     return "stationary"
 
+def _resample_subcarriers(mags, n_out):
+    """Linearly resample a [T, n_in] amplitude history to [T, n_out]."""
+    n_in = mags.shape[1]
+    if n_in == n_out:
+        return mags
+    x_in = np.linspace(0.0, 1.0, n_in)
+    x_out = np.linspace(0.0, 1.0, n_out)
+    return np.stack([np.interp(x_out, x_in, row) for row in mags])
+
+
 def _estimate_fs(timestamps):
     """Estimate sampling rate (Hz) from millisecond timestamps."""
     if len(timestamps) < 2:
@@ -383,10 +435,13 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
     """Run the full model stack for one node. Returns a result dict (no I/O)."""
     fs = _estimate_fs(timestamps)
 
-    # ── Pose ── [B, 56, T]
-    mags_tensor = torch.tensor(np.array(mags_hist).T).float().unsqueeze(0).to(device)
-    with torch.no_grad():
-        coords_raw = pose_model(mags_tensor).cpu().numpy()[0]   # [34]
+    # ── Pose (opt-in) ── [B, 56, T]
+    coords_raw = None
+    if POSE_ENABLED:
+        pose_input = _resample_subcarriers(np.array(mags_hist), POSE_INPUT_SUBCARRIERS)
+        mags_tensor = torch.tensor(pose_input.T).float().unsqueeze(0).to(device)
+        with torch.no_grad():
+            coords_raw = pose_model(mags_tensor).cpu().numpy()[0]   # [34]
 
     # ── Embedding + LoRA + presence head ──
     features_8d, motion_raw, current_mean, vitals = extract_features_8d(
@@ -404,14 +459,12 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
     presence_prob = presence_head.predict(pre_adapted) if presence_head is not None else None
 
     # ── Classification ──
-    # Presence: trust the trained head when available, but require some signal.
     # ADVISORY ONLY: this AI presence/human verdict is displayed alongside the
     # deterministic pipeline's decision — it can never originate or flip the
-    # dashboard's target presence (server/lib owns that).
-    if presence_prob is not None:
-        present = presence_prob > 0.5
-    else:
-        present = float(features_8d[0]) > -1.5
+    # dashboard's target presence (server/lib owns that). Without an enabled
+    # presence head there is no model presence evidence at all (the old
+    # fallback thresholded a cross-feature z-score, which is meaningless).
+    present = presence_prob > 0.5 if presence_prob is not None else None
     # Moving perturbation (>0.005 temporal delta) reads as human; a present
     # but statically-perturbing reflector reads as mechanical.
     label = "unknown"
@@ -454,46 +507,33 @@ def fuse_and_emit():
     now = time.time()
 
     with node_results_lock:
-        fresh = {nid: r["result"] for nid, r in node_results.items()
-                 if now - r["t"] <= FUSION_WINDOW_S}
+        fresh = fresh_results(node_results, now, FUSION_WINDOW_S)
 
     if not fresh:
         return
 
     results = list(fresh.values())
 
-    # Pose: average the per-node keypoint coordinates. With two spatially
-    # separated nodes this averages out single-node depth/angle bias —
-    # output-level fusion that stays compatible with the 56-channel pose_v1.
-    coords = np.mean([r["coords"] for r in results], axis=0)
-    keypoints = _coords_to_keypoints(coords)
-
     # Identity is advisory only. The deterministic runtime owns human/non-human verdicts.
-    present_any = any(r["present"] for r in results)
     labels = [r["label"] for r in results if r["present"]]
     advisory_label = "human" if "human" in labels else ("mechanical" if labels else "unknown")
     label = "unknown"
     motion = max(r["motion_raw"] for r in results)
     pp = [r["presence_prob"] for r in results if r["presence_prob"] is not None]
-    presence_prob = max(pp) if pp else (1.0 if present_any else 0.0)
-    periodicity = float(np.mean([r["vitals"]["breathing"] for r in results]))
+    presence_prob = max(pp) if pp else None
 
-    # Vitals: average across reliable nodes; fall back to all.
-    rel = [r["vitals"] for r in results if r["vitals"]["reliable"]]
-    src = rel if rel else [r["vitals"] for r in results]
-    breathing = float(np.mean([v["breathing"] for v in src]))
-    heart = float(np.mean([v["heart_rate"] for v in src]))
-    vitals_reliable = len(rel) > 0
+    vitals = fuse_vitals([r["vitals"] for r in results])
 
     human_prob = float(F.sigmoid(torch.tensor(motion * 20.0)).item())
-    if advisory_label == "human":
+    if advisory_label == "human" and presence_prob is not None:
         human_prob = max(human_prob, presence_prob)
 
     # Fused activity tag: motion-energy heuristic only (see classify_activity
-    # docstring) — "unknown" when nothing is present, since there is no
-    # target to have an activity state.
+    # docstring). Without a presence model the heuristic still reports the
+    # strongest per-node motion state; "unknown" only when a presence model
+    # says nothing is present.
     activity_states = [r["activity_state"] for r in results]
-    if not present_any:
+    if presence_prob is not None and not any(r["present"] for r in results):
         activity_state = "unknown"
     elif "rapid_change" in activity_states:
         activity_state = "rapid_change"
@@ -502,49 +542,51 @@ def fuse_and_emit():
     else:
         activity_state = "stationary"
 
+    identity = {
+        "label": label,
+        "humanProb": human_prob,
+        "mechanicalProb": 1.0 - human_prob,
+        "periodicity": vitals.respiration_rpm or 0.0,
+        "presenceProb": presence_prob,
+        "presenceCalibrated": False,
+        "advisoryLabel": advisory_label,
+        "activityState": activity_state,
+        "nodesFused": sorted(int(r["node_id"]) for r in results),
+    }
+
     if not (ws_connected and ws is not None):
         return
     try:
-        ws.send(json.dumps({
-            "type": "poseFrame",
-            "data": {"timestamp": int(now * 1000), "keypoints": keypoints},
-        }))
-        ws.send(json.dumps({
-            "type": "targetIdentity",
-            "data": {
-                "label": label,
-                "humanProb": human_prob,
-                "mechanicalProb": 1.0 - human_prob,
-                "periodicity": periodicity,
-                "presenceProb": presence_prob,
-                "advisoryLabel": advisory_label,
-                "activityState": activity_state,
-            },
-        }))
+        if POSE_ENABLED and all(r["coords"] is not None for r in results):
+            # Output-level fusion: average per-node keypoints (pose is opt-in;
+            # the dashboard never renders it — see canPresentVolumetricTarget).
+            coords = np.mean([r["coords"] for r in results], axis=0)
+            ws.send(json.dumps({
+                "type": "poseFrame",
+                "data": {"timestamp": int(now * 1000), "keypoints": _coords_to_keypoints(coords)},
+            }))
+        ws.send(json.dumps({"type": "targetIdentity", "data": identity}))
         ws.send(json.dumps({
             "type": "vitalSigns",
             "data": {
-                "heartRateBpm": heart,
-                "respirationRateRpm": breathing,
-                "vitalsReliable": vitals_reliable,
+                "heartRateBpm": vitals.heart_bpm,
+                "respirationRateRpm": vitals.respiration_rpm,
+                "vitalsReliable": vitals.reliable,
             },
         }))
-        nodes_str = "+".join(str(r["node_id"]) for r in results)
-        pp_str = f"{presence_prob:.2f}" if pp else "n/a"
-        print(f"[AI] Fused nodes={nodes_str} advisory_label={advisory_label} "
+        pp_str = f"{presence_prob:.2f}" if presence_prob is not None else "n/a"
+        print(f"[AI] Fused nodes={identity['nodesFused']} advisory_label={advisory_label} "
               f"activity={activity_state} presence={pp_str} motion={motion:.4f} "
-              f"resp={breathing:.1f} hr={heart:.0f} rel={vitals_reliable}")
+              f"vitals_reliable={vitals.reliable}")
     except Exception as e:
         print(f"[WS] Send error: {e}")
 
 # ─── Inference Throttler ───────────────────────────────────────────────
 
 def trigger_inference(node_id, mags_hist, rssi_hist, timestamps):
-    global last_inference_time
-    now = time.time()
-    if now - last_inference_time < 0.2:   # Throttle to max 5 Hz (global)
+    # Max 5 Hz PER NODE (was one global 5 Hz budget shared by all nodes).
+    if not inference_throttle.should_run(node_id, time.time()):
         return
-    last_inference_time = now
 
     mags_copy = list(mags_hist)
     rssi_copy = list(rssi_hist)
@@ -564,11 +606,17 @@ def trigger_inference(node_id, mags_hist, rssi_hist, timestamps):
 
     threading.Thread(target=_run, daemon=True).start()
 
-def _append_and_maybe_infer(node_id, mags, rssi, timestamp, is_real):
-    """Shared buffer-append + inference-trigger used by all data paths."""
+def _append_and_maybe_infer(node_id, mags, rssi, timestamp, is_real, source="udp"):
+    """Shared buffer-append + inference-trigger used by all data paths.
+
+    `source` keeps real UDP frames and synthetic WS-fallback vectors from ever
+    sharing one window: a source switch clears that node's history."""
     if is_real:
         real_nodes.add(node_id)
     with lock:
+        if node_sources.get(node_id) != source:
+            node_sources[node_id] = source
+            node_histories.pop(node_id, None)
         if node_id not in node_histories:
             node_histories[node_id] = {"mags": [], "rssi": [], "timestamps": []}
         hist = node_histories[node_id]
@@ -589,31 +637,24 @@ def _append_and_maybe_infer(node_id, mags, rssi, timestamp, is_real):
 
 # ─── Helper: parse raw UDP CSI ─────────────────────────────────────────
 
-def parse_csi_packet(data: bytes) -> dict:
-    """Parses Raw CSI (ADR-018) from UDP payload."""
-    if len(data) < 20:
+def parse_csi_packet(data: bytes):
+    """Parse a forwarded ADR-018 v1 datagram (32-byte header) into the
+    sidecar's sample dict, or None.
+
+    The previous parser read the 20-byte LEGACY layout from v1 packets: node
+    id came from the schema-version byte (every node collapsed to "node 1")
+    and the subcarrier count from unrelated bytes, so nearly every real packet
+    was dropped and the sidecar ran on synthetic WS vectors only. Uses the
+    same v1 parser as the Python runtime and the same LLTF data-subcarrier
+    selection / imaginary-first order as the TS ingest."""
+    frame = parse_csi_frame(data)
+    if not isinstance(frame, CsiFrameV1):
         return None
-    header = struct.unpack('<IBBHIIbbxx', data[:20])
-    magic, node_id, num_ant, num_sub, freq, seq, rssi, noise = header
-    if magic != 0xC5110001 or num_sub == 0 or num_ant == 0:
+    try:
+        mags = lltf_amplitudes(frame.iq_bytes, frame.n_subcarriers)
+    except ValueError:
         return None
-    iq_data = data[20:]
-    expected_len = num_ant * num_sub * 2
-    if len(iq_data) < expected_len:
-        return None
-    iq_array = struct.unpack(f'<{expected_len}b', iq_data[:expected_len])
-    mags = []
-    for i in range(num_sub):
-        r = iq_array[i * 2]
-        im = iq_array[i * 2 + 1]
-        mags.append(math.sqrt(r * r + im * im))
-    if len(mags) != 56:
-        xp = np.linspace(0, 1, len(mags))
-        x_new = np.linspace(0, 1, 56)
-        mags = np.interp(x_new, xp, mags)
-    else:
-        mags = np.array(mags)
-    return {"node_id": node_id, "mags": mags, "rssi": rssi, "timestamp": time.time() * 1000}
+    return {"node_id": frame.node_id, "mags": mags, "rssi": frame.rssi_dbm, "timestamp": time.time() * 1000}
 
 # ─── Baseline calibration ("Calibrate Empty Room") ─────────────────────
 
@@ -643,14 +684,20 @@ def _run_calibration():
 # ─── WebSocket Client ──────────────────────────────────────────────────
 
 def on_message(ws_conn, message):
-    # Process WS rawSamples regardless of UDP — hardware can use both paths.
+    # rawSample is ignored unless PHANTOM_AI_WS_FALLBACK=1 AND UDP is silent:
+    # the server already forwards the real packet over UDP, and appending a
+    # synthetic vector for the same frame double-ingested every node.
     try:
         msg = json.loads(message)
-        msg_type = msg.get("type")
-        if msg_type == "calibrateBaseline":
+        action = route_ws_message(
+            msg,
+            ws_fallback_enabled=WS_FALLBACK_ENABLED,
+            seconds_since_udp=time.time() - last_udp_time,
+        )
+        if action == "calibrate":
             _run_calibration()
             return
-        if msg_type != "rawSample":
+        if action != "fallback_sample":
             return
         data = msg.get("data")
         if not data:
@@ -663,18 +710,19 @@ def on_message(ws_conn, message):
         if not h1:
             return
 
-        # Synthesize 56-subcarrier magnitudes from the dominant complex numbers.
+        # Synthesize per-subcarrier magnitudes from the dominant complex
+        # numbers (fallback only — NOT real CSI, so flagged is_real=False).
         mag1 = math.sqrt(h1["re"] ** 2 + h1["im"] ** 2)
         mag2 = math.sqrt(h2["re"] ** 2 + h2["im"] ** 2) if h2 else mag1
-        mags = np.zeros(56)
-        for i in range(56):
+        mags = np.zeros(NUM_DATA_SUBCARRIERS)
+        for i in range(NUM_DATA_SUBCARRIERS):
             fade = 1.0 + 0.3 * math.sin(i * 0.15)
             mags[i] = (mag1 * 0.7 + mag2 * 0.3) * fade + np.random.normal(0, 0.05)
             mags[i] = max(0.01, mags[i])
 
-        _append_and_maybe_infer(node_id, mags, rssi, timestamp, is_real=True)
-    except Exception:
-        pass
+        _append_and_maybe_infer(node_id, mags, rssi, timestamp, is_real=False, source="ws_fallback")
+    except Exception as e:
+        print(f"[WS] message handling error: {e}")
 
 def on_error(ws_conn, error):
     print(f"[WS] Error: {error}")
@@ -747,8 +795,8 @@ def run_synthetic_feed():
         resp = 0.8 * math.sin(2 * math.pi * 0.3 * t)   # ~18 RPM
         hr = 0.15 * math.sin(2 * math.pi * 1.2 * t)    # ~72 BPM
 
-        mags = np.zeros(56)
-        for i in range(56):
+        mags = np.zeros(NUM_DATA_SUBCARRIERS)
+        for i in range(NUM_DATA_SUBCARRIERS):
             static_part = 0.8 + 0.05 * math.sin(i * 0.2)
             moving_phase = 2 * math.pi * math.sin(theta) * depth * 0.3 + t * 0.5
             fade = 1.0 + 0.3 * math.sin(i * 0.15)
@@ -757,7 +805,7 @@ def run_synthetic_feed():
             mags[i] = abs(static_part + dynamic_part) + np.random.normal(0, 0.01)
         rssi = -55 + depth * -2 + np.random.uniform(-2, 2)
 
-        _append_and_maybe_infer(SYNTH_NODE_ID, mags, rssi, time.time() * 1000, is_real=False)
+        _append_and_maybe_infer(SYNTH_NODE_ID, mags, rssi, time.time() * 1000, is_real=False, source="synthetic")
 
 # ─── Main ──────────────────────────────────────────────────────────────
 

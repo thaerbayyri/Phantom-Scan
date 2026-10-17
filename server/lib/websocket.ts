@@ -19,6 +19,7 @@ import type {
   NodeSignalState,
   SignalField,
 } from "@shared/schema";
+import { advisoryIdentitySchema, advisoryVitalSignsSchema } from "@shared/schema";
 import { geometricDiversity, getRoomGeometry, nodePairSeparationM, type RoomGeometry } from "./room-geometry";
 import { compassBearingRad } from "@shared/bearing";
 
@@ -434,7 +435,12 @@ export class SignalProcessingServer {
         // AI advisory identity is relayed under a distinct type instead, so
         // it can never be mistaken for the authoritative classification.
         if (client?.isAI && this.status.isProcessing) {
-          this.broadcast("advisoryIdentity", message.data);
+          const identity = advisoryIdentitySchema.safeParse(message.data);
+          if (identity.success) {
+            this.broadcast("advisoryIdentity", identity.data);
+          } else {
+            console.warn(`[WS] AI client ${clientId} sent malformed targetIdentity — dropped: ${identity.error.issues[0]?.message}`);
+          }
         } else if (client && !client.isAI) {
           console.warn(`[WS][SEC] non-AI client ${clientId} sent targetIdentity — ignored (PS-AUDIT-014)`);
         }
@@ -445,7 +451,12 @@ export class SignalProcessingServer {
         // processFrame(). AI advisory vitals are relayed under a distinct
         // type and never touch the authoritative channel.
         if (client?.isAI && this.status.isProcessing) {
-          this.broadcast("advisoryVitalSigns", message.data);
+          const vitals = advisoryVitalSignsSchema.safeParse(message.data);
+          if (vitals.success) {
+            this.broadcast("advisoryVitalSigns", vitals.data);
+          } else {
+            console.warn(`[WS] AI client ${clientId} sent malformed vitalSigns — dropped: ${vitals.error.issues[0]?.message}`);
+          }
         } else if (client && !client.isAI) {
           console.warn(`[WS][SEC] non-AI client ${clientId} sent vitalSigns — ignored (PS-AUDIT-014)`);
         }
