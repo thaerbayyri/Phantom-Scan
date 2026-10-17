@@ -47,6 +47,8 @@ import {
   computeNodeTrends,
   computeFallbackVelocity,
   computeGainNormalizedPerturbation,
+  computeAgcNormalizedPerturbation,
+  computeRadialTrends,
   hasSingleNodePresenceEvidence,
   evaluateClassifierCorroboration,
   wasSuppressedByClassifier,
@@ -58,6 +60,16 @@ import {
   type ClassifierCorroboration,
 } from "./node-fusion";
 import { FusedPositionKalman } from "./fused-position-kalman";
+import {
+  DEFAULT_TIER_THRESHOLDS,
+  NodeBaselineTracker,
+  RoomPresence,
+  tierAtLeast,
+  type PresenceTier,
+} from "./node-baseline";
+
+/** fused_room: filtered speed above which a held target counts as moving. */
+const ROOM_MOVING_SPEED_MPS = 0.15;
 import {
   computeMUSICSpectrum,
   findSpectrumPeak,
@@ -200,10 +212,14 @@ export class SignalProcessingServer {
   // the radialTarget broadcast and buildSensorNodes' distanceM read this.
   // Per-node trend arrows are NOT computed for fused_room in this pass
   // (stays "stable" in buildSensorNodes) — only the target position/velocity.
-  private roomFusedSnapshot: { x: number; z: number; atMs: number } | null = null;
-  private roomFusedVelPrevX: number | null = null;
-  private roomFusedVelPrevZ: number | null = null;
-  private roomFusedVelPrevMs = 0;
+  private roomFusedSnapshot: { x: number; z: number; vx: number; vz: number; atMs: number } | null = null;
+  // fused_room presence: one adaptive-baseline tracker per node plus the
+  // debounced room tier (node-baseline.ts). Trackers persist across active-
+  // set changes — each node's empty-room level is a property of that node.
+  private nodeBaselines = new Map<number, NodeBaselineTracker>();
+  private roomPresence = new RoomPresence();
+  private lastRoomTier: PresenceTier = "absent";
+  private lastNodeRises: Record<string, number> = {};
 
   // Smooths the raw per-tick fused x/z (fused_two_node and fused_room both
   // feed the same instance — mutually exclusive per tick) into a stable
@@ -1075,22 +1091,19 @@ export class SignalProcessingServer {
           fusedBalance = fused.balance;
           fusedBalanceLinear = fused.balanceLinear;
         } else {
-          // fused_room: true 2-D centroid — track velocity with the same
-          // pure helper the single-node fallback path uses (computeFallbackVelocity),
-          // keyed to the Kalman-filtered fused position instead of the raw
-          // single-node estimate.
-          const prevRoomSample =
-            this.roomFusedVelPrevX === null || this.roomFusedVelPrevZ === null
-              ? null
-              : { x: this.roomFusedVelPrevX, z: this.roomFusedVelPrevZ, atMs: this.roomFusedVelPrevMs };
-          const roomVel = computeFallbackVelocity(prevRoomSample, { x: filteredPos.x, z: filteredPos.z }, nowFusedMs);
-          targetVx = roomVel.vx;
-          targetVz = roomVel.vz;
-          speed = roomVel.speed;
-          this.roomFusedVelPrevX = filteredPos.x;
-          this.roomFusedVelPrevZ = filteredPos.z;
-          this.roomFusedVelPrevMs = nowFusedMs;
-          this.roomFusedSnapshot = { x: filteredPos.x, z: filteredPos.z, atMs: nowFusedMs };
+          // fused_room: true 2-D centroid. Velocity is the Kalman filter's own
+          // state estimate (previously a finite difference of the filtered
+          // position, which re-amplified the jitter the filter removed).
+          targetVx = filteredPos.vx;
+          targetVz = filteredPos.vz;
+          speed = Math.hypot(filteredPos.vx, filteredPos.vz);
+          this.roomFusedSnapshot = {
+            x: filteredPos.x,
+            z: filteredPos.z,
+            vx: filteredPos.vx,
+            vz: filteredPos.vz,
+            atMs: nowFusedMs,
+          };
         }
         fusedDistanceCm = fused.distToNearestNodeM * 100;
         fusedConfidence = fused.maxMotion; // position/signal confidence (NOT humanProb)
@@ -1107,8 +1120,18 @@ export class SignalProcessingServer {
       // downgraded real motion to "idle". Single-node mode is unaffected
       // (fused is always null there, and its state is hardcoded "degraded"
       // regardless of isMoving).
+      //
+      // fused_room is different: a person standing still is held by the
+      // present_still tier (stationaryHold) and must read as "idle", not as
+      // a moving target — otherwise the idle state is unreachable and a
+      // still person can only ever be "moving" or vanish.
       const projectedMotion = speed > (fused ? 0.035 : 0.05);
-      const isMoving = fused ? true : motionResult.motionDetected;
+      const isMoving = !fused
+        ? motionResult.motionDetected
+        : nodeMode !== "fused_room"
+          ? true
+          : !fused.stationaryHold &&
+            (speed > ROOM_MOVING_SPEED_MPS || tierAtLeast(this.lastRoomTier, "present_moving"));
 
       // Direction of travel (smooth): exponential blend of the travel angle
       // (30% per frame) with wrap-around handling so the arrow turns smoothly
@@ -1647,6 +1670,9 @@ export class SignalProcessingServer {
       node_motion: Object.fromEntries(
         anchoredIds.map((id) => [String(id), Math.round(this.nodeMotionFor(id).motion * 1000) / 1000]),
       ),
+      // fused_room adaptive-baseline presence (calibration/observability).
+      room_tier: this.lastRoomTier,
+      node_rise: this.lastNodeRises,
     };
     this.broadcast("targetDebug", this.currentTargetDebug);
   }
@@ -1786,12 +1812,99 @@ export class SignalProcessingServer {
   }
 
   private nodeMotionFor(nodeId: number) {
+    return computeNodeMotionFromMatrix(this.nodeWindowFrames(nodeId));
+  }
+
+  /** The node's per-subcarrier amplitude frames inside the motion window. */
+  private nodeWindowFrames(nodeId: number): number[][] {
     // Wall-clock eviction on READ, not just on ingest: a silent (unplugged)
     // node stops receiving packets, so ingest-side eviction never runs and the
     // frozen window would keep reporting the unplug transient as motion.
     const cutoff = Date.now() - MOTION_WINDOW_MS;
-    const win = (this.nodeAmpWindow.get(nodeId) ?? []).filter((s) => s.t >= cutoff);
-    return computeNodeMotionFromMatrix(win.map((s) => s.amps));
+    return (this.nodeAmpWindow.get(nodeId) ?? []).filter((s) => s.t >= cutoff).map((s) => s.amps);
+  }
+
+  /**
+   * Advance every active node's adaptive baseline with this tick's
+   * AGC-normalized perturbation and return the debounced room tier plus each
+   * node's rise above its own empty-room level. The baseline is frozen while
+   * a target is visible so a still person is not learned as "empty".
+   */
+  private updateRoomPresence(activeIds: number[], nowMs: number): { tier: PresenceTier; rises: Record<number, number> } {
+    const freeze = this.currentTargetState.target_visible;
+    const rises: Record<number, number> = {};
+    const tiers: PresenceTier[] = [];
+    for (const id of activeIds) {
+      let tracker = this.nodeBaselines.get(id);
+      if (!tracker) {
+        tracker = new NodeBaselineTracker();
+        this.nodeBaselines.set(id, tracker);
+      }
+      const update = tracker.update(computeAgcNormalizedPerturbation(this.nodeWindowFrames(id)), nowMs, freeze);
+      rises[id] = update.rise;
+      tiers.push(update.tier);
+    }
+    const tier = this.roomPresence.update(tiers, nowMs);
+    this.lastRoomTier = tier;
+    this.lastNodeRises = Object.fromEntries(
+      Object.entries(rises).map(([id, rise]) => [id, Math.round(rise * 1000) / 1000]),
+    );
+    return { tier, rises };
+  }
+
+  /**
+   * fused_room (3-4 active nodes). Presence comes from the per-node adaptive
+   * baselines (room tier ≥ present_moving), replacing max(motion) ≥ 0.6 — a
+   * threshold calibrated on the 2-node rig that saturated on ~half of 4-node
+   * ticks. Position is the fuseNodeTargets centroid weighted by each node's
+   * RISE above its own baseline, so perturbation common to every node (the
+   * empty-room floor) no longer pulls the target toward the room centre.
+   *
+   * A person who stops moving drops to present_still: the target is then held
+   * at its last filtered position (stationaryHold → "idle") instead of aging
+   * out through stale/cleared after 5 s. The classifier veto still applies.
+   */
+  private computeRoomFusedTarget(
+    activeIds: number[],
+    classifier?: ClassifierGateInput,
+  ): (FusedTarget & { maxMotion: number; stationaryHold?: boolean }) | null {
+    const { tier, rises } = this.updateRoomPresence(activeIds, Date.now());
+    const movingGate = tierAtLeast(tier, "present_moving");
+    const stillHold = tier === "present_still" && this.roomFusedSnapshot !== null;
+    const { suppress } = evaluateClassifierCorroboration(classifier);
+    this.lastFusedVetoedByClassifier = (movingGate || stillHold) && suppress;
+    if (!(movingGate || stillHold) || suppress) return null;
+
+    const maxRise = Math.max(0, ...Object.values(rises));
+    const confidence = Math.min(1, maxRise / DEFAULT_TIER_THRESHOLDS.active);
+    const samples: NodeFuseSample[] = activeIds.map((id) => ({
+      id,
+      r: rises[id] ?? 0,
+      motion: this.nodeMotionFor(id).motion, // display only; the gate is the tier above
+      anchor: this.room.anchors[id],
+    }));
+    const fusedRoom = movingGate ? fuseNodeTargets(samples, { motionThreshold: 0, classifier }) : null;
+    if (fusedRoom) {
+      return {
+        x: fusedRoom.x,
+        z: fusedRoom.z,
+        distToNearestNodeM: fusedRoom.distToNearestNodeM,
+        classifierCorroboration: fusedRoom.classifierCorroboration,
+        maxMotion: confidence,
+      };
+    }
+    const held = this.roomFusedSnapshot;
+    if (!held) return null;
+    return {
+      x: held.x,
+      z: held.z,
+      distToNearestNodeM: Math.min(
+        ...activeIds.map((id) => Math.hypot(held.x - this.room.anchors[id].x, held.z - this.room.anchors[id].z)),
+      ),
+      classifierCorroboration: evaluateClassifierCorroboration(classifier).corroboration,
+      maxMotion: confidence,
+      stationaryHold: true,
+    };
   }
 
   /**
@@ -1810,42 +1923,13 @@ export class SignalProcessingServer {
 
   private computeFusedTarget(
     classifier?: ClassifierGateInput,
-  ): (FusedTarget & { maxMotion: number }) | null {
+  ): (FusedTarget & { maxMotion: number; stationaryHold?: boolean }) | null {
     const activeIds = this.activeHardwareNodeIds();
 
-    // fused_room (3-4 active nodes): weighted-centroid across all active
-    // anchors — see fuseNodeTargets for the generalized math. balance/
-    // balanceLinear are left undefined (no single axis to project onto).
+    // fused_room (3-4 active nodes): adaptive-baseline presence gate +
+    // weighted centroid — see computeRoomFusedTarget.
     if (activeIds.length >= 3) {
-      const samples: NodeFuseSample[] = activeIds.map((id) => {
-        const m = this.nodeMotionFor(id);
-        return {
-          id,
-          r: computeGainNormalizedPerturbation(m.absStd, m.mean),
-          motion: m.motion,
-          anchor: this.room.anchors[id],
-        };
-      });
-      const fusedRoom = fuseNodeTargets(samples, {
-        motionThreshold: this.config.fusedTargetMotionThreshold,
-        classifier,
-      });
-      // fuseNodeTargets doesn't expose a separate "gate passed but classifier
-      // vetoed" signal the way wasSuppressedByClassifier does for the 2-node
-      // path; approximate it by re-checking corroboration directly so the
-      // fused_room hold-reason label stays informative.
-      this.lastFusedVetoedByClassifier =
-        Math.max(...samples.map((s) => s.motion), 0) >= this.config.fusedTargetMotionThreshold &&
-        evaluateClassifierCorroboration(classifier).suppress;
-      if (!fusedRoom) return null;
-      const maxMotion = Math.max(...samples.map((s) => s.motion));
-      return {
-        x: fusedRoom.x,
-        z: fusedRoom.z,
-        distToNearestNodeM: fusedRoom.distToNearestNodeM,
-        classifierCorroboration: fusedRoom.classifierCorroboration,
-        maxMotion,
-      };
+      return this.computeRoomFusedTarget(activeIds, classifier);
     }
 
     const [firstId, secondId] = activeIds;
@@ -1929,9 +2013,6 @@ export class SignalProcessingServer {
     this.prevFusedZ = null;
     this.prevFusedMs = 0;
     this.roomFusedSnapshot = null;
-    this.roomFusedVelPrevX = null;
-    this.roomFusedVelPrevZ = null;
-    this.roomFusedVelPrevMs = 0;
     this.fusedKalman.reset();
   }
 
@@ -1964,6 +2045,10 @@ export class SignalProcessingServer {
       processing && this.roomFusedSnapshot && Date.now() - this.roomFusedSnapshot.atMs <= 1500
         ? this.roomFusedSnapshot
         : null;
+    // fused_room per-node approach/recede from the filtered 2-D velocity.
+    const roomTrends = roomSnap
+      ? computeRadialTrends({ x: roomSnap.x, z: roomSnap.z }, { vx: roomSnap.vx, vz: roomSnap.vz }, this.room.anchors)
+      : null;
     const nodes: SensorNode[] = [];
     for (const key of Object.keys(this.room.anchors).map(Number).sort((a, b) => a - b)) {
       const anchor = this.room.anchors[key];
@@ -1983,9 +2068,7 @@ export class SignalProcessingServer {
           : roomSnap
             ? Math.hypot(roomSnap.x - anchor.x, roomSnap.z - anchor.z) // straight-line (fused_room)
             : undefined,
-        // fused_room doesn't compute per-node approach/recede trends in this
-        // pass (only the 2-D position/velocity) — stays "stable".
-        trend: snap ? snap.trends[key] ?? "stable" : "stable",
+        trend: snap ? snap.trends[key] ?? "stable" : roomTrends?.[key] ?? "stable",
       });
     }
     return nodes;

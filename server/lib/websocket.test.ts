@@ -633,3 +633,64 @@ test("trackActiveNodeSet reports join/leave transitions exactly once", () => {
   assert.deepEqual(server.trackActiveNodeSet(), { changed: true, joined: [], left: [2] });
   assert.deepEqual(server.trackActiveNodeSet(), { changed: false, joined: [], left: [] });
 });
+
+// ── Phase 5: fused_room adaptive-baseline presence ─────────────────────────
+
+function newRoomServerWithPresence(tier: string, rises: Record<number, number>) {
+  const server = newProcessingServer();
+  for (const nodeId of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, nodeId, [10, 10, 10, 10], 20);
+  server.updateRoomPresence = () => {
+    server.lastRoomTier = tier;
+    return { tier, rises };
+  };
+  return server;
+}
+
+test("fused_room: position is weighted by each node's rise above its own baseline (no centre pull)", () => {
+  const server = newRoomServerWithPresence("present_moving", { 1: 2.0, 2: 0, 3: 0, 4: 0 });
+  const fused = server.computeFusedTarget();
+  assert.ok(fused, "moving tier must produce a target");
+  assert.deepEqual([fused.x, fused.z], [-2, -3], "only node 1 rose above its baseline -> its corner");
+  assert.ok(!fused.stationaryHold);
+});
+
+test("fused_room: no target while the room tier is absent", () => {
+  const server = newRoomServerWithPresence("absent", { 1: 0.05, 2: 0.02, 3: 0, 4: 0 });
+  assert.equal(server.computeFusedTarget(), null);
+});
+
+test("fused_room: a person who stops moving is held at the last position (stationary hold)", () => {
+  const server = newRoomServerWithPresence("present_still", { 1: 0.2, 2: 0.18, 3: 0.17, 4: 0.16 });
+  server.roomFusedSnapshot = { x: 0.7, z: -1.2, vx: 0, vz: 0, atMs: Date.now() };
+  const fused = server.computeFusedTarget();
+  assert.ok(fused, "present_still with a prior target must hold it");
+  assert.equal(fused.stationaryHold, true);
+  assert.deepEqual([fused.x, fused.z], [0.7, -1.2]);
+});
+
+test("fused_room: present_still without a prior target never creates one", () => {
+  const server = newRoomServerWithPresence("present_still", { 1: 0.2, 2: 0.18, 3: 0.17, 4: 0.16 });
+  assert.equal(server.computeFusedTarget(), null);
+});
+
+test("fused_room: a stationary hold broadcasts isMoving=false and the idle target state", () => {
+  const { server, dashboard } = newFourNodeRoomServer();
+  server.lastRoomTier = "present_still";
+  server.computeFusedTarget = () => ({ ...STUB_ROOM_FUSED, stationaryHold: true });
+  server.processFrame();
+  server.processFrame();
+  const radial = lastRadialTarget(dashboard);
+  assert.equal(radial?.isMoving, false);
+  const states = dashboard.sent.filter((m: Captured) => m.type === "targetState");
+  assert.equal((states[states.length - 1].data as { state: string }).state, "idle");
+});
+
+test("fused_room: node trend arrows follow the filtered 2-D velocity", () => {
+  const server = newProcessingServer();
+  for (const nodeId of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, nodeId, [10, 10, 10, 10], 20);
+  server.roomFusedSnapshot = { x: 0, z: 0, vx: 0.4, vz: 0.6, atMs: Date.now() };
+  const nodes = server.buildSensorNodes();
+  const trendOf = (id: number) => nodes.find((n: { node_id: number }) => n.node_id === id).trend;
+  assert.equal(trendOf(3), "approaching");
+  assert.equal(trendOf(1), "receding");
+});

@@ -442,6 +442,10 @@ export const targetDebugSchema = z.object({
   // current saturated motion, so hardware runs are checkable from diagnostics.
   node_fps: z.record(z.string(), z.number()).optional(),
   node_motion: z.record(z.string(), z.number()).optional(),
+  // fused_room adaptive-baseline presence (server/lib/node-baseline.ts):
+  // debounced room tier and each node's rise above its own empty-room level.
+  room_tier: z.enum(["absent", "present_still", "present_moving", "active"]).optional(),
+  node_rise: z.record(z.string(), z.number()).optional(),
 });
 export type TargetDebug = z.infer<typeof targetDebugSchema>;
 

@@ -22,13 +22,17 @@
  */
 import dgram from "dgram";
 import { parseCsiPacket } from "../server/lib/udp-server";
-import { computeNodeMotionFromMatrix } from "../server/lib/node-fusion";
+import { computeAgcNormalizedPerturbation, computeNodeMotionFromMatrix } from "../server/lib/node-fusion";
+import { reduceCsiFrame } from "../server/lib/csi-subcarriers";
+import { DEFAULT_TIER_THRESHOLDS, NodeBaselineTracker } from "../server/lib/node-baseline";
 import { calibrateEnergyThreshold } from "../server/lib/tracking";
 
 const secondsArg = process.argv.indexOf("--seconds");
 const SECONDS = secondsArg >= 0 ? parseInt(process.argv[secondsArg + 1], 10) : 120;
 const PORT = parseInt(process.env.UDP_PORT || "5005", 10);
-const WINDOW_MS = 3000;
+// Must match the live server's per-node motion window (websocket.ts
+// MOTION_WINDOW_MS) or the calibrated numbers don't transfer.
+const WINDOW_MS = Number.parseInt(process.env.PHANTOM_MOTION_WINDOW_MS ?? "1500", 10);
 const ALLOW_LEGACY_CSI =
   process.env.PHANTOM_ALLOW_LEGACY_CSI === "1" ||
   process.env.PHANTOM_ALLOW_LEGACY_CSI === "true";
@@ -57,15 +61,10 @@ sock.on("message", (msg) => {
   const parsed = parseCsiPacket(msg, { allowLegacy: ALLOW_LEGACY_CSI });
   if (!parsed) return;
   const nodeId = parsed.nodeId;
-  if (nodeId !== 1 && nodeId !== 2) return;
+  if (!(nodeId >= 1 && nodeId <= 4)) return;
 
-  const k = Math.min(parsed.numSubcarriers, 64);
-  const amps = new Array<number>(k);
-  for (let i = 0; i < k; i++) {
-    const re = parsed.iqData.readInt8(i * 2);
-    const im = parsed.iqData.readInt8(i * 2 + 1);
-    amps[i] = Math.hypot(re, im);
-  }
+  // Same LLTF data-subcarrier vector (imaginary-first) as the live ingest.
+  const { amplitudes: amps } = reduceCsiFrame(parsed.iqData, parsed.numSubcarriers, parsed.numAntennas);
 
   const t = Date.now();
   let win = windows.get(nodeId);
@@ -91,6 +90,30 @@ sock.bind(PORT, "0.0.0.0", () => {
   console.log(`Listening on :${PORT} for ${SECONDS}s ... keep the room in the test condition.`);
 });
 
+/** fused_room: per-node adaptive baselines fed exactly like the live server
+ *  (AGC-normalized perturbation); max rise across nodes is sampled after the
+ *  warm-up to calibrate PHANTOM_ROOM_TIER_STILL. */
+const baselines = new Map<number, NodeBaselineTracker>();
+const roomRiseSamples: number[] = [];
+
+function sampleRoomRise(nowMs: number): void {
+  const ready = Array.from(windows.entries()).filter(([, win]) => win.length > 5);
+  if (ready.length < 3) return;
+  let maxRise = 0;
+  let warmingUp = false;
+  for (const [nodeId, win] of ready) {
+    let tracker = baselines.get(nodeId);
+    if (!tracker) {
+      tracker = new NodeBaselineTracker();
+      baselines.set(nodeId, tracker);
+    }
+    const update = tracker.update(computeAgcNormalizedPerturbation(win.map((w) => w.amps)), nowMs, false);
+    warmingUp ||= update.warmingUp;
+    maxRise = Math.max(maxRise, update.rise);
+  }
+  if (!warmingUp) roomRiseSamples.push(maxRise);
+}
+
 const startedAt = Date.now();
 const tick = setInterval(() => {
   // Sample at ~5 Hz once both windows have content.
@@ -99,6 +122,7 @@ const tick = setInterval(() => {
   if ((windows.get(1)?.length ?? 0) > 5 && (windows.get(2)?.length ?? 0) > 5) {
     samples.push(Math.max(m1, m2));
   }
+  sampleRoomRise(Date.now());
   const elapsed = (Date.now() - startedAt) / 1000;
   if (elapsed >= SECONDS) {
     clearInterval(tick);
@@ -107,26 +131,40 @@ const tick = setInterval(() => {
   }
 }, 200);
 
+function stats(values: number[]): { mean: number; sigma: number; max: number } {
+  const mean = values.reduce((s, v) => s + v, 0) / values.length;
+  const sigma = Math.sqrt(values.reduce((s, v) => s + (v - mean) * (v - mean), 0) / values.length);
+  return { mean, sigma, max: Math.max(...values) };
+}
+
 function report(elapsedS: number) {
-  if (samples.length === 0) {
-    console.error("No samples collected — are both nodes streaming to this host?");
+  if (samples.length === 0 && roomRiseSamples.length === 0) {
+    console.error("No samples collected — are the nodes streaming to this host?");
     process.exit(1);
   }
-  const mean = samples.reduce((s, v) => s + v, 0) / samples.length;
-  const sigma = Math.sqrt(
-    samples.reduce((s, v) => s + (v - mean) * (v - mean), 0) / samples.length,
-  );
-  const max = Math.max(...samples);
 
-  console.log(`\n=== Calibration result (${samples.length} samples over ${elapsedS.toFixed(0)}s) ===`);
-  for (const id of [1, 2]) {
+  console.log(`\n=== Calibration result (${elapsedS.toFixed(0)}s) ===`);
+  for (const id of Array.from(packetCounts.keys()).sort((a, b) => a - b)) {
     const fps = (packetCounts.get(id) ?? 0) / elapsedS;
     const warn = fps < 20 ? "  << below 20 fps — fix firmware/network before trusting results" : "";
     console.log(`node ${id}: ${fps.toFixed(1)} packets/s${warn}`);
   }
-  console.log(`max(motion1,motion2): mean=${mean.toFixed(4)} sigma=${sigma.toFixed(4)} max=${max.toFixed(4)}`);
-  console.log(`suggested PHANTOM_MOTION_THRESHOLD: mean+3s=${(mean + 3 * sigma).toFixed(4)}  mean+4s=${(mean + 4 * sigma).toFixed(4)}  mean+5s=${(mean + 5 * sigma).toFixed(4)}`);
-  console.log("(empty room: pick mean+k*sigma; fan run: observed max must stay BELOW your chosen threshold)");
+
+  if (samples.length > 0) {
+    const { mean, sigma, max } = stats(samples);
+    console.log(`\n-- fused_two_node (nodes 1+2, ${samples.length} samples) --`);
+    console.log(`max(motion1,motion2): mean=${mean.toFixed(4)} sigma=${sigma.toFixed(4)} max=${max.toFixed(4)}`);
+    console.log(`suggested PHANTOM_MOTION_THRESHOLD: mean+3s=${(mean + 3 * sigma).toFixed(4)}  mean+4s=${(mean + 4 * sigma).toFixed(4)}  mean+5s=${(mean + 5 * sigma).toFixed(4)}`);
+    console.log("(empty room: pick mean+k*sigma; fan run: observed max must stay BELOW your chosen threshold)");
+  }
+
+  if (roomRiseSamples.length > 0) {
+    const { mean, sigma, max } = stats(roomRiseSamples);
+    console.log(`\n-- fused_room (3-4 nodes, ${roomRiseSamples.length} post-warm-up samples) --`);
+    console.log(`max node rise above own baseline: mean=${mean.toFixed(4)} sigma=${sigma.toFixed(4)} max=${max.toFixed(4)}`);
+    console.log(`suggested PHANTOM_ROOM_TIER_STILL: mean+4s=${(mean + 4 * sigma).toFixed(4)}  (must stay < PHANTOM_ROOM_TIER_MOVING=${DEFAULT_TIER_THRESHOLDS.moving})`);
+    console.log("(run >=5 min empty; the observed max must stay BELOW the chosen still threshold, and a fan run below moving)");
+  }
 
   if (SPATIAL) {
     // Item 4: spatial energy noise floor. NOTE — this samples per-PACKET

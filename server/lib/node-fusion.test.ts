@@ -9,6 +9,8 @@ import {
   computeNodeTrends,
   computeFallbackVelocity,
   computeGainNormalizedPerturbation,
+  computeAgcNormalizedPerturbation,
+  computeRadialTrends,
   hasSingleNodePresenceEvidence,
   evaluateClassifierCorroboration,
   wasSuppressedByClassifier,
@@ -661,4 +663,53 @@ test("hasSingleNodePresenceEvidence: omitting classifier entirely is unchanged f
   // keep behaving identically — classifier is opt-in, not opt-out.
   assert.equal(hasSingleNodePresenceEvidence(true, false), true);
   assert.equal(hasSingleNodePresenceEvidence(false, false), false);
+});
+
+// ── AGC-normalized perturbation (RuView ADR-345 link-motion metric) ─────────
+
+function frames(rows: number[][]): number[][] {
+  return rows.map((r) => [...r]);
+}
+
+test("computeAgcNormalizedPerturbation: a static pattern under per-frame gain swings reads as ~no motion", () => {
+  const pattern = [10, 14, 8, 12, 9, 11];
+  const gains = [1, 1.3, 0.8, 1.15, 0.9, 1.25, 0.85, 1.1];
+  const agcOnly = gains.map((g) => pattern.map((a) => a * g));
+  const r = computeAgcNormalizedPerturbation(frames(agcOnly));
+  assert.ok(r < 1e-12, `pure AGC/gain fluctuation must not read as motion, got ${r}`);
+  // The old gain-normalized metric DOES read the same frames as motion.
+  const old = computeNodeMotionFromMatrix(frames(agcOnly));
+  assert.ok(computeGainNormalizedPerturbation(old.absStd, old.mean) > 0.05);
+});
+
+test("computeAgcNormalizedPerturbation: a changing multipath shape reads as motion and is gain-invariant", () => {
+  const moving = [
+    [10, 14, 8, 12],
+    [12, 10, 11, 9],
+    [8, 15, 9, 13],
+    [13, 9, 12, 8],
+  ];
+  const base = computeAgcNormalizedPerturbation(frames(moving));
+  const scaled = computeAgcNormalizedPerturbation(frames(moving.map((f) => f.map((a) => a * 4))));
+  assert.ok(base > 0.05, `shape change must read as motion, got ${base}`);
+  assert.ok(Math.abs(base - scaled) < 1e-12, "a constant node gain must cancel exactly");
+});
+
+test("computeAgcNormalizedPerturbation: degenerate input returns 0", () => {
+  assert.equal(computeAgcNormalizedPerturbation([]), 0);
+  assert.equal(computeAgcNormalizedPerturbation([[1, 2, 3]]), 0);
+  assert.equal(computeAgcNormalizedPerturbation([[0, 0], [0, 0]]), 0);
+});
+
+// ── Per-node radial trends for fused_room ───────────────────────────────────
+
+test("computeRadialTrends: walking toward node 3 approaches 3 and recedes from 1", () => {
+  const trends = computeRadialTrends({ x: 0, z: 0 }, { vx: 0.4, vz: 0.6 }, ROOM_ANCHORS);
+  assert.equal(trends[3], "approaching");
+  assert.equal(trends[1], "receding");
+});
+
+test("computeRadialTrends: speed inside the deadband is stable for every node", () => {
+  const trends = computeRadialTrends({ x: 0.5, z: -1 }, { vx: 0.01, vz: -0.02 }, ROOM_ANCHORS);
+  for (const id of [1, 2, 3, 4]) assert.equal(trends[id], "stable");
 });

@@ -315,6 +315,70 @@ export function computeGainNormalizedPerturbation(absStd: number, mean: number):
 }
 
 /**
+ * AGC-normalized link perturbation (RuView ADR-345 per-link motion metric).
+ *
+ * Each frame is first divided by ITS OWN mean amplitude across subcarriers,
+ * then the per-subcarrier temporal std is averaged. A frame-to-frame gain
+ * change (receiver AGC, TX power, a uniform broadband fade) scales every
+ * subcarrier together and cancels out; what remains is a change in the
+ * multipath SHAPE across subcarriers — what a moving body does to a link.
+ * computeGainNormalizedPerturbation only cancels a constant per-node gain,
+ * so AGC swings in an empty room read as motion there.
+ *
+ * Dimensionless and invariant to any per-node or per-frame gain. Frames
+ * with a non-positive mean are skipped; returns 0 for <2 usable frames.
+ */
+export function computeAgcNormalizedPerturbation(frames: number[][]): number {
+  const normalized: number[][] = [];
+  for (const frame of frames) {
+    if (frame.length === 0) continue;
+    const mean = frame.reduce((s, a) => s + a, 0) / frame.length;
+    if (!(mean > EPS)) continue;
+    normalized.push(frame.map((a) => a / mean));
+  }
+  if (normalized.length < 2) return 0;
+  const k = Math.min(...normalized.map((f) => f.length));
+  let stdSum = 0;
+  for (let j = 0; j < k; j++) {
+    let m = 0;
+    for (const f of normalized) m += f[j];
+    m /= normalized.length;
+    let acc = 0;
+    for (const f of normalized) acc += (f[j] - m) ** 2;
+    stdSum += Math.sqrt(acc / normalized.length);
+  }
+  return stdSum / k;
+}
+
+/**
+ * fused_room per-node approach/recede trend from the 2-D target velocity:
+ * radial velocity toward node i is −v·(p − aᵢ)/|p − aᵢ| (positive = closing
+ * in). Inside `deadbandMps` the node reads "stable". computeNodeTrends only
+ * handles the 2-node axis, which is why room-mode trend arrows were inert.
+ */
+export function computeRadialTrends(
+  position: { x: number; z: number },
+  velocity: { vx: number; vz: number },
+  anchors: Record<number, { x: number; z: number }>,
+  deadbandMps: number = TREND_DEADBAND_MPS,
+): Record<number, NodeTrend> {
+  const trends: Record<number, NodeTrend> = {};
+  for (const [key, anchor] of Object.entries(anchors)) {
+    const dx = position.x - anchor.x;
+    const dz = position.z - anchor.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < EPS || !Number.isFinite(velocity.vx) || !Number.isFinite(velocity.vz)) {
+      trends[Number(key)] = "stable";
+      continue;
+    }
+    const closingMps = -(velocity.vx * dx + velocity.vz * dz) / dist;
+    trends[Number(key)] =
+      Math.abs(closingMps) < deadbandMps ? "stable" : closingMps > 0 ? "approaching" : "receding";
+  }
+  return trends;
+}
+
+/**
  * Bias the projected display position toward the nearest node while preserving
  * 0, 0.5, and 1 exactly. Used only for the displayed on-axis estimate.
  */
