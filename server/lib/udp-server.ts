@@ -1,11 +1,18 @@
 import dgram from "dgram";
 import { signalServer } from "./websocket";
 import { phaseTestLogger } from "./phase-test-logger";
+import { reduceCsiFrame } from "./csi-subcarriers";
 import type { CSISample } from "@shared/schema";
 import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
 
 const UDP_PORT = parseInt(process.env.UDP_PORT || "5005", 10);
 const UDP_HOST = "0.0.0.0";
+
+// Local advisory-only Python AI sidecar (ADR-051): loopback-only by
+// convention, but configurable rather than hardcoded like every other
+// address in this file (Phase-1 bug audit).
+const PY_SIDECAR_PORT = parseInt(process.env.PY_SIDECAR_PORT || "5006", 10);
+const PY_SIDECAR_HOST = process.env.PY_SIDECAR_HOST || "127.0.0.1";
 
 const MAGIC_NUMBER_LE = 0xc5110001;
 const HEARTBEAT_MAGIC_LE = 0xc51100a1;
@@ -562,6 +569,7 @@ export function startUDPServer() {
     let compressedFrameCount = 0;
     let lastLogTime = Date.now();
     let lastUnknownMagicLogMs = 0;
+    let lastPyForwardErrorLogMs = 0;
     const lastPhaseLogMsByNode = new Map<number, number>();
 
     server.on("message", (msg, rinfo) => {
@@ -571,7 +579,19 @@ export function startUDPServer() {
         // stream shown alongside host-DSP metrics — never fused with them.
         if (kind === "feature_state") {
             const feat = parseFeatureStatePacket(msg);
-            if (feat && sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
+            if (!feat) {
+                return;
+            }
+            // Phase-1 bug audit: this path previously only IP-pinned the
+            // sender (sourceGuard.check), unlike the raw-CSI path below which
+            // also requires a provisioned hardware node_id (PS-AUDIT-005).
+            // Any sender passing the IP check could otherwise inject
+            // feature-state data for an arbitrary, never-provisioned node_id.
+            if (mapRuntimeNodeIdToHardwareId(feat.nodeId) === undefined) {
+                console.warn(`[UDP] rejecting feature_state packet for unmapped runtime node_id=${feat.nodeId}`);
+                return;
+            }
+            if (sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
                 signalServer.ingestNodeFeatureState(feat);
             }
             return;
@@ -582,7 +602,15 @@ export function startUDPServer() {
         // Board DSP card, never fused with the host target math.
         if (kind === "vitals") {
             const feat = parseEdgeVitalsPacket(msg);
-            if (feat && sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
+            if (!feat) {
+                return;
+            }
+            // Phase-1 bug audit: same hardware-id gap as feature_state above.
+            if (mapRuntimeNodeIdToHardwareId(feat.nodeId) === undefined) {
+                console.warn(`[UDP] rejecting vitals packet for unmapped runtime node_id=${feat.nodeId}`);
+                return;
+            }
+            if (sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
                 signalServer.ingestNodeFeatureState(feat);
             }
             return;
@@ -635,8 +663,18 @@ export function startUDPServer() {
         }
 
         // Forward only accepted raw packets to the local Python AI sidecar.
-        pyForwardSocket.send(msg, 5006, "127.0.0.1", () => {
-            // Ignore errors if the Python script is not running yet.
+        pyForwardSocket.send(msg, PY_SIDECAR_PORT, PY_SIDECAR_HOST, (err) => {
+            // The sidecar being down/not-yet-started is expected and not
+            // logged every packet — but a persistently failing forward path
+            // (Phase-1 bug audit: previously silent forever) now surfaces at
+            // most once per 10s so sidecar connectivity loss is diagnosable.
+            if (err) {
+                const nowMs = Date.now();
+                if (nowMs - lastPyForwardErrorLogMs > 10_000) {
+                    lastPyForwardErrorLogMs = nowMs;
+                    console.warn(`[UDP] AI sidecar forward failed: ${err.message}`);
+                }
+            }
         });
 
         // For Phantom Scan, we expect an array of subcarriers.
@@ -646,55 +684,16 @@ export function startUDPServer() {
         // Usually CSI is an array, but the existing signal pipeline processes them as scalar complex numbers (representing the dominant path).
         // Let's take the subcarrier with the maximum power to represent the sample.
 
-        let maxSubcarrierPower = -1;
-        let bestH1 = { re: 0, im: 0 };
-        let bestH2 = { re: 0, im: 0 };
-
-        // Per-subcarrier amplitudes (antenna 0), capped at 64. Phantom Balance
-        // Fusion needs the full vector: the best-subcarrier scalar below jumps
-        // index frame-to-frame, so its temporal std is selection noise, not
-        // human motion.
-        const ampCount = Math.min(parsed.numSubcarriers, 64);
-        const amplitudes = new Array<number>(ampCount);
-
-        for (let i = 0; i < parsed.numSubcarriers; i++) {
-            // Antenna 1
-            const p1_re = parsed.iqData.readInt8((0 * parsed.numSubcarriers + i) * 2);
-            const p1_im = parsed.iqData.readInt8((0 * parsed.numSubcarriers + i) * 2 + 1);
-
-            const power1 = p1_re * p1_re + p1_im * p1_im;
-            if (i < ampCount) {
-                amplitudes[i] = Math.sqrt(power1);
-            }
-
-            let power2 = 0;
-            let p2_re = 0;
-            let p2_im = 0;
-
-            // Defensive parse only: this hardware has exactly 1 antenna per node and
-            // never sends a second; this branch is unreachable in practice, kept only
-            // so a malformed/corrupt packet with numAntennas>1 doesn't crash the parser.
-            if (parsed.numAntennas > 1) {
-                p2_re = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2);
-                p2_im = parsed.iqData.readInt8((1 * parsed.numSubcarriers + i) * 2 + 1);
-                power2 = p2_re * p2_re + p2_im * p2_im;
-            }
-
-            const totalPower = power1 + power2;
-
-            if (totalPower > maxSubcarrierPower) {
-                maxSubcarrierPower = totalPower;
-                bestH1 = { re: p1_re, im: p1_im };
-                if (parsed.numAntennas > 1) {
-                    bestH2 = { re: p2_re, im: p2_im };
-                } else {
-                    // Fallback: If only 1 antenna is provided, duplicate it to H2 
-                    // to prevent downstream math crashes (e.g. magnitude(h2)).
-                    // Note: MUSIC/Vitals phase math will essentially result in 0 phase difference.
-                    bestH2 = { re: p1_re, im: p1_im };
-                }
-            }
-        }
+        // Per-subcarrier amplitudes (antenna 0, LLTF data subcarriers only —
+        // DC/guards/invalid first word dropped, constant length across frame
+        // types) plus the dominant subcarrier as scalar h1/h2. ESP-IDF stores
+        // imaginary-first; see csi-subcarriers.ts. On single-antenna boards h2
+        // duplicates h1 so downstream magnitude(h2) math never crashes.
+        const {
+            amplitudes,
+            h1: bestH1,
+            h2: bestH2,
+        } = reduceCsiFrame(parsed.iqData, parsed.numSubcarriers, parsed.numAntennas);
 
         const phaseRad = Math.atan2(bestH1.im, bestH1.re);
         if (phaseTestLogger.isEnabled()) {
