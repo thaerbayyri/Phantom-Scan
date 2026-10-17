@@ -320,24 +320,27 @@ export const targetStateSchema = z.object({
 });
 export type TargetState = z.infer<typeof targetStateSchema>;
 
-// ── Multi-node ESP32-S3 geometry (fixed anchors) ──────────────────
-// Fixed node anchor positions in radar/world meters (origin at room center,
-// +Z = north). Nodes 1-4 sit one per corner of a ROOM_WIDTH_M x ROOM_DEPTH_M
-// rectangle, in perimeter order 1->2->3->4->1 (this order matters — it's what
-// lets the client draw a clean room-boundary polygon instead of a crossed
-// shape). With only nodes 1+2 live (fused_two_node), the target slides along
-// the N1-N2 line; with 3-4 live (fused_room) it's a weighted centroid across
-// all active anchors. Single source of truth for server + client.
-export const ROOM_WIDTH_M = 4;
-export const ROOM_DEPTH_M = 6;
-export const NODE_ANCHORS: Record<number, { x: number; z: number }> = {
-  1: { x: -ROOM_WIDTH_M / 2, z: -ROOM_DEPTH_M / 2 },
-  2: { x: ROOM_WIDTH_M / 2, z: -ROOM_DEPTH_M / 2 },
-  3: { x: ROOM_WIDTH_M / 2, z: ROOM_DEPTH_M / 2 },
-  4: { x: -ROOM_WIDTH_M / 2, z: ROOM_DEPTH_M / 2 },
-};
-// N1-N2 separation (still meaningful for fused_two_node mode).
-export const NODE_SEPARATION_M = ROOM_WIDTH_M;
+// ── Multi-node ESP32-S3 geometry (DEFAULT anchors) ────────────────
+// Default node anchor positions in radar/world meters (origin at room center,
+// +Z = north). Nodes 1-4 sit one per corner of a DEFAULT_ROOM_WIDTH_M x
+// DEFAULT_ROOM_DEPTH_M rectangle, in perimeter order 1->2->3->4->1 (this order
+// matters — it's what lets the client draw a clean room-boundary polygon
+// instead of a crossed shape). With only 2 nodes live (fused_two_node), the
+// target slides along that pair's line; with 3-4 live (fused_room) it's a
+// weighted centroid across all active anchors.
+//
+// These are only the FALLBACK layout. The live server resolves the real
+// geometry from config/room.json or PHANTOM_ROOM_CONFIG
+// (server/lib/room-geometry.ts) and broadcasts anchor positions in `nodes`
+// and room dimensions in `signalField` — clients must render from those.
+export const DEFAULT_ROOM_WIDTH_M = 4;
+export const DEFAULT_ROOM_DEPTH_M = 6;
+export const DEFAULT_NODE_ANCHORS: Readonly<Record<number, { x: number; z: number }>> = Object.freeze({
+  1: { x: -DEFAULT_ROOM_WIDTH_M / 2, z: -DEFAULT_ROOM_DEPTH_M / 2 },
+  2: { x: DEFAULT_ROOM_WIDTH_M / 2, z: -DEFAULT_ROOM_DEPTH_M / 2 },
+  3: { x: DEFAULT_ROOM_WIDTH_M / 2, z: DEFAULT_ROOM_DEPTH_M / 2 },
+  4: { x: -DEFAULT_ROOM_WIDTH_M / 2, z: DEFAULT_ROOM_DEPTH_M / 2 },
+});
 
 // A sensor node marker broadcast to the UI: anchor position + live activity.
 export const sensorNodeSchema = z.object({
@@ -412,14 +415,19 @@ export type TargetDebug = z.infer<typeof targetDebugSchema>;
 
 // Spatial signal-intensity grid over the room (fused_room mode only) — an
 // inverse-distance-weighted spread of each active node's motion/perturbation
-// value across ROOM_WIDTH_M x ROOM_DEPTH_M, for the dashboard's floor-glow
-// visualization. NOT a physical RF field measurement (same perturbation-proxy
-// honesty as the rest of the fusion math) — it's a rendering aid, never fed
-// back into localization. `values` is row-major, length gridWidth*gridDepth.
+// value across the configured room (roomWidthM x roomDepthM, centred on the
+// origin), for the dashboard's floor-glow visualization. NOT a physical RF
+// field measurement (same perturbation-proxy honesty as the rest of the
+// fusion math) — it's a rendering aid, never fed back into localization.
+// `values` is row-major, length gridWidth*gridDepth. Cells are rectangular:
+// `cellSizeM` is the x (width) cell size, `cellDepthM` the z (depth) size.
 export const signalFieldSchema = z.object({
   gridWidth: z.number(),
   gridDepth: z.number(),
   cellSizeM: z.number(),
+  cellDepthM: z.number(),
+  roomWidthM: z.number(),
+  roomDepthM: z.number(),
   values: z.array(z.number()),
 });
 export type SignalField = z.infer<typeof signalFieldSchema>;

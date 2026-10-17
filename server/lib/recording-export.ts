@@ -1,5 +1,5 @@
 import type { CSISample, RadialTarget, TargetState } from "@shared/schema";
-import { NODE_ANCHORS, NODE_SEPARATION_M } from "@shared/schema";
+import { getRoomGeometry, nodePairSeparationM } from "./room-geometry";
 import type { ClassifierCorroboration, NodeTrend } from "./node-fusion";
 import { TREND_DEADBAND_MPS } from "./node-fusion";
 
@@ -25,10 +25,10 @@ export interface FusedSnapshotLike {
 export interface RecordingSessionMeta {
   session_name: string;
   recording_start_ms: number;
-  anchor_n1_x_m: number;
-  anchor_n1_z_m: number;
-  anchor_n2_x_m: number;
-  anchor_n2_z_m: number;
+  anchor_n1_x_m?: number;
+  anchor_n1_z_m?: number;
+  anchor_n2_x_m?: number;
+  anchor_n2_z_m?: number;
   anchor_n3_x_m?: number;
   anchor_n3_z_m?: number;
   anchor_n4_x_m?: number;
@@ -188,18 +188,19 @@ export function buildRecordingSessionMeta(input: {
     process.env.PHANTOM_WALL_THICKNESS_M ?? "",
   );
 
+  const room = getRoomGeometry();
   return {
     session_name: input.sessionName,
     recording_start_ms: input.recordingStartMs,
-    anchor_n1_x_m: NODE_ANCHORS[1].x,
-    anchor_n1_z_m: NODE_ANCHORS[1].z,
-    anchor_n2_x_m: NODE_ANCHORS[2].x,
-    anchor_n2_z_m: NODE_ANCHORS[2].z,
-    anchor_n3_x_m: NODE_ANCHORS[3]?.x,
-    anchor_n3_z_m: NODE_ANCHORS[3]?.z,
-    anchor_n4_x_m: NODE_ANCHORS[4]?.x,
-    anchor_n4_z_m: NODE_ANCHORS[4]?.z,
-    node_separation_m: NODE_SEPARATION_M,
+    anchor_n1_x_m: room.anchors[1]?.x,
+    anchor_n1_z_m: room.anchors[1]?.z,
+    anchor_n2_x_m: room.anchors[2]?.x,
+    anchor_n2_z_m: room.anchors[2]?.z,
+    anchor_n3_x_m: room.anchors[3]?.x,
+    anchor_n3_z_m: room.anchors[3]?.z,
+    anchor_n4_x_m: room.anchors[4]?.x,
+    anchor_n4_z_m: room.anchors[4]?.z,
+    node_separation_m: nodePairSeparationM(room),
     motion_threshold: input.fusedMotionThreshold,
     scalar_motion_threshold: input.scalarMotionThreshold,
     fused_motion_threshold: input.fusedMotionThreshold,
@@ -223,22 +224,17 @@ export function buildRecordingRow(input: BuildRecordingRowInput): RecordingRow {
   const zDispM = visible ? input.radialTarget?.z : undefined;
   const targetX = visible ? input.fusedSnapshot?.x ?? xDispM : undefined;
   const targetZ = visible ? input.fusedSnapshot?.z ?? zDispM : undefined;
-  const distanceN1M =
-    targetX !== undefined && targetZ !== undefined
-      ? Math.hypot(targetX - NODE_ANCHORS[1].x, targetZ - NODE_ANCHORS[1].z)
+  const anchors = getRoomGeometry().anchors;
+  const distanceToNode = (nodeId: number): number | undefined => {
+    const anchor = anchors[nodeId];
+    return targetX !== undefined && targetZ !== undefined && anchor
+      ? Math.hypot(targetX - anchor.x, targetZ - anchor.z)
       : undefined;
-  const distanceN2M =
-    targetX !== undefined && targetZ !== undefined
-      ? Math.hypot(targetX - NODE_ANCHORS[2].x, targetZ - NODE_ANCHORS[2].z)
-      : undefined;
-  const distanceN3M =
-    targetX !== undefined && targetZ !== undefined && NODE_ANCHORS[3]
-      ? Math.hypot(targetX - NODE_ANCHORS[3].x, targetZ - NODE_ANCHORS[3].z)
-      : undefined;
-  const distanceN4M =
-    targetX !== undefined && targetZ !== undefined && NODE_ANCHORS[4]
-      ? Math.hypot(targetX - NODE_ANCHORS[4].x, targetZ - NODE_ANCHORS[4].z)
-      : undefined;
+  };
+  const distanceN1M = distanceToNode(1);
+  const distanceN2M = distanceToNode(2);
+  const distanceN3M = distanceToNode(3);
+  const distanceN4M = distanceToNode(4);
   const gtSource = input.groundTruthTag?.source ?? "none";
 
   return {

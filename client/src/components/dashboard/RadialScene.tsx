@@ -3,7 +3,6 @@ import { useFrame } from "@react-three/fiber";
 import { Text, Billboard, Line } from "@react-three/drei";
 import * as THREE from "three";
 import type { RadialTarget, PointCloudPoint, PoseFrame, TargetState, SensorNode, SignalField } from "@shared/schema";
-import { ROOM_WIDTH_M, ROOM_DEPTH_M } from "@shared/schema";
 import { summarizeTargetSpatial } from "@shared/target-spatial";
 import { canPresentAxisMotionVector } from "@shared/target-presentation";
 import { headingVectorFromAngle } from "@shared/bearing";
@@ -276,14 +275,16 @@ function signalFieldIntensityColor(t: number): THREE.Color {
 function SignalFieldGrid({ signalField }: { signalField: SignalField | null }) {
     const geometry = useMemo(() => {
         if (!signalField || signalField.values.length === 0) return null;
-        const { gridWidth, gridDepth, cellSizeM, values } = signalField;
+        // Room size and per-axis cell sizes come from the server's configured
+        // geometry (server/lib/room-geometry.ts), not client constants.
+        const { gridWidth, gridDepth, cellSizeM, cellDepthM, roomWidthM, roomDepthM, values } = signalField;
         const max = values.reduce((m, v) => Math.max(m, v), 0) || 1;
         const positions: number[] = [];
         const colors: number[] = [];
         for (let gz = 0; gz < gridDepth; gz++) {
-            const cz = -ROOM_DEPTH_M / 2 + (gz + 0.5) * cellSizeM;
+            const cz = -roomDepthM / 2 + (gz + 0.5) * cellDepthM;
             for (let gx = 0; gx < gridWidth; gx++) {
-                const cx = -ROOM_WIDTH_M / 2 + (gx + 0.5) * cellSizeM;
+                const cx = -roomWidthM / 2 + (gx + 0.5) * cellSizeM;
                 positions.push(cx, 0.005, cz);
                 const c = signalFieldIntensityColor(values[gz * gridWidth + gx] / max);
                 colors.push(c.r, c.g, c.b);

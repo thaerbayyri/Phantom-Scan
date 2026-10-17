@@ -19,7 +19,7 @@ import type {
   NodeSignalState,
   SignalField,
 } from "@shared/schema";
-import { NODE_ANCHORS, NODE_SEPARATION_M, ROOM_WIDTH_M, ROOM_DEPTH_M } from "@shared/schema";
+import { geometricDiversity, getRoomGeometry, nodePairSeparationM, type RoomGeometry } from "./room-geometry";
 import { compassBearingRad } from "@shared/bearing";
 
 /**
@@ -142,6 +142,8 @@ export class SignalProcessingServer {
   // One clutter model PER NODE: interleaved samples from 4 boards through a
   // single shared subtractor measured node-to-node channel differences, not
   // motion (each node sees a different static channel).
+  /** Node anchors + room size — config/room.json or PHANTOM_ROOM_CONFIG, else defaults. */
+  private room: RoomGeometry = getRoomGeometry();
   private backgroundSubtractors = new Map<number, BackgroundSubtractor>();
   /** Live node set as of the last trackActiveNodeSet() call (sorted). */
   private prevActiveNodeIds: number[] = [];
@@ -544,11 +546,19 @@ export class SignalProcessingServer {
     // interpretable (same discipline as adapter logging).
     console.log(
       "[NODES] anchors " +
-        Object.entries(NODE_ANCHORS)
+        Object.entries(this.room.anchors)
           .map(([id, a]) => `N${id}=(${a.x},${a.z})`)
           .join(" ") +
-        ` room=${ROOM_WIDTH_M}x${ROOM_DEPTH_M}m sep(N1-N2)=${NODE_SEPARATION_M}m`,
+        ` room=${this.room.roomWidthM}x${this.room.roomDepthM}m` +
+        ` sep(N1-N2)=${nodePairSeparationM(this.room).toFixed(2)}m source=${this.room.source}`,
     );
+    const diversity = geometricDiversity(this.room.anchors);
+    if (Object.keys(this.room.anchors).length >= 3 && diversity < 0.5) {
+      console.warn(
+        `[NODES] poor node placement: geometric diversity ${diversity.toFixed(2)} (<0.5) — ` +
+          "spread nodes around the room perimeter for usable fused_room localization",
+      );
+    }
 
     // Process at ~20 FPS
     this.processingInterval = setInterval(() => {
@@ -1323,7 +1333,7 @@ export class SignalProcessingServer {
     if (this.isRecording) {
       // Cap at 5000 samples to prevent unbounded memory growth
       if (this.recordingBuffer.length < 5000) {
-        const nodeIds = Object.keys(NODE_ANCHORS).map(Number);
+        const nodeIds = Object.keys(this.room.anchors).map(Number);
         const nodeMotion = Object.fromEntries(nodeIds.map((id) => [id, this.nodeMotionFor(id).motion]));
         // Unclamped absStd/mean per node — motion_nX censors anything at or
         // above the saturation ceiling; this is needed to tell "genuinely at
@@ -1612,7 +1622,7 @@ export class SignalProcessingServer {
 
   private updateTargetDebug() {
     const nowMs = Date.now();
-    const anchoredIds = Object.keys(NODE_ANCHORS).map(Number);
+    const anchoredIds = Object.keys(this.room.anchors).map(Number);
     this.currentTargetDebug = {
       hardware_queue_length: this.hardwareSampleQueue.length,
       last_sample_rx_ms: this.lastSampleRxMs,
@@ -1740,7 +1750,7 @@ export class SignalProcessingServer {
   // ── Two-node fusion (Phantom Balance Fusion) ───────────────────────────────
   private recordNodeAmplitude(sample: CSISample): void {
     const nodeId = sample.nodeId ?? 1;
-    if (!(nodeId in NODE_ANCHORS)) return; // only nodes with a configured anchor
+    if (!(nodeId in this.room.anchors)) return; // only nodes with a configured anchor
     const t = sample.timestamp ?? Date.now();
     let win = this.nodeAmpWindow.get(nodeId);
     if (!win) {
@@ -1802,7 +1812,7 @@ export class SignalProcessingServer {
           id,
           r: computeGainNormalizedPerturbation(m.absStd, m.mean),
           motion: m.motion,
-          anchor: NODE_ANCHORS[id],
+          anchor: this.room.anchors[id],
         };
       });
       const fusedRoom = fuseNodeTargets(samples, {
@@ -1839,7 +1849,7 @@ export class SignalProcessingServer {
       r2: computeGainNormalizedPerturbation(m2.absStd, m2.mean),
       motion1: m1.motion,
       motion2: m2.motion,
-      anchors: { 1: NODE_ANCHORS[firstId], 2: NODE_ANCHORS[secondId] },
+      anchors: { 1: this.room.anchors[firstId], 2: this.room.anchors[secondId] },
       motionThreshold: this.config.fusedTargetMotionThreshold,
       // Item 1: corroborating (not primary) evidence — see evaluateClassifierCorroboration.
       classifier,
@@ -1861,8 +1871,8 @@ export class SignalProcessingServer {
     if (this.prevFusedX !== null && this.prevFusedZ !== null && this.prevFusedMs > 0) {
       const dt = (now - this.prevFusedMs) / 1000;
       if (dt > 0) {
-        const firstAnchor = NODE_ANCHORS[endpointIds[0]];
-        const secondAnchor = NODE_ANCHORS[endpointIds[1]];
+        const firstAnchor = this.room.anchors[endpointIds[0]];
+        const secondAnchor = this.room.anchors[endpointIds[1]];
         const axisX = secondAnchor.x - firstAnchor.x;
         const axisZ = secondAnchor.z - firstAnchor.z;
         const axisLength = Math.hypot(axisX, axisZ);
@@ -1944,8 +1954,8 @@ export class SignalProcessingServer {
         ? this.roomFusedSnapshot
         : null;
     const nodes: SensorNode[] = [];
-    for (const key of Object.keys(NODE_ANCHORS).map(Number).sort((a, b) => a - b)) {
-      const anchor = NODE_ANCHORS[key];
+    for (const key of Object.keys(this.room.anchors).map(Number).sort((a, b) => a - b)) {
+      const anchor = this.room.anchors[key];
       const motion = !processing
         ? 0
         : this.nodeMotionFor(key).motion;
@@ -2064,18 +2074,19 @@ export class SignalProcessingServer {
 
     const samples = activeIds.map((id) => {
       const m = this.nodeMotionFor(id);
-      return { anchor: NODE_ANCHORS[id], r: computeGainNormalizedPerturbation(m.absStd, m.mean) };
+      return { anchor: this.room.anchors[id], r: computeGainNormalizedPerturbation(m.absStd, m.mean) };
     });
 
     const gridWidth = SignalProcessingServer.SIGNAL_FIELD_GRID;
     const gridDepth = SignalProcessingServer.SIGNAL_FIELD_GRID;
-    const cellW = ROOM_WIDTH_M / gridWidth;
-    const cellD = ROOM_DEPTH_M / gridDepth;
+    const { roomWidthM, roomDepthM } = this.room;
+    const cellW = roomWidthM / gridWidth;
+    const cellD = roomDepthM / gridDepth;
     const values: number[] = new Array(gridWidth * gridDepth);
     for (let gz = 0; gz < gridDepth; gz++) {
-      const cz = -ROOM_DEPTH_M / 2 + (gz + 0.5) * cellD;
+      const cz = -roomDepthM / 2 + (gz + 0.5) * cellD;
       for (let gx = 0; gx < gridWidth; gx++) {
-        const cx = -ROOM_WIDTH_M / 2 + (gx + 0.5) * cellW;
+        const cx = -roomWidthM / 2 + (gx + 0.5) * cellW;
         let num = 0;
         let den = 0;
         for (const s of samples) {
@@ -2087,7 +2098,7 @@ export class SignalProcessingServer {
         values[gz * gridWidth + gx] = den > 0 ? num / den : 0;
       }
     }
-    return { gridWidth, gridDepth, cellSizeM: cellW, values };
+    return { gridWidth, gridDepth, cellSizeM: cellW, cellDepthM: cellD, roomWidthM, roomDepthM, values };
   }
 
   private broadcastNodes(): void {
@@ -2105,7 +2116,7 @@ export class SignalProcessingServer {
     // self-ping lineage question.
     const now = Date.now();
     if (now - this.lastNodeFpsLogMs > 10000) {
-      for (const key of Object.keys(NODE_ANCHORS).map(Number)) {
+      for (const key of Object.keys(this.room.anchors).map(Number)) {
         const win = this.nodeAmpWindow.get(key);
         if (win && win.length > 5) {
           const spanS = Math.max(0.001, (win[win.length - 1].t - win[0].t) / 1000);
