@@ -7,7 +7,7 @@ All outputs are ADVISORY — nothing here can touch the deterministic gate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 # Per-node inference rate cap. Previously one GLOBAL 5 Hz throttle was shared
@@ -187,3 +187,87 @@ def fuse_vitals(per_node: Sequence[Mapping[str, Any]]) -> FusedVitals:
     resp = sum(float(v["breathing"]) for v in reliable) / len(reliable)
     heart = sum(float(v["heart_rate"]) for v in reliable) / len(reliable)
     return FusedVitals(resp, heart, True)
+
+
+# ── Authentication against the login-protected dashboard ──────────────────
+# The dashboard WebSocket rejects unauthenticated clients (HTTP 401), so the
+# sidecar must log in first. Credentials come ONLY from the environment
+# (PHANTOM_AI_USERNAME / PHANTOM_AI_PASSWORD) and are never logged or repr'd.
+
+SESSION_COOKIE_NAME = "phantom.sid"
+
+
+@dataclass(frozen=True)
+class SidecarCredentials:
+    username: str
+    password: str = field(repr=False)
+
+    def __str__(self) -> str:
+        return f"SidecarCredentials(username={self.username!r}, password=<hidden>)"
+
+
+def credentials_from_env(env: Mapping[str, str]) -> SidecarCredentials | None:
+    username = env.get("PHANTOM_AI_USERNAME", "").strip()
+    password = env.get("PHANTOM_AI_PASSWORD", "")
+    if not username or not password:
+        return None
+    return SidecarCredentials(username=username, password=password)
+
+
+def login_url_from_ws_url(ws_url: str) -> str:
+    """ws://host:port/ws -> http://host:port/api/auth/login (wss -> https)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(ws_url)
+    scheme = {"ws": "http", "wss": "https"}.get(parts.scheme)
+    if scheme is None or not parts.netloc:
+        raise ValueError(f"expected a ws:// or wss:// URL, got {ws_url!r}")
+    return f"{scheme}://{parts.netloc}/api/auth/login"
+
+
+def session_cookie_from_set_cookie(set_cookie_headers: Sequence[str]) -> str | None:
+    """Return 'phantom.sid=<value>' from raw Set-Cookie header values, or None."""
+    for header in set_cookie_headers:
+        first = header.split(";", 1)[0].strip()
+        if first.startswith(SESSION_COOKIE_NAME + "="):
+            return first
+    return None
+
+
+# ── Heuristic activity relative to a calibrated empty-room level ──────────
+# Absolute thresholds (the old 0.02 / 0.005) were meaningless for real
+# amplitudes (mean ~13 with 10-20% frame-to-frame fluctuation even when
+# nothing walks), so every node read "walking, human 100%" permanently. Motion
+# is now unit-free (divided by mean amplitude) and judged against each node's
+# OWN empty-room level, which the operator captures with "Calibrate Empty
+# Room". Ratios are provisional until validated on labelled recordings.
+
+WALK_RATIO = 2.0  # motion >= 2x the empty-room level reads as walking
+RAPID_CHANGE_RATIO = 3.0  # jump >= 3x the recent history (and above walking)
+
+
+def relative_motion(motion_abs: float, mean_amplitude: float) -> float:
+    return float(motion_abs) / float(mean_amplitude) if mean_amplitude > 1e-9 else 0.0
+
+
+def activity_from_motion(
+    motion_rel: float, baseline_rel: float | None, recent_rel: Sequence[float]
+) -> str:
+    """'unknown' until calibrated; then stationary / walking / rapid_change."""
+    if baseline_rel is None or baseline_rel <= 1e-9:
+        return "unknown"
+    ratio = motion_rel / baseline_rel
+    recent = sum(recent_rel) / len(recent_rel) if recent_rel else motion_rel
+    if ratio >= WALK_RATIO and recent > 1e-9 and motion_rel / recent >= RAPID_CHANGE_RATIO:
+        return "rapid_change"
+    if ratio >= WALK_RATIO:
+        return "walking"
+    return "stationary"
+
+
+def advisory_human_prob(activity: str, motion_rel: float, baseline_rel: float | None) -> float:
+    """Bounded, non-saturating advisory score: 0.5 when uncalibrated, rising with the ratio."""
+    if activity == "unknown" or baseline_rel is None or baseline_rel <= 1e-9:
+        return 0.5
+    ratio = motion_rel / baseline_rel
+    return float(0.5 + 0.45 * min(1.0, max(0.0, (ratio - 1.0) / 3.0)))

@@ -51,8 +51,14 @@ from phantom.sidecar import (  # noqa: E402
     count_window_from_history,
     fuse_activity,
     fuse_count,
+    activity_from_motion,
+    advisory_human_prob,
+    credentials_from_env,
     fuse_vitals,
+    relative_motion,
+    login_url_from_ws_url,
     route_ws_message,
+    session_cookie_from_set_cookie,
     window_features_from_history,
 )
 from phantom.activity_model import ActivityModel  # noqa: E402
@@ -239,8 +245,12 @@ node_prev_means = {}
 # heuristic below (trend/ratio detection across inference cycles).
 node_motion_history = {}
 ACTIVITY_HISTORY_LEN = 6      # ~1.2s of samples at the 5Hz inference throttle
-WALK_MOTION_THRESHOLD = 0.02  # sustained motion energy consistent with locomotion
-RAPID_CHANGE_RATIO = 3.0      # this-sample vs recent-baseline ratio to flag an abrupt change
+# Longer per-node relative-motion history (~10 s at 5 Hz) that "Calibrate Empty
+# Room" reduces to that node's empty-room baseline; node -> baseline (unit-free).
+node_motion_long = {}
+CALIBRATION_HISTORY_LEN = 50
+CALIBRATION_MIN_SAMPLES = 10
+node_calibrated_baseline = {}
 
 # ─── Model Loading ────────────────────────────────────────────────────
 
@@ -436,15 +446,13 @@ def classify_activity(node_id, motion_raw):
     reflector (door/curtain) moving, and 1-antenna CSI cannot discriminate
     those cases. Callers must not present it as a fall/injury claim."""
     hist = node_motion_history.setdefault(node_id, deque(maxlen=ACTIVITY_HISTORY_LEN))
-    baseline = (sum(hist) / len(hist)) if hist else motion_raw
-    ratio = (motion_raw / baseline) if baseline > 1e-6 else 1.0
+    recent = list(hist)
     hist.append(motion_raw)
-
-    if ratio >= RAPID_CHANGE_RATIO and motion_raw > WALK_MOTION_THRESHOLD:
-        return "rapid_change"
-    if motion_raw >= WALK_MOTION_THRESHOLD:
-        return "walking"
-    return "stationary"
+    node_motion_long.setdefault(node_id, deque(maxlen=CALIBRATION_HISTORY_LEN)).append(motion_raw)
+    # `motion_raw` here is UNIT-FREE relative motion (see relative_motion). It
+    # is judged against this node's calibrated empty-room level; until the
+    # operator runs "Calibrate Empty Room" the answer is "unknown".
+    return activity_from_motion(motion_raw, node_calibrated_baseline.get(node_id), recent)
 
 def _resample_subcarriers(mags, n_out):
     """Linearly resample a [T, n_in] amplitude history to [T, n_out]."""
@@ -507,11 +515,15 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
     present = presence_prob > 0.5 if presence_prob is not None else None
     # Moving perturbation (>0.005 temporal delta) reads as human; a present
     # but statically-perturbing reflector reads as mechanical.
+    mags_arr = np.asarray(mags_hist, dtype=np.float64)
+    motion_rel = relative_motion(
+        float(np.mean(np.abs(np.diff(mags_arr, axis=0)))) if len(mags_arr) > 1 else 0.0,
+        float(mags_arr.mean()),
+    )
+    activity_state = classify_activity(node_id, motion_rel)
     label = "unknown"
     if present:
-        label = "human" if motion_raw > 0.005 else "mechanical"
-
-    activity_state = classify_activity(node_id, motion_raw)
+        label = "human" if activity_state in ("walking", "rapid_change") else "mechanical"
 
     activity_feats = None
     if activity_model is not None:
@@ -528,6 +540,8 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
         "node_id": node_id,
         "coords": coords_raw,           # [34] (x, z) pairs
         "motion_raw": motion_raw,
+        "motion_rel": motion_rel,
+        "baseline_rel": node_calibrated_baseline.get(node_id),
         "presence_prob": presence_prob,
         "present": present,
         "label": label,
@@ -575,7 +589,9 @@ def fuse_and_emit():
 
     vitals = fuse_vitals([r["vitals"] for r in results])
 
-    human_prob = float(F.sigmoid(torch.tensor(motion * 20.0)).item())
+    human_prob = max(
+        advisory_human_prob(r["activity_state"], r["motion_rel"], r["baseline_rel"]) for r in results
+    )
     if advisory_label == "human" and presence_prob is not None:
         human_prob = max(human_prob, presence_prob)
 
@@ -584,7 +600,9 @@ def fuse_and_emit():
     # strongest per-node motion state; "unknown" only when a presence model
     # says nothing is present.
     activity_states = [r["activity_state"] for r in results]
-    if presence_prob is not None and not any(r["present"] for r in results):
+    if all(s == "unknown" for s in activity_states) or (
+        presence_prob is not None and not any(r["present"] for r in results)
+    ):
         activity_state = "unknown"
     elif "rapid_change" in activity_states:
         activity_state = "rapid_change"
@@ -734,10 +752,15 @@ def _run_calibration():
     reasonable to run while standing in an empty room so ambient noise
     (fan, HVAC) captured right now stops reading as "walking"/"rapid_change"
     afterward."""
-    calibrated = list(node_motion_history.keys())
+    calibrated = []
+    for node_id, long_hist in list(node_motion_long.items()):
+        if len(long_hist) >= CALIBRATION_MIN_SAMPLES:
+            node_calibrated_baseline[node_id] = float(np.median(list(long_hist)))
+            calibrated.append(node_id)
     for hist in node_motion_history.values():
         hist.clear()
-    print(f"[AI] Calibrated activity baseline for nodes={calibrated}")
+    levels = {n: round(node_calibrated_baseline[n], 4) for n in calibrated}
+    print(f"[AI] Calibrated empty-room motion level for nodes={calibrated}: {levels}")
     if ws_connected and ws is not None:
         try:
             ws.send(json.dumps({
@@ -804,12 +827,45 @@ def on_open(ws_conn):
     print("[WS] Connection opened. Registering AI Client...")
     ws_conn.send(json.dumps({"type": "registerAIClient", "data": None}))
 
+def _login_for_session_cookie():
+    """Log in to the dashboard and return 'phantom.sid=…', or None.
+
+    The dashboard WebSocket answers 401 to unauthenticated clients, so without
+    PHANTOM_AI_USERNAME / PHANTOM_AI_PASSWORD the sidecar can never deliver
+    advisories. The password is read from the environment only and is never
+    printed."""
+    creds = credentials_from_env(os.environ)
+    if creds is None:
+        print("[WS] No PHANTOM_AI_USERNAME/PHANTOM_AI_PASSWORD set — dashboard login required, "
+              "connection will be rejected (401).")
+        return None
+    import urllib.request
+    request = urllib.request.Request(
+        login_url_from_ws_url(WS_URL),
+        data=json.dumps({"username": creds.username, "password": creds.password}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            cookie = session_cookie_from_set_cookie(response.headers.get_all("Set-Cookie") or [])
+    except Exception as e:
+        print(f"[WS] Login failed for user '{creds.username}': {e}")
+        return None
+    if cookie is None:
+        print("[WS] Login succeeded but no session cookie was returned.")
+    else:
+        print(f"[WS] Logged in as '{creds.username}'.")
+    return cookie
+
 def run_ws_client():
     global ws, ws_connected
     while True:
         try:
+            cookie = _login_for_session_cookie()
             ws = websocket.WebSocketApp(
                 WS_URL,
+                header=[f"Cookie: {cookie}"] if cookie else None,
                 on_open=on_open,
                 on_message=on_message,
                 on_error=on_error,

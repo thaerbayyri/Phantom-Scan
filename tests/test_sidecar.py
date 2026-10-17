@@ -1,6 +1,7 @@
 import struct
 
 import numpy as np
+import pytest
 
 from phantom.protocol import parse_csi_frame
 from phantom.sidecar import (
@@ -185,3 +186,70 @@ def test_count_window_from_history_requires_a_full_gapless_window():
     gappy = t[:40] + [x + 5000.0 for x in t[40:]]  # gap inside the newest 40 frames
     assert count_window_from_history(amps, gappy) is None  # a 5 s gap inside the window
     assert count_window_from_history([np.full(30, 1.0)] * 60, t) is None  # wrong subcarrier count
+
+
+# ── sidecar authentication against the login-protected dashboard ──────────
+
+def test_login_url_is_derived_from_the_websocket_url():
+    from phantom.sidecar import login_url_from_ws_url
+
+    assert login_url_from_ws_url("ws://127.0.0.1:5000/ws") == "http://127.0.0.1:5000/api/auth/login"
+    assert login_url_from_ws_url("wss://example.org:8443/ws") == "https://example.org:8443/api/auth/login"
+    with pytest.raises(ValueError):
+        login_url_from_ws_url("http://127.0.0.1:5000/ws")
+
+
+def test_session_cookie_is_extracted_from_set_cookie_headers():
+    from phantom.sidecar import session_cookie_from_set_cookie
+
+    header = "phantom.sid=s%3Aabc123.sig; Path=/; HttpOnly; SameSite=Lax"
+    assert session_cookie_from_set_cookie([header]) == "phantom.sid=s%3Aabc123.sig"
+    assert session_cookie_from_set_cookie(["other=1; Path=/", header]) == "phantom.sid=s%3Aabc123.sig"
+    assert session_cookie_from_set_cookie([]) is None
+    assert session_cookie_from_set_cookie(["other=1; Path=/"]) is None
+
+
+def test_credentials_come_from_env_and_are_never_part_of_a_repr():
+    from phantom.sidecar import SidecarCredentials, credentials_from_env
+
+    assert credentials_from_env({}) is None
+    assert credentials_from_env({"PHANTOM_AI_USERNAME": "ai"}) is None
+    creds = credentials_from_env({"PHANTOM_AI_USERNAME": "ai", "PHANTOM_AI_PASSWORD": "s3cret"})
+    assert isinstance(creds, SidecarCredentials) and creds.username == "ai"
+    assert "s3cret" not in repr(creds) and "s3cret" not in str(creds)
+
+
+# ── heuristic activity must be relative to a calibrated empty-room level ──
+
+def test_relative_motion_is_amplitude_invariant():
+    from phantom.sidecar import relative_motion
+
+    assert relative_motion(2.6, 13.0) == pytest.approx(0.2)
+    assert relative_motion(26.0, 130.0) == pytest.approx(0.2)
+    assert relative_motion(1.0, 0.0) == 0.0  # silent node: no division blow-up
+
+
+def test_activity_is_unknown_until_the_empty_room_is_calibrated():
+    from phantom.sidecar import activity_from_motion
+
+    assert activity_from_motion(0.18, baseline_rel=None, recent_rel=[0.17, 0.19]) == "unknown"
+
+
+def test_activity_compares_to_the_calibrated_empty_room_level():
+    from phantom.sidecar import activity_from_motion
+
+    base = 0.15  # this node's measured empty-room relative motion
+    quiet = [0.15, 0.16, 0.14, 0.15]
+    assert activity_from_motion(0.16, base, quiet) == "stationary"
+    assert activity_from_motion(0.45, base, [0.44, 0.46, 0.45, 0.47]) == "walking"
+    # abrupt jump against a quiet recent history
+    assert activity_from_motion(0.9, base, quiet) == "rapid_change"
+
+
+def test_human_probability_does_not_saturate_without_calibration():
+    from phantom.sidecar import advisory_human_prob
+
+    assert advisory_human_prob("unknown", motion_rel=3.6, baseline_rel=None) == 0.5
+    low = advisory_human_prob("stationary", 0.16, 0.15)
+    high = advisory_human_prob("walking", 0.45, 0.15)
+    assert 0.5 <= low < high < 1.0
