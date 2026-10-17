@@ -48,12 +48,15 @@ from phantom.sidecar import (  # noqa: E402
     FUSION_WINDOW_S,
     PerNodeThrottle,
     fresh_results,
+    count_window_from_history,
     fuse_activity,
+    fuse_count,
     fuse_vitals,
     route_ws_message,
     window_features_from_history,
 )
 from phantom.activity_model import ActivityModel  # noqa: E402
+from phantom.count_model import CountPredictor  # noqa: E402
 from phantom.subcarriers import NUM_DATA_SUBCARRIERS, lltf_amplitudes  # noqa: E402
 
 # ─── Model Definitions ────────────────────────────────────────────────
@@ -324,6 +327,21 @@ if ROOM_ID:
 else:
     print("[AI] PHANTOM_ROOM_ID not set — per-room activity model disabled.")
 
+# 6. Per-room people-count CNN (scripts/train/train_count.py). Advisory only.
+COUNT_MIN_CONFIDENCE = float(os.environ.get("PHANTOM_AI_COUNT_MIN_CONF", "0.6"))
+count_predictor = None
+if ROOM_ID:
+    count_dir = os.path.join(MODELS_ROOT, ROOM_ID)
+    try:
+        if os.path.exists(os.path.join(count_dir, "count.json")):
+            count_predictor = CountPredictor.load(count_dir)
+            print(f"[AI] Loaded room count model for '{ROOM_ID}' (classes={count_predictor.classes}, "
+                  f"T={count_predictor.temperature:.2f}).")
+        else:
+            print(f"[AI] No count model in {count_dir} — run scripts/train/train_count.py after recording.")
+    except Exception as e:
+        print(f"[ERROR] Failed to load count model from {count_dir}: {e}")
+
 # ─── Vitals (breathing / heart rate) from CSI ──────────────────────────
 
 def estimate_vitals(mags_history, fs):
@@ -500,7 +518,12 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
         activity_feats = window_features_from_history(
             mags_hist, rssi_hist, timestamps, activity_model.window_s)
 
+    count_window = None
+    if count_predictor is not None:
+        count_window = count_window_from_history(mags_hist, timestamps)
+
     return {
+        "count_window": count_window,
         "activity_feats": activity_feats,
         "node_id": node_id,
         "coords": coords_raw,           # [34] (x, z) pairs
@@ -588,6 +611,14 @@ def fuse_and_emit():
     )
     if room_activity:
         identity.update(room_activity)
+    room_count = fuse_count(
+        count_predictor,
+        {int(r["node_id"]): r["count_window"] for r in results if r.get("count_window") is not None},
+        ROOM_ID,
+        COUNT_MIN_CONFIDENCE,
+    )
+    if room_count:
+        identity.update(room_count)
 
     if not (ws_connected and ws is not None):
         return

@@ -118,6 +118,52 @@ def fuse_activity(model: Any, feats_by_node: Mapping[int, Any], room_id: str) ->
     }
 
 
+COUNT_MAX_WINDOW_SPAN_MS = 3000.0
+
+
+def count_window_from_history(amps_hist: Sequence[Any], timestamps_ms: Sequence[float]) -> "np.ndarray | None":
+    """Newest [WINDOW_FRAMES, K] time-major window for the count model, or None.
+
+    None when the history is too short, the subcarrier count is not the live
+    51, or the window contains a gap (same rule as training's window builder).
+    """
+    import numpy as np
+
+    from phantom.count_model import NUM_SUBCARRIERS, WINDOW_FRAMES
+
+    if len(amps_hist) < WINDOW_FRAMES or len(timestamps_ms) < WINDOW_FRAMES:
+        return None
+    window = np.asarray(amps_hist[-WINDOW_FRAMES:], dtype=np.float64)
+    if window.shape != (WINDOW_FRAMES, NUM_SUBCARRIERS):
+        return None
+    if timestamps_ms[-1] - timestamps_ms[-WINDOW_FRAMES] > COUNT_MAX_WINDOW_SPAN_MS:
+        return None
+    return window
+
+
+def fuse_count(
+    predictor: Any, windows_by_node: Mapping[int, Any], room_id: str, min_confidence: float
+) -> "dict[str, Any] | None":
+    """Advisory people count from the fresh nodes' windows (None without a model).
+
+    advisoryCount is the class index: 2 means "two or more" (countIsLowerBound).
+    Low-confidence outputs are flagged, not suppressed. Never feeds the
+    deterministic gate (F1).
+    """
+    if predictor is None or not windows_by_node:
+        return None
+    count, confidence, _ = predictor.predict_fused(dict(windows_by_node))
+    sha = str(predictor.meta.get("data_sha256", ""))[:8]
+    return {
+        "advisoryCount": int(count),
+        "advisoryCountConfidence": float(confidence),
+        "countLowConfidence": bool(confidence < min_confidence),
+        "countIsLowerBound": bool(count >= 2),
+        "countModelId": f"count-{sha or 'local'}",
+        "roomId": room_id,
+    }
+
+
 @dataclass(frozen=True)
 class FusedVitals:
     respiration_rpm: float | None

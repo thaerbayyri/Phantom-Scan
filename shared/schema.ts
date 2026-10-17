@@ -262,6 +262,9 @@ export const advisoryIdentitySchema = targetIdentitySchema.extend({
   advisoryCount: z.number().int().min(0).max(8).nullable().optional(),
   advisoryCountConfidence: z.number().min(0).max(1).optional(),
   countLowConfidence: z.boolean().optional(),
+  // advisoryCount === 2 with this set means "two or more" (the count model's top class).
+  countIsLowerBound: z.boolean().optional(),
+  countModelId: z.string().max(80).optional(),
   modelId: z.string().max(80).optional(),
   roomId: z.string().max(80).optional(),
   nodesFused: z.array(z.number().int()).max(8).optional(),

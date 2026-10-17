@@ -38,7 +38,7 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
     const mechProb = identity?.mechanicalProb ?? 0.5;
     const heuristicActivity = identity?.activityState;
     const modelActivity = identity?.advisoryActivity;
-    const hasRoomModel = Boolean(identity?.modelId);
+    const hasRoomModel = Boolean(identity?.modelId || identity?.countModelId);
     const presenceProb = identity?.presenceProb;
     const count = identity?.advisoryCount;
     const vitalsShown = vitals?.vitalsReliable === true;
@@ -91,7 +91,7 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
                         )}
                         {count != null && (
                             <div className={identity.countLowConfidence ? "text-amber-300" : undefined}>
-                                People (room model): {count}
+                                People (room model): {count}{identity.countIsLowerBound ? "+" : ""}
                                 {identity.advisoryCountConfidence != null && ` · ${percent(identity.advisoryCountConfidence)}`}
                                 {identity.countLowConfidence ? " · low confidence" : ""}
                             </div>

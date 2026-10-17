@@ -136,3 +136,52 @@ def test_fuse_activity_without_features_returns_none(tmp_path):
 
     assert fuse_activity(_activity_model(tmp_path), {}, room_id="room1") is None
     assert fuse_activity(None, {1: _feats(1.0)}, room_id="room1") is None
+
+
+# ── per-room people-count model at runtime ─────────────────────────────────
+
+class _FakePredictor:
+    def __init__(self, count, confidence, meta=None):
+        self._out = (count, confidence, np.array([0.1, 0.2, 0.7]))
+        self.meta = meta or {"data_sha256": "abcdef0123"}
+
+    def predict_fused(self, windows):
+        self.seen = windows
+        return self._out
+
+
+def test_fuse_count_reports_count_confidence_and_provenance():
+    from phantom.sidecar import fuse_count
+
+    out = fuse_count(_FakePredictor(1, 0.9), {1: "w1", 2: "w2"}, room_id="room1", min_confidence=0.6)
+    assert out["advisoryCount"] == 1 and out["advisoryCountConfidence"] == 0.9
+    assert out["countLowConfidence"] is False and out["countIsLowerBound"] is False
+    assert out["countModelId"] == "count-abcdef01"
+
+
+def test_fuse_count_flags_low_confidence_and_two_or_more():
+    from phantom.sidecar import fuse_count
+
+    out = fuse_count(_FakePredictor(2, 0.55), {1: "w"}, room_id="room1", min_confidence=0.6)
+    assert out["countLowConfidence"] is True
+    assert out["countIsLowerBound"] is True, "class 2 means two OR MORE people"
+
+
+def test_fuse_count_without_model_or_windows_returns_none():
+    from phantom.sidecar import fuse_count
+
+    assert fuse_count(None, {1: "w"}, room_id="r", min_confidence=0.6) is None
+    assert fuse_count(_FakePredictor(1, 0.9), {}, room_id="r", min_confidence=0.6) is None
+
+
+def test_count_window_from_history_requires_a_full_gapless_window():
+    from phantom.sidecar import count_window_from_history
+
+    t = [i * 25.0 for i in range(60)]
+    amps = [np.full(51, 10.0) for _ in t]
+    window = count_window_from_history(amps, t)
+    assert window is not None and window.shape == (40, 51)
+    assert count_window_from_history(amps[:30], t[:30]) is None  # too short
+    gappy = t[:40] + [x + 5000.0 for x in t[40:]]  # gap inside the newest 40 frames
+    assert count_window_from_history(amps, gappy) is None  # a 5 s gap inside the window
+    assert count_window_from_history([np.full(30, 1.0)] * 60, t) is None  # wrong subcarrier count
