@@ -44,6 +44,20 @@ void csi_collector_init(void);
 void csi_collector_set_node_id(uint8_t node_id);
 
 /**
+ * Cache the NVS filter_mac blob (see csi_filter_pure.h) before WiFi init,
+ * for the same clobbering reason as csi_collector_set_node_id(). `len` is 0
+ * when the key is absent (auto: filter to the connected AP's BSSID).
+ */
+void csi_collector_set_filter_config(const uint8_t *nvs_filter_mac, uint8_t len);
+
+/**
+ * Re-resolve the active source-MAC filter: the NVS MAC, nothing ("off"), or
+ * the currently connected AP's BSSID. Call after (re)connecting to the AP —
+ * the BSSID can change across reconnects on multi-AP networks.
+ */
+void csi_collector_refresh_filter_mac(void);
+
+/**
  * Serialize CSI data into ADR-018 binary frame format.
  *
  * @param info   WiFi CSI info from the ESP-IDF callback.

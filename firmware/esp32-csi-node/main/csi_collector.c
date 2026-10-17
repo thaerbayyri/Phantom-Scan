@@ -15,6 +15,7 @@
 #include "stream_sender.h"
 #include "edge_processing.h"
 #include "nvs_config.h"
+#include "csi_filter_pure.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -55,6 +56,49 @@ void csi_collector_set_node_id(uint8_t node_id)
 static inline uint8_t csi_node_id(void)
 {
     return (s_node_id != 0xFF) ? s_node_id : (uint8_t)g_nvs_config.node_id;
+}
+
+/* ---- Source-MAC filter (csi_filter_pure.h) ----
+ * s_filter_mac all-zero = no filter. Written from the event/init task and
+ * read in the WiFi CSI callback; a torn 6-byte read during a reconnect can at
+ * worst mis-filter a frame or two, so no lock is taken in the hot path. */
+static csi_filter_mode_t s_filter_mode = CSI_FILTER_AUTO_AP;
+static uint8_t s_nvs_filter_mac[CSI_MAC_LEN] = {0};
+static uint8_t s_filter_mac[CSI_MAC_LEN] = {0};
+static uint32_t s_mac_skip = 0;
+
+void csi_collector_set_filter_config(const uint8_t *nvs_filter_mac, uint8_t len)
+{
+    s_filter_mode = csi_filter_mode_from_nvs(nvs_filter_mac, len);
+    if (s_filter_mode == CSI_FILTER_FIXED_MAC) {
+        memcpy(s_nvs_filter_mac, nvs_filter_mac, CSI_MAC_LEN);
+    }
+    ESP_LOGI(TAG, "CSI source filter mode cached pre-WiFi: %s",
+             s_filter_mode == CSI_FILTER_FIXED_MAC ? "fixed NVS MAC"
+             : s_filter_mode == CSI_FILTER_DISABLED ? "disabled" : "auto (AP BSSID)");
+}
+
+void csi_collector_refresh_filter_mac(void)
+{
+    uint8_t next[CSI_MAC_LEN] = {0};
+    if (s_filter_mode == CSI_FILTER_FIXED_MAC) {
+        memcpy(next, s_nvs_filter_mac, CSI_MAC_LEN);
+    } else if (s_filter_mode == CSI_FILTER_AUTO_AP) {
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            memcpy(next, ap_info.bssid, CSI_MAC_LEN);
+        } else {
+            ESP_LOGW(TAG, "CSI source filter: not associated yet — accepting all transmitters until connected");
+        }
+    }
+    memcpy(s_filter_mac, next, CSI_MAC_LEN);
+    if (csi_mac_is_zero(s_filter_mac)) {
+        ESP_LOGW(TAG, "CSI source filter OFF — CSI from every transmitter is forwarded");
+    } else {
+        ESP_LOGI(TAG, "CSI source filter -> %02x:%02x:%02x:%02x:%02x:%02x",
+                 s_filter_mac[0], s_filter_mac[1], s_filter_mac[2],
+                 s_filter_mac[3], s_filter_mac[4], s_filter_mac[5]);
+    }
 }
 
 /**
@@ -248,9 +292,18 @@ static void wifi_csi_callback(void *ctx, wifi_csi_info_t *info)
     s_cb_count++;
 
     if (s_cb_count <= 3 || (s_cb_count % 250) == 0) {
-        ESP_LOGI(TAG, "CSI cb #%lu: len=%d rssi=%d ch=%d",
+        ESP_LOGI(TAG, "CSI cb #%lu: len=%d rssi=%d ch=%d mac_skip=%lu",
                  (unsigned long)s_cb_count, info->len,
-                 info->rx_ctrl.rssi, info->rx_ctrl.channel);
+                 info->rx_ctrl.rssi, info->rx_ctrl.channel, (unsigned long)s_mac_skip);
+    }
+
+    /* Source-MAC filter FIRST — before serialization, the 50 Hz send gate and
+     * edge enqueue — so frames from other transmitters can neither mix
+     * unrelated links into this node's statistics nor consume the wanted
+     * link's send slots (RuView ADR-345). */
+    if (!csi_mac_filter_accept(info->mac, s_filter_mac)) {
+        s_mac_skip++;
+        return;
     }
 
     uint8_t frame_buf[CSI_MAX_FRAME_SIZE];
@@ -323,6 +376,7 @@ void csi_collector_init(void)
     };
 
     ESP_ERROR_CHECK(esp_wifi_set_csi_config(&csi_config));
+    csi_collector_refresh_filter_mac(); /* before the callback can fire */
     ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(wifi_csi_callback, NULL));
     ESP_ERROR_CHECK(esp_wifi_set_csi(true));
     csi_start_self_ping();

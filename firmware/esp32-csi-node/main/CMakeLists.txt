@@ -1,5 +1,5 @@
 set(SRCS
-    "main.c" "csi_collector.c" "stream_sender.c" "nvs_config.c"
+    "main.c" "csi_collector.c" "csi_filter_pure.c" "stream_sender.c" "nvs_config.c"
     "edge_processing.c" "edge_dsp_pure.c" "rv_feature_state.c" "ota_update.c" "power_mgmt.c"
     "wasm_runtime.c" "wasm_upload.c" "rvf_parser.c"
     "display_task.c"

@@ -69,6 +69,8 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         g_wifi_connected = true;
+        /* The AP BSSID can differ after a reconnect (multi-AP networks). */
+        csi_collector_refresh_filter_mac();
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -144,6 +146,7 @@ void app_main(void)
      * the runtime config struct, and a corrupted node_id makes the two boards
      * indistinguishable at the host (source-mismatch rejects one of them). */
     csi_collector_set_node_id((uint8_t)g_nvs_config.node_id);
+    csi_collector_set_filter_config(g_nvs_config.filter_mac, g_nvs_config.filter_mac_len);
 
     ESP_LOGI(TAG, "ESP32-S3 CSI Node (ADR-018) — Node ID: %d", g_nvs_config.node_id);
     headless_baseline = (g_nvs_config.edge_tier == 0);

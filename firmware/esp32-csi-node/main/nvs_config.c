@@ -277,6 +277,22 @@ void nvs_config_load(nvs_config_t *cfg)
         ESP_LOGW(TAG, "wasm_verify=1 but no wasm_pubkey in NVS — uploads will be rejected");
     }
 
+    /* CSI source-MAC filter: optional 6-byte blob. Absent -> AP BSSID (auto);
+     * FF:FF:FF:FF:FF:FF -> filter disabled; otherwise that transmitter only. */
+    cfg->filter_mac_len = 0;
+    memset(cfg->filter_mac, 0, sizeof(cfg->filter_mac));
+    size_t filter_len = sizeof(cfg->filter_mac);
+    if (nvs_get_blob(handle, "filter_mac", cfg->filter_mac, &filter_len) == ESP_OK
+        && filter_len == sizeof(cfg->filter_mac))
+    {
+        cfg->filter_mac_len = (uint8_t)filter_len;
+        ESP_LOGI(TAG, "NVS override: filter_mac=%02x:%02x:%02x:%02x:%02x:%02x",
+                 cfg->filter_mac[0], cfg->filter_mac[1], cfg->filter_mac[2],
+                 cfg->filter_mac[3], cfg->filter_mac[4], cfg->filter_mac[5]);
+    } else {
+        memset(cfg->filter_mac, 0, sizeof(cfg->filter_mac));
+    }
+
     /* Validate tdm_slot_index < tdm_node_count */
     if (cfg->tdm_slot_index >= cfg->tdm_node_count) {
         ESP_LOGW(TAG, "tdm_slot_index=%u >= tdm_node_count=%u, clamping to 0",

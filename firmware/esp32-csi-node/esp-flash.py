@@ -64,7 +64,26 @@ def build_nvs_csv(args):
         writer.writerow(["vital_int", "data", "u16", str(args.vital_int)])
     if args.subk_count is not None:
         writer.writerow(["subk_count", "data", "u8", str(args.subk_count)])
+    if getattr(args, "filter_mac", None) is not None:
+        writer.writerow(["filter_mac", "data", "hex2bin", args.filter_mac])
     return buf.getvalue()
+
+
+FILTER_MAC_OFF = "ffffffffffff"
+
+
+def parse_filter_mac(value):
+    """'AA:BB:CC:DD:EE:FF' / 'aa-bb-…' -> 12 lowercase hex chars for an NVS
+    hex2bin blob; 'off' -> FF:FF:FF:FF:FF:FF (firmware: filter disabled)."""
+    text = value.strip().lower()
+    if text == "off":
+        return FILTER_MAC_OFF
+    hex_digits = text.replace(":", "").replace("-", "")
+    if len(hex_digits) != 12 or any(c not in "0123456789abcdef" for c in hex_digits):
+        raise argparse.ArgumentTypeError(f"invalid MAC '{value}' (expected AA:BB:CC:DD:EE:FF or 'off')")
+    if hex_digits == "000000000000":
+        raise argparse.ArgumentTypeError("00:00:00:00:00:00 is reserved (means auto/AP BSSID); omit --filter-mac instead")
+    return hex_digits
 
 
 def find_gen_scripts():
@@ -189,6 +208,10 @@ def main():
     parser.add_argument("--vital-win", type=int, help="Phase history window in frames (default: 300)")
     parser.add_argument("--vital-int", type=int, help="Vitals packet interval in ms (default: 1000)")
     parser.add_argument("--subk-count", type=int, help="Top-K subcarrier count (default: 32)")
+    # CSI source-MAC filter (csi_filter_pure.h). Omit to filter to the AP's BSSID.
+    parser.add_argument("--filter-mac", type=parse_filter_mac,
+                        help="Only forward CSI from this transmitter MAC (AA:BB:CC:DD:EE:FF), "
+                             "or 'off' to forward every transmitter. Default: the connected AP's BSSID.")
     parser.add_argument("--dry-run", action="store_true", help="Generate NVS binary but don't flash")
 
     args = parser.parse_args()
@@ -200,6 +223,7 @@ def main():
         args.edge_tier is not None, args.pres_thresh is not None,
         args.fall_thresh is not None, args.vital_win is not None,
         args.vital_int is not None, args.subk_count is not None,
+        args.filter_mac is not None,
     ])
     if not has_value:
         parser.error("At least one config value must be specified")

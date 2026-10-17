@@ -50,6 +50,11 @@ typedef struct {
     uint8_t  wasm_verify;                    /**< Require Ed25519 signature for uploads. */
     uint8_t  wasm_pubkey[32];               /**< Ed25519 public key for WASM signature. */
     uint8_t  wasm_pubkey_valid;             /**< 1 if pubkey was loaded from NVS. */
+
+    /* CSI source-MAC filter (see csi_filter_pure.h). filter_mac_len = 0 when
+     * the NVS key is absent -> filter to the connected AP's BSSID. */
+    uint8_t  filter_mac[6];                 /**< NVS filter_mac blob (FF..FF = off). */
+    uint8_t  filter_mac_len;                /**< Bytes loaded from NVS (0 or 6). */
 } nvs_config_t;
 
 /**
