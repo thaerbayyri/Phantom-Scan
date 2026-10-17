@@ -78,3 +78,61 @@ def test_fuse_vitals_averages_only_reliable_nodes():
         {"breathing": 40.0, "heart_rate": 150.0, "reliable": False},
     ])
     assert fused.reliable and fused.respiration_rpm == 15.0 and fused.heart_bpm == 70.0
+
+
+# ── per-room activity model at runtime ─────────────────────────────────────
+
+def _activity_model(tmp_path):
+    from phantom.activity_model import ActivityModel
+    from phantom.features import NUM_FEATURES, FEATURE_NAMES
+
+    var_idx = FEATURE_NAMES.index("temporal_variance")
+    coef = np.zeros((2, NUM_FEATURES))
+    coef[1, var_idx] = 3.0  # class 1 ("walking") grows with variance
+    coef[0, var_idx] = -3.0
+    return ActivityModel(
+        classes=("empty", "walking"),
+        mean=np.zeros(NUM_FEATURES),
+        std=np.ones(NUM_FEATURES),
+        coef=coef,
+        intercept=np.zeros(2),
+        meta={"room_id": "room1"},
+    )
+
+
+def _feats(variance):
+    from phantom.features import NUM_FEATURES, FEATURE_NAMES
+
+    f = np.zeros(NUM_FEATURES)
+    f[FEATURE_NAMES.index("temporal_variance")] = variance
+    return f
+
+
+def test_window_features_from_history_uses_only_the_trailing_window():
+    from phantom.sidecar import window_features_from_history
+
+    t = [i * 25.0 for i in range(100)]  # 40 Hz, 2.5 s
+    amps = [np.full(51, 10.0) for _ in t]
+    rssi = [-45.0] * 100
+    feats = window_features_from_history(amps, rssi, t, window_s=1.0)
+    assert feats is not None and feats.shape[0] == 15
+    assert window_features_from_history(amps[:5], rssi[:5], t[:5], window_s=1.0) is None
+
+
+def test_fuse_activity_reports_class_confidence_and_provenance(tmp_path):
+    from phantom.sidecar import fuse_activity
+
+    model = _activity_model(tmp_path)
+    out = fuse_activity(model, {1: _feats(2.0), 2: _feats(1.5)}, room_id="room1")
+    assert out["advisoryActivity"] == "walking"
+    assert 0.5 < out["advisoryActivityConfidence"] <= 1.0
+    assert out["roomId"] == "room1" and out["modelId"].startswith("activity-")
+    quiet = fuse_activity(model, {1: _feats(-2.0)}, room_id="room1")
+    assert quiet["advisoryActivity"] == "empty"
+
+
+def test_fuse_activity_without_features_returns_none(tmp_path):
+    from phantom.sidecar import fuse_activity
+
+    assert fuse_activity(_activity_model(tmp_path), {}, room_id="room1") is None
+    assert fuse_activity(None, {1: _feats(1.0)}, room_id="room1") is None

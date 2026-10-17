@@ -48,9 +48,12 @@ from phantom.sidecar import (  # noqa: E402
     FUSION_WINDOW_S,
     PerNodeThrottle,
     fresh_results,
+    fuse_activity,
     fuse_vitals,
     route_ws_message,
+    window_features_from_history,
 )
+from phantom.activity_model import ActivityModel  # noqa: E402
 from phantom.subcarriers import NUM_DATA_SUBCARRIERS, lltf_amplitudes  # noqa: E402
 
 # ─── Model Definitions ────────────────────────────────────────────────
@@ -302,6 +305,25 @@ for nid, path in (NODE_ADAPTERS.items() if LORA_ENABLED else ()):
     except Exception as e:
         print(f"[ERROR] Failed to load LoRA adapter {path}: {e}")
 
+# 5. Per-room activity model (trained by scripts/train/train_activity.py from
+# labelled recordings of THIS room). Advisory only; absent -> no activity field.
+ROOM_ID = os.environ.get("PHANTOM_ROOM_ID", "").strip()
+MODELS_ROOT = os.environ.get("PHANTOM_MODELS_ROOT", os.path.join("models", "rooms"))
+activity_model = None
+if ROOM_ID:
+    activity_path = os.path.join(MODELS_ROOT, ROOM_ID, "activity.json")
+    try:
+        if os.path.exists(activity_path):
+            activity_model = ActivityModel.load(activity_path)
+            print(f"[AI] Loaded room activity model for '{ROOM_ID}' "
+                  f"(balanced acc {activity_model.meta.get('metrics', {}).get('model_balanced_accuracy', 'n/a')}).")
+        else:
+            print(f"[AI] No activity model at {activity_path} — run scripts/train/train_activity.py after recording.")
+    except Exception as e:
+        print(f"[ERROR] Failed to load activity model {activity_path}: {e}")
+else:
+    print("[AI] PHANTOM_ROOM_ID not set — per-room activity model disabled.")
+
 # ─── Vitals (breathing / heart rate) from CSI ──────────────────────────
 
 def estimate_vitals(mags_history, fs):
@@ -473,7 +495,13 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
 
     activity_state = classify_activity(node_id, motion_raw)
 
+    activity_feats = None
+    if activity_model is not None:
+        activity_feats = window_features_from_history(
+            mags_hist, rssi_hist, timestamps, activity_model.window_s)
+
     return {
+        "activity_feats": activity_feats,
         "node_id": node_id,
         "coords": coords_raw,           # [34] (x, z) pairs
         "motion_raw": motion_raw,
@@ -553,6 +581,13 @@ def fuse_and_emit():
         "activityState": activity_state,
         "nodesFused": sorted(int(r["node_id"]) for r in results),
     }
+    room_activity = fuse_activity(
+        activity_model,
+        {int(r["node_id"]): r["activity_feats"] for r in results if r.get("activity_feats") is not None},
+        ROOM_ID,
+    )
+    if room_activity:
+        identity.update(room_activity)
 
     if not (ws_connected and ws is not None):
         return

@@ -66,6 +66,58 @@ def fresh_results(
     return {nid: r["result"] for nid, r in node_results.items() if now_s - r["t"] <= window_s}
 
 
+MIN_WINDOW_FRAMES = 16
+
+
+def window_features_from_history(
+    amps_hist: Sequence[Any],
+    rssi_hist: Sequence[float],
+    timestamps_ms: Sequence[float],
+    window_s: float,
+) -> "np.ndarray | None":
+    """Features of the trailing `window_s` of one node's history (None if sparse).
+
+    Uses the same extract_window_features as training, with the frame rate
+    estimated from the window's own timestamps.
+    """
+    import numpy as np
+
+    from phantom.features import extract_window_features
+
+    if len(timestamps_ms) < MIN_WINDOW_FRAMES:
+        return None
+    t = np.asarray(timestamps_ms, dtype=np.float64)
+    lo = int(np.searchsorted(t, t[-1] - window_s * 1000.0, side="left"))
+    if len(t) - lo < MIN_WINDOW_FRAMES:
+        return None
+    span_s = (t[-1] - t[lo]) / 1000.0
+    if span_s <= 0:
+        return None
+    fs = (len(t) - lo - 1) / span_s
+    return extract_window_features(
+        np.asarray(amps_hist[lo:], dtype=np.float64), np.asarray(rssi_hist[lo:], dtype=np.float64), fs
+    )
+
+
+def fuse_activity(model: Any, feats_by_node: Mapping[int, Any], room_id: str) -> "dict[str, Any] | None":
+    """Advisory per-room activity from the fresh nodes' window features.
+
+    Returns the identity-message fields (advisoryActivity, confidence, model
+    provenance) or None when there is no model or no usable node. The result
+    is advisory only: it never feeds the deterministic gate (F1).
+    """
+    if model is None or not feats_by_node:
+        return None
+    label, confidence, _ = model.predict_fused(list(feats_by_node.values()))
+    sha = str(model.meta.get("data_sha256", ""))[:8]
+    return {
+        "advisoryActivity": label,
+        "advisoryActivityConfidence": confidence,
+        "modelId": f"activity-{sha or 'local'}",
+        "roomId": room_id,
+    }
+
+
 @dataclass(frozen=True)
 class FusedVitals:
     respiration_rpm: float | None
