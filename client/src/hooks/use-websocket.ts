@@ -22,6 +22,7 @@ import type {
   SignalField,
   AdvisoryIdentity,
   AdvisoryVitalSigns,
+  DatasetStatus,
 } from "@shared/schema";
 
 interface WSState {
@@ -52,6 +53,7 @@ interface WSState {
   nodes: SensorNode[];
   nodeFeatures: NodeFeatureState[];
   nodeSignal: NodeSignalState[];
+  datasetStatus: DatasetStatus | null;
   // fused_room only (3-4 active nodes) — spatial intensity grid for the
   // dashboard's floor-glow visualization. Null outside fused_room.
   signalField: SignalField | null;
@@ -147,6 +149,7 @@ function buildClearedSceneState(
     poseFrame: null as PoseFrame | null,
     nodeFeatures: [] as NodeFeatureState[],
     nodeSignal: [] as NodeSignalState[],
+    datasetStatus: null as DatasetStatus | null,
     signalField: null as SignalField | null,
     // Node beacons are only cleared on socket death: on Stop the server
     // intentionally keeps sending quiesced beacons (honest node presence).
@@ -185,6 +188,7 @@ export function useWebSocket() {
     nodes: [],
     nodeFeatures: [],
     nodeSignal: [],
+    datasetStatus: null,
     signalField: null,
     isConnected: false,
     error: null,
@@ -453,6 +457,10 @@ export function useWebSocket() {
         }));
         break;
 
+      case "datasetStatus":
+        setState((prev) => ({ ...prev, datasetStatus: (message.data as DatasetStatus | null) ?? null }));
+        break;
+
       case "nodeSignal":
         setState((prev) => ({
           ...prev,
@@ -559,6 +567,17 @@ export function useWebSocket() {
     sendMessage("markSyncEvent", null);
   }, [sendMessage]);
 
+  const startDatasetRecording = useCallback(
+    (request: { roomId: string; subjectId: string; label: string; count?: number; notes?: string }) => {
+      sendMessage("startDatasetRecording", request);
+    },
+    [sendMessage],
+  );
+
+  const stopDatasetRecording = useCallback(() => {
+    sendMessage("stopDatasetRecording", null);
+  }, [sendMessage]);
+
   // Asks the AI sidecar to reset the rolling motion baseline its
   // walking/rapid_change activity heuristic compares against, so ambient
   // room noise (fan, HVAC) captured right now stops reading as motion.
@@ -610,6 +629,8 @@ export function useWebSocket() {
     startRecording,
     stopRecording,
     markSyncEvent,
+    startDatasetRecording,
+    stopDatasetRecording,
     calibrateBaseline,
     reconnect: connect,
   };

@@ -231,6 +231,20 @@ export const targetIdentitySchema = z.object({
 });
 export type TargetIdentity = z.infer<typeof targetIdentitySchema>;
 
+// Labelled dataset recording progress (server/lib/dataset-recorder.ts),
+// broadcast as "datasetStatus" on start/stop.
+export const datasetStatusSchema = z.object({
+  recording: z.boolean(),
+  roomId: z.string().optional(),
+  label: z.string().optional(),
+  frames: z.number(),
+  skipped: z.number(),
+  perNode: z.record(z.string(), z.number()),
+  files: z.array(z.string()),
+  startedAtMs: z.number().optional(),
+});
+export type DatasetStatus = z.infer<typeof datasetStatusSchema>;
+
 // AI sidecar output, relayed ONLY as "advisoryIdentity" (F1: never written to
 // the authoritative targetIdentity channel, never gates presence). Validated
 // at the WS boundary before relay. presenceProb is null when no calibrated
@@ -487,6 +501,7 @@ export type PoseFrame = z.infer<typeof poseFrameSchema>;
 
 // WebSocket message types
 export const wsMessageTypeSchema = z.enum([
+  "datasetStatus",
   "status",
   "csiFrame",
   "isarFrame",

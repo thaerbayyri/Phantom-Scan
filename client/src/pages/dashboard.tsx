@@ -11,8 +11,10 @@ import { MetricsPanel } from "@/components/dashboard/metrics-panel";
 import { TargetIdentityCard } from "@/components/dashboard/target-identity-card";
 import { DistanceMeter } from "@/components/dashboard/distance-meter";
 import { NodeFeaturesCard } from "@/components/dashboard/node-features-card";
+import { SignalStatsCard } from "@/components/dashboard/signal-stats-card";
 import { VitalsMonitor } from "@/components/dashboard/vitals-monitor";
 import { AIAdvisoryPanel } from "@/components/dashboard/ai-advisory-panel";
+import { DatasetRecorderPanel } from "@/components/dashboard/dataset-recorder-panel";
 import { ResizableWrapper } from "@/components/ui/resizable-wrapper";
 import {
   canPresentLiveTargetPosition,
@@ -41,6 +43,9 @@ export default function Dashboard() {
     startProcessing,
     stopProcessing,
     startRecording,
+  datasetStatus,
+  startDatasetRecording,
+  stopDatasetRecording,
     stopRecording,
     markSyncEvent,
     radialTarget,
@@ -54,6 +59,7 @@ export default function Dashboard() {
     poseFrame,
     nodes,
     nodeFeatures,
+    nodeSignal,
     signalField,
   } = useWebSocket();
 
@@ -210,6 +216,12 @@ export default function Dashboard() {
               />
               <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
               <NodeFeaturesCard nodeFeatures={nodeFeatures} />
+              <SignalStatsCard nodeSignal={nodeSignal} />
+              <DatasetRecorderPanel
+                status={datasetStatus}
+                onStart={startDatasetRecording}
+                onStop={stopDatasetRecording}
+              />
               <AIAdvisoryPanel
                 identity={advisoryIdentity}
                 vitals={advisoryVitalSigns}

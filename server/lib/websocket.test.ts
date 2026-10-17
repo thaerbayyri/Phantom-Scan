@@ -694,3 +694,32 @@ test("fused_room: node trend arrows follow the filtered 2-D velocity", () => {
   assert.equal(trendOf(3), "approaching");
   assert.equal(trendOf(1), "receding");
 });
+
+// ── Phase 8: labelled dataset recording over the WS message path ───────────
+
+test("dataset recording: start/stop messages validate input and record live amplitude vectors", async () => {
+  const fs = await import("fs");
+  const os = await import("os");
+  const path = await import("path");
+  const { DatasetRecorder } = await import("./dataset-recorder");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "phantom-ds-ws-"));
+  const server = newProcessingServer();
+  server.datasetRecorder = new DatasetRecorder({ rootDir: root });
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+
+  server.handleMessage("dashboard", { type: "startDatasetRecording", data: { roomId: "../bad", label: "empty" } });
+  assert.equal(server.datasetRecorder.isRecording, false, "unsafe roomId must be refused");
+  assert.ok(dashboard.sent.some((m) => m.type === "error"));
+
+  server.handleMessage("dashboard", { type: "startDatasetRecording", data: { roomId: "lab", subjectId: "s1", label: "walking" } });
+  assert.equal(server.datasetRecorder.isRecording, true);
+  ingestNoisyAmplitudes(server, 2, [10, 11, 12], 5);
+  server.handleMessage("dashboard", { type: "stopDatasetRecording" });
+
+  const stops = dashboard.sent.filter((m) => m.type === "datasetStatus");
+  const final = stops[stops.length - 1].data as { recording: boolean; frames: number; perNode: Record<string, number> };
+  assert.equal(final.recording, false);
+  assert.equal(final.frames, 5);
+  assert.deepEqual(final.perNode, { "2": 5 });
+});

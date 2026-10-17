@@ -60,6 +60,7 @@ import {
   type ClassifierCorroboration,
 } from "./node-fusion";
 import { FusedPositionKalman } from "./fused-position-kalman";
+import { DatasetRecorder, parseDatasetStart } from "./dataset-recorder";
 import {
   DEFAULT_TIER_THRESHOLDS,
   NodeBaselineTracker,
@@ -157,6 +158,7 @@ export class SignalProcessingServer {
   // motion (each node sees a different static channel).
   /** Node anchors + room size — config/room.json or PHANTOM_ROOM_CONFIG, else defaults. */
   private room: RoomGeometry = getRoomGeometry();
+  private datasetRecorder = new DatasetRecorder();
   private backgroundSubtractors = new Map<number, BackgroundSubtractor>();
   /** Live node set as of the last trackActiveNodeSet() call (sorted). */
   private prevActiveNodeIds: number[] = [];
@@ -402,6 +404,14 @@ export class SignalProcessingServer {
       case "setDataSource":
         this.setDataSource(message.data as DataSource);
         void this.auditClientAction(client, "data_source_changed", { dataSource: message.data });
+        break;
+      case "startDatasetRecording":
+        this.startDatasetRecording(message.data);
+        void this.auditClientAction(client, "dataset_recording_started");
+        break;
+      case "stopDatasetRecording":
+        this.stopDatasetRecording();
+        void this.auditClientAction(client, "dataset_recording_stopped");
         break;
       case "startRecording":
         this.startRecording();
@@ -2317,7 +2327,38 @@ export class SignalProcessingServer {
    * appends its amplitude vector to the per-node motion window, and forwards
    * the raw sample to any connected AI sidecar client.
    */
+  private startDatasetRecording(raw: unknown): void {
+    try {
+      const request = parseDatasetStart(raw);
+      const status = this.datasetRecorder.start(request, {
+        geometry: { roomWidthM: this.room.roomWidthM, roomDepthM: this.room.roomDepthM, anchors: this.room.anchors },
+        firmwareFilterMac: process.env.PHANTOM_FIRMWARE_FILTER_MAC,
+      });
+      console.log(`[DATASET] recording ${request.label} (count=${request.count}) room=${request.roomId} -> ${status.files[0]}`);
+      this.broadcast("datasetStatus", status);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[DATASET] start refused: ${reason}`);
+      this.broadcast("error", `Dataset recording: ${reason}`);
+    }
+  }
+
+  private stopDatasetRecording(): void {
+    if (!this.datasetRecorder.isRecording) return;
+    const status = this.datasetRecorder.stop();
+    console.log(`[DATASET] stopped: ${status.frames} frames (${status.skipped} skipped) in ${status.files.length} file(s)`);
+    this.broadcast("datasetStatus", status);
+  }
+
   ingestSample(sample: CSISample): void {
+    if (this.datasetRecorder.isRecording && sample.amplitudes && sample.amplitudes.length > 0) {
+      this.datasetRecorder.record({
+        tMs: sample.timestamp ?? Date.now(),
+        nodeId: sample.nodeId ?? 1,
+        rssi: sample.rssi ?? -100,
+        amps: sample.amplitudes,
+      });
+    }
     // Forward raw sample to the AI inference client
     this.broadcastToAI("rawSample", sample);
 
