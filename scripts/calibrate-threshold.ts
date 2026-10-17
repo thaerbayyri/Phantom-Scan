@@ -109,7 +109,7 @@ function sampleRoomRise(nowMs: number): void {
     }
     const update = tracker.update(computeAgcNormalizedPerturbation(win.map((w) => w.amps)), nowMs, false);
     warmingUp ||= update.warmingUp;
-    maxRise = Math.max(maxRise, update.rise);
+    maxRise = Math.max(maxRise, update.z);
   }
   if (!warmingUp) roomRiseSamples.push(maxRise);
 }
@@ -161,8 +161,8 @@ function report(elapsedS: number) {
   if (roomRiseSamples.length > 0) {
     const { mean, sigma, max } = stats(roomRiseSamples);
     console.log(`\n-- fused_room (3-4 nodes, ${roomRiseSamples.length} post-warm-up samples) --`);
-    console.log(`max node rise above own baseline: mean=${mean.toFixed(4)} sigma=${sigma.toFixed(4)} max=${max.toFixed(4)}`);
-    console.log(`suggested PHANTOM_ROOM_TIER_STILL: mean+4s=${(mean + 4 * sigma).toFixed(4)}  (must stay < PHANTOM_ROOM_TIER_MOVING=${DEFAULT_TIER_THRESHOLDS.moving})`);
+    console.log(`max node z (excess in units of the node's own scatter): mean=${mean.toFixed(2)} sigma=${sigma.toFixed(2)} max=${max.toFixed(2)}`);
+    console.log(`suggested PHANTOM_ROOM_TIER_STILL (z): max observed in an EMPTY run=${max.toFixed(2)} -> pick at least ${Math.ceil(max + 1)}  (current ${DEFAULT_TIER_THRESHOLDS.still}; must stay < PHANTOM_ROOM_TIER_MOVING=${DEFAULT_TIER_THRESHOLDS.moving})`);
     console.log("(run >=5 min empty; the observed max must stay BELOW the chosen still threshold, and a fan run below moving)");
   }
 

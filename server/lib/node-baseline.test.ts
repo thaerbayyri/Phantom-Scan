@@ -123,3 +123,49 @@ test("excess is never negative and is ~0 in a settled empty room", () => {
   const { last } = feed(tr, 0.1, 8, 20, 0);
   assert.ok(last.excess >= 0 && last.excess < 0.01, `excess ${last.excess}`);
 });
+
+// ── noise-aware tiers (test_4 scan: a noisy empty room read as occupied) ────
+
+/** Deterministic pseudo-noise: baseline * (1 ± amplitude), mean-preserving. */
+function noisy(tracker: NodeBaselineTracker, level: number, amplitude: number, seconds: number, hz: number, startMs: number, seed = 1) {
+  let s = seed;
+  const rnd = () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296) * 2 - 1;
+  const stepMs = 1000 / hz;
+  let t = startMs;
+  let last = tracker.update(level, t, false);
+  const tiers: string[] = [];
+  const end = startMs + seconds * 1000;
+  while (t + stepMs <= end + 1e-6) {
+    t += stepMs;
+    last = tracker.update(level * (1 + amplitude * rnd()), t, false);
+    tiers.push(last.tier);
+  }
+  return { last, endMs: t, tiers };
+}
+
+test("a noisy but empty room stays absent: the baseline must not sit at the lower noise edge", () => {
+  const tr = new NodeBaselineTracker();
+  const warm = noisy(tr, 0.18, 0.35, 40, 20, 0);
+  const steady = noisy(tr, 0.18, 0.35, 120, 20, warm.endMs, 7);
+  const present = steady.tiers.filter((t) => t !== "absent").length / steady.tiers.length;
+  assert.ok(present < 0.05, `empty noisy room reads present ${(present * 100).toFixed(1)}% of the time`);
+  assert.ok(Math.abs(steady.last.baseline - 0.18) < 0.03, `baseline ${steady.last.baseline} should track the noise MEAN`);
+});
+
+test("a genuine sustained rise well above the noise is still detected", () => {
+  const tr = new NodeBaselineTracker();
+  const warm = noisy(tr, 0.18, 0.2, 40, 20, 0);
+  const up = noisy(tr, 0.3, 0.2, 6, 20, warm.endMs, 3);
+  assert.ok(tierAtLeast(up.last.tier, "present_moving"), `tier ${up.last.tier}, z=${up.last.z}`);
+  assert.ok(up.last.z > 3, `z ${up.last.z}`);
+});
+
+test("z is the excess in units of the node's own empty-room fluctuation", () => {
+  const quiet = new NodeBaselineTracker();
+  const loud = new NodeBaselineTracker();
+  const q = noisy(quiet, 0.18, 0.05, 40, 20, 0);
+  const l = noisy(loud, 0.18, 0.5, 40, 20, 0);
+  const qd = noisy(quiet, 0.21, 0.05, 4, 20, q.endMs, 5).last;
+  const ld = noisy(loud, 0.21, 0.5, 4, 20, l.endMs, 5).last;
+  assert.ok(qd.z > 3 * ld.z, `the same +0.03 is far more significant on the quiet node: ${qd.z} vs ${ld.z}`);
+});

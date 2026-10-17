@@ -36,15 +36,18 @@ export function tierAtLeast(tier: PresenceTier, floor: PresenceTier): boolean {
 }
 
 export interface TierThresholds {
-  /** rise at/above which a node reports present_still. */
+  /** z-score (excess in units of the node's own empty-room scatter) at/above which a node reports present_still. */
   still: number;
-  /** rise at/above which a node reports present_moving. */
+  /** z-score at/above which a node reports present_moving. */
   moving: number;
-  /** rise at/above which a node reports active. */
+  /** z-score at/above which a node reports active. */
   active: number;
 }
 
-const PROVISIONAL_THRESHOLDS: TierThresholds = Object.freeze({ still: 0.15, moving: 0.5, active: 1.5 });
+// z-scores, not relative rises: a fixed relative threshold cannot work when the
+// empty room itself fluctuates 10-30% (test_4 scan: every empty phase read as
+// occupied). PROVISIONAL until validated on labelled recordings.
+const PROVISIONAL_THRESHOLDS: TierThresholds = Object.freeze({ still: 4, moving: 7, active: 14 });
 
 function thresholdsFromEnv(env: Record<string, string | undefined>): TierThresholds {
   const read = (key: string, fallback: number) => {
@@ -91,12 +94,21 @@ export interface BaselineUpdate {
    *  units for every node. This — not `rise` — is comparable across nodes and
    *  is what weights the position estimate. */
   excess: number;
+  /** excess / this node's own empty-room scatter. Drives the tier. */
+  z: number;
   /** Debounced tier. */
   tier: PresenceTier;
   warmingUp: boolean;
 }
 
 const EPS = 1e-9;
+/** A smoothed sample this many scatters above the baseline is an EVENT (a person),
+ *  not noise, and must never update the baseline. */
+const EVENT_Z = 4;
+/** Scatter estimate ≈ 1.25 × mean absolute deviation (normal-noise equivalent). */
+const MAD_TO_SIGMA = 1.25;
+/** The metric cannot be quieter than this fraction of its own level. */
+const SIGMA_FLOOR_REL = 0.02;
 /** Cap one update's dt so a long silence can't jump the EMAs in one step. */
 const MAX_DT_S = 1.0;
 
@@ -116,6 +128,8 @@ export class NodeBaselineTracker {
 
   private smoothed = 0;
   private baseline = 0;
+  /** EMA of |smoothed − baseline| while the room is quiet (empty-room scatter). */
+  private dev = 0;
   private startMs: number | null = null;
   private lastMs = 0;
   private tier: PresenceTier = "absent";
@@ -146,6 +160,7 @@ export class NodeBaselineTracker {
       this.lastMs = nowMs;
       this.smoothed = value;
       this.baseline = value;
+      this.dev = value * 0.1;
       return this.snapshot(nowMs);
     }
     const dtS = Math.min(MAX_DT_S, Math.max(0, (nowMs - this.lastMs) / 1000));
@@ -155,25 +170,41 @@ export class NodeBaselineTracker {
     const warmingUp = nowMs - this.startMs < this.warmupMs;
     this.frozenSinceMs = freeze ? this.frozenSinceMs ?? nowMs : null;
     const frozen = freeze && !warmingUp && nowMs - (this.frozenSinceMs ?? nowMs) < this.maxFreezeMs;
-    const isSpike = value > this.smoothed * (1 + this.spikeMargin);
+    // The baseline follows the signal's MEAN. The previous rule ignored every
+    // sample above the smoothed level, which in a noisy room parks the
+    // baseline on the lower edge of the noise and makes a permanent "rise".
+    // Only genuine events (z above EVENT_Z) are withheld.
+    const isEvent = this.z() > EVENT_Z;
     if (warmingUp) {
-      this.baseline += alphaFor(dtS, this.warmupTauS) * (value - this.baseline);
-    } else if (!frozen && !isSpike) {
-      this.baseline += alphaFor(dtS, this.baselineTauS) * (value - this.baseline);
+      const a = alphaFor(dtS, this.warmupTauS);
+      this.baseline += a * (value - this.baseline);
+      this.dev += a * (Math.abs(this.smoothed - this.baseline) - this.dev);
+    } else if (!frozen && !isEvent) {
+      const a = alphaFor(dtS, this.baselineTauS);
+      this.baseline += a * (value - this.baseline);
+      this.dev += a * (Math.abs(this.smoothed - this.baseline) - this.dev);
     }
 
-    this.applyDebounce(this.classify(this.rise()), nowMs);
+    this.applyDebounce(this.classify(this.z()), nowMs);
     return this.snapshot(nowMs);
+  }
+
+  private sigma(): number {
+    return Math.max(MAD_TO_SIGMA * this.dev, SIGMA_FLOOR_REL * this.baseline, 1e-6);
+  }
+
+  private z(): number {
+    return Math.max(0, this.smoothed - this.baseline) / this.sigma();
   }
 
   private rise(): number {
     return this.baseline > EPS ? Math.max(0, this.smoothed / this.baseline - 1) : 0;
   }
 
-  private classify(rise: number): PresenceTier {
-    if (rise >= this.thresholds.active) return "active";
-    if (rise >= this.thresholds.moving) return "present_moving";
-    if (rise >= this.thresholds.still) return "present_still";
+  private classify(z: number): PresenceTier {
+    if (z >= this.thresholds.active) return "active";
+    if (z >= this.thresholds.moving) return "present_moving";
+    if (z >= this.thresholds.still) return "present_still";
     return "absent";
   }
 
@@ -199,6 +230,7 @@ export class NodeBaselineTracker {
       baseline: this.baseline,
       rise: this.rise(),
       excess: Math.max(0, this.smoothed - this.baseline),
+      z: this.z(),
       tier: this.tier,
       warmingUp: this.startMs !== null && nowMs - this.startMs < this.warmupMs,
     };
