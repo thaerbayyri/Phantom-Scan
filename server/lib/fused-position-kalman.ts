@@ -47,9 +47,27 @@ const GATE_SIGMA_MULT = 3.0;
 
 const R_X = 0.0044; // m^2
 const R_Z = 0.0011; // m^2
-const Q_POS_X = 0.011; // m^2, ~2.5x R_X
-const Q_POS_Z = 0.00275; // m^2, ~2.5x R_Z
-const Q_VEL = 0.5; // (m/s^2)^2, pedestrian acceleration process noise
+/**
+ * Per-tick process noise validated against the real sessions above
+ * (Q_POS ≈ 2.5·R per axis, Q_VEL = 0.5 (m/s)²) at the recordings' ~55 ms
+ * median tick. Previously that same Q was added on every predict regardless
+ * of dt, so a 0.3 s gap got no more uncertainty than a 55 ms tick and the
+ * filter came out of every gap overconfident (then gated out the real,
+ * moved target). Q now scales by max(1, dt / REFERENCE_DT_S): unchanged for
+ * normal and burst ticks (the live loop is a fixed 50 ms interval, and a
+ * smaller-than-validated Q makes the gate reject real motion), proportionally
+ * larger across gaps up to MAX_DT_S.
+ */
+const REFERENCE_DT_S = 0.055;
+const Q_POS_X = 0.011; // m^2 per reference tick, ~2.5x R_X
+const Q_POS_Z = 0.00275; // m^2 per reference tick, ~2.5x R_Z
+const Q_VEL = 0.5; // (m/s)^2 per reference tick, pedestrian acceleration
+/** Velocity variance at (re-)initialization — ~1 m/s 1σ, a walking pace. */
+const INIT_VEL_VARIANCE = 1.0;
+/** Consecutive gated-out measurements after which the filter re-initializes
+ *  at the new measurement — a persistent jump is a real relocation (node set
+ *  change, dead zone), not a spike, and must not lock the track out. */
+const MAX_CONSECUTIVE_REJECTIONS = 5;
 
 interface Axis1DState {
   pos: number;
@@ -60,46 +78,79 @@ interface Axis1DState {
 }
 
 function freshAxisState(): Axis1DState {
-  return { pos: 0, vel: 0, pPp: 1.0, pPv: 0, pVv: 1.0 };
+  return { pos: 0, vel: 0, pPp: 1.0, pPv: 0, pVv: INIT_VEL_VARIANCE };
 }
 
-/** Predict one axis forward by dt (constant-velocity model), in place. */
-function predictAxis(s: Axis1DState, dt: number, qPos: number): void {
-  s.pos = s.pos + s.vel * dt;
-  // vel unchanged (constant-velocity model)
-  const pPp = s.pPp + 2 * dt * s.pPv + dt * dt * s.pVv + qPos;
-  const pPv = s.pPv + dt * s.pVv;
-  const pVv = s.pVv + Q_VEL;
-  s.pPp = pPp;
-  s.pPv = pPv;
-  s.pVv = pVv;
+/** State initialized directly at a measurement (no pull from the origin). */
+function axisStateAt(measurement: number, r: number): Axis1DState {
+  return { pos: measurement, vel: 0, pPp: r, pPv: 0, pVv: INIT_VEL_VARIANCE };
+}
+
+/** Predict one axis forward by dt (constant-velocity model). */
+function predictAxis(s: Axis1DState, dt: number, qPos: number): Axis1DState {
+  const qScale = Math.max(1, dt / REFERENCE_DT_S);
+  return {
+    pos: s.pos + s.vel * dt,
+    vel: s.vel, // constant-velocity model
+    pPp: s.pPp + 2 * dt * s.pPv + dt * dt * s.pVv + qPos * qScale,
+    pPv: s.pPv + dt * s.pVv,
+    pVv: s.pVv + Q_VEL * qScale,
+  };
 }
 
 /**
- * Update one axis with a position measurement, in place. Returns false (and
- * leaves state at its predicted value) when the measurement is gated out as
- * an outlier — the caller keeps predicting rather than applying it.
+ * Update one axis with a position measurement. Returns null when the
+ * measurement is gated out as an outlier — the caller keeps the predicted
+ * state rather than applying it.
  */
-function updateAxis(s: Axis1DState, measurement: number, r: number): boolean {
+function updateAxis(s: Axis1DState, measurement: number, r: number): Axis1DState | null {
   const y = measurement - s.pos; // innovation
   const S = s.pPp + r; // innovation covariance (scalar: H=[1,0])
   if (Math.abs(y) > GATE_SIGMA_MULT * Math.sqrt(S)) {
-    return false;
+    return null;
   }
   const kPos = s.pPp / S;
   const kVel = s.pPv / S;
-  s.pos = s.pos + kPos * y;
-  s.vel = s.vel + kVel * y;
-  s.pPp = (1 - kPos) * s.pPp;
-  s.pPv = (1 - kPos) * s.pPv;
-  s.pVv = s.pVv - kVel * s.pPv;
-  return true;
+  return {
+    pos: s.pos + kPos * y,
+    vel: s.vel + kVel * y,
+    pPp: (1 - kPos) * s.pPp,
+    pPv: (1 - kPos) * s.pPv,
+    // P11' = P11 − K1·P01 with the PRE-update P01 (previously used the
+    // already-shrunk P01, under-reducing velocity variance every tick).
+    pVv: s.pVv - kVel * s.pPv,
+  };
+}
+
+interface AxisTrack {
+  state: Axis1DState;
+  consecutiveRejections: number;
+}
+
+/**
+ * Apply one measurement to one axis. Axes gate independently (as validated
+ * against the real sessions): a rejected tick keeps the predicted state, and
+ * MAX_CONSECUTIVE_REJECTIONS in a row re-initializes that axis at the
+ * measurement instead of locking the track out.
+ */
+function stepAxis(track: AxisTrack, measurement: number, r: number): { track: AxisTrack; rejected: boolean } {
+  const next = updateAxis(track.state, measurement, r);
+  if (next) return { track: { state: next, consecutiveRejections: 0 }, rejected: false };
+  const streak = track.consecutiveRejections + 1;
+  if (streak >= MAX_CONSECUTIVE_REJECTIONS) {
+    return { track: { state: axisStateAt(measurement, r), consecutiveRejections: 0 }, rejected: true };
+  }
+  return { track: { state: track.state, consecutiveRejections: streak }, rejected: true };
 }
 
 export class FusedPositionKalman {
   private xAxis: Axis1DState = freshAxisState();
   private zAxis: Axis1DState = freshAxisState();
+  private xRejectStreak = 0;
+  private zRejectStreak = 0;
   private lastMs: number | null = null;
+  private initialized = false;
+  private rejectedCount = 0;
 
   /** Advance both axes by the elapsed time since the last predict/update. */
   public predict(nowMs: number): void {
@@ -108,26 +159,68 @@ export class FusedPositionKalman {
         ? MIN_DT_S
         : Math.max(MIN_DT_S, Math.min(MAX_DT_S, (nowMs - this.lastMs) / 1000));
     this.lastMs = nowMs;
-    predictAxis(this.xAxis, dt, Q_POS_X);
-    predictAxis(this.zAxis, dt, Q_POS_Z);
+    if (!this.initialized) return; // nothing to propagate before the first fix
+    this.xAxis = predictAxis(this.xAxis, dt, Q_POS_X);
+    this.zAxis = predictAxis(this.zAxis, dt, Q_POS_Z);
   }
 
   /** Correct both axes with a raw fused [x, z] measurement. */
   public update(measurement: [number, number]): void {
-    updateAxis(this.xAxis, measurement[0], R_X);
-    updateAxis(this.zAxis, measurement[1], R_Z);
+    const [mx, mz] = measurement;
+    if (!this.initialized) {
+      this.reinitializeAt(mx, mz);
+      return;
+    }
+    const x = stepAxis({ state: this.xAxis, consecutiveRejections: this.xRejectStreak }, mx, R_X);
+    const z = stepAxis({ state: this.zAxis, consecutiveRejections: this.zRejectStreak }, mz, R_Z);
+    this.xAxis = x.track.state;
+    this.xRejectStreak = x.track.consecutiveRejections;
+    this.zAxis = z.track.state;
+    this.zRejectStreak = z.track.consecutiveRejections;
+    if (x.rejected || z.rejected) this.rejectedCount++;
   }
 
   public getState(): { x: number; z: number; vx: number; vz: number } {
     return { x: this.xAxis.pos, z: this.zAxis.pos, vx: this.xAxis.vel, vz: this.zAxis.vel };
   }
 
+  /** Diagonal covariance (position/velocity variance per axis). */
+  public getVariance(): { pxx: number; pzz: number; vxx: number; vzz: number } {
+    return { pxx: this.xAxis.pPp, pzz: this.zAxis.pPp, vxx: this.xAxis.pVv, vzz: this.zAxis.pVv };
+  }
+
+  /** Full 2x2 covariance of the x axis (diagnostics/tests). */
+  public getCovarianceX(): { pp: number; pv: number; vv: number } {
+    return { pp: this.xAxis.pPp, pv: this.xAxis.pPv, vv: this.xAxis.pVv };
+  }
+
+  public measurementVarianceX(): number {
+    return R_X;
+  }
+
+  /** Total measurements gated out as outliers since construction/reset. */
+  public getRejectedCount(): number {
+    return this.rejectedCount;
+  }
+
   /** Replace both axes' state, mirroring TrackingProcessor.reset()'s
-   *  replace-the-instance pattern — call on a node-mode flip so stale
-   *  velocity/covariance doesn't leak into the new mode's first tick. */
+   *  replace-the-instance pattern — call on a node-mode or active-node-set
+   *  change so stale velocity/covariance doesn't leak into the next fix. */
   public reset(): void {
     this.xAxis = freshAxisState();
     this.zAxis = freshAxisState();
     this.lastMs = null;
+    this.initialized = false;
+    this.xRejectStreak = 0;
+    this.zRejectStreak = 0;
+    this.rejectedCount = 0;
+  }
+
+  private reinitializeAt(x: number, z: number): void {
+    this.xAxis = axisStateAt(x, R_X);
+    this.zAxis = axisStateAt(z, R_Z);
+    this.initialized = true;
+    this.xRejectStreak = 0;
+    this.zRejectStreak = 0;
   }
 }

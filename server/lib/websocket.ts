@@ -945,7 +945,8 @@ export class SignalProcessingServer {
     // turning ISAR off silently disabled fused_two_node/fused_room entirely.
     const musicReady =
       this.config.isarEnabled && this.sampleBuffer.length >= this.config.arrayLength;
-    if (musicReady || this.resolveLiveNodeMode() !== "single_node") {
+    const detectionRan = musicReady || this.resolveLiveNodeMode() !== "single_node";
+    if (detectionRan) {
       const { peak, trackedTarget } = musicReady
         ? this.runMusicTracking(estimate.timestamp, sample)
         : this.skipMusicTracking();
@@ -1312,10 +1313,9 @@ export class SignalProcessingServer {
       currentDistanceCm = pdpResult.distanceCm;
     }
 
-    if (
-      (!this.config.isarEnabled || this.sampleBuffer.length < this.config.arrayLength) &&
-      this.currentTargetState.target_visible
-    ) {
+    // Single-node mode with no usable MUSIC window has no detector this tick;
+    // fused modes always ran detection above and own their hold/clear lifecycle.
+    if (!detectionRan && this.currentTargetState.target_visible) {
       this.clearTargetArtifacts("insufficient_window");
       this.broadcastTargetState(
         emptyTargetState({

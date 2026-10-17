@@ -49,7 +49,7 @@ test("FusedPositionKalman: repeated measurement at a fixed point converges near 
   assert.ok(Math.abs(state.z - 3) < 0.2, `z ${state.z} should converge near 3`);
 });
 
-test("FusedPositionKalman: starts at the origin with zero velocity before any update", () => {
+test("FusedPositionKalman: reports the origin with zero velocity before any update", () => {
   const kf = new FusedPositionKalman();
   assert.deepEqual(kf.getState(), { x: 0, z: 0, vx: 0, vz: 0 });
 });
@@ -135,6 +135,73 @@ test("FusedPositionKalman: reset returns to the zero-velocity origin state", () 
   }
   kf.reset();
   assert.deepEqual(kf.getState(), { x: 0, z: 0, vx: 0, vz: 0 });
+});
+
+// ── Phase 3 correctness fixes ───────────────────────────────────────────
+
+test("FusedPositionKalman: the first measurement initializes the state (no pull from the origin)", () => {
+  const kf = new FusedPositionKalman();
+  kf.predict(1000);
+  kf.update([1.8, -2.4]);
+  const s = kf.getState();
+  assert.equal(s.x, 1.8);
+  assert.equal(s.z, -2.4);
+  assert.equal(s.vx, 0);
+  assert.equal(s.vz, 0);
+});
+
+test("FusedPositionKalman: process noise scales with gap length beyond the reference tick", () => {
+  const velVarAfter = (gapMs: number) => {
+    const kf = new FusedPositionKalman();
+    kf.predict(0);
+    kf.update([0, 0]);
+    const before = kf.getVariance().vxx;
+    kf.predict(gapMs);
+    return kf.getVariance().vxx - before;
+  };
+  const tick = velVarAfter(55);
+  const burst = velVarAfter(10);
+  const gap = velVarAfter(275); // 5x the reference tick, under the 0.3 s cap
+  // At/below the validated ~55 ms tick, Q is the validated per-tick value.
+  assert.ok(Math.abs(burst - tick) < 1e-12, `burst ${burst} vs tick ${tick}`);
+  // A 5x longer gap must add 5x the velocity uncertainty, not the same.
+  assert.ok(Math.abs(gap / tick - 5) < 1e-9, `gap/tick = ${gap / tick}`);
+});
+
+test("FusedPositionKalman: velocity variance shrinks by the PRE-update cross-covariance", () => {
+  // Analytic single-step check of the scalar update with H=[1,0]:
+  //   S = P00 + R, K = [P00, P01]/S
+  //   P11' = P11 - P01·P01/S   (uses the old P01)
+  const kf = new FusedPositionKalman();
+  kf.predict(0);
+  kf.update([0, 0]);
+  kf.predict(100);
+  const before = kf.getCovarianceX();
+  kf.update([0, 0]);
+  const after = kf.getCovarianceX();
+  const S = before.pp + kf.measurementVarianceX();
+  const expectedVv = before.vv - (before.pv * before.pv) / S;
+  assert.ok(Math.abs(after.vv - expectedVv) < 1e-12, `vv ${after.vv} expected ${expectedVv}`);
+});
+
+test("FusedPositionKalman: a real jump persisting 5+ ticks re-initializes instead of locking out", () => {
+  const kf = new FusedPositionKalman();
+  let t = 0;
+  for (let i = 0; i < 40; i++) {
+    t += 50;
+    kf.predict(t);
+    kf.update([0, 0]);
+  }
+  // Person reappears 3 m away (e.g. node set changed / walked through a
+  // dead zone): every tick is outside the 3σ gate at first.
+  for (let i = 0; i < 6; i++) {
+    t += 50;
+    kf.predict(t);
+    kf.update([3, 0]);
+  }
+  const s = kf.getState();
+  assert.ok(Math.abs(s.x - 3) < 0.2, `filter must follow a persistent jump, x=${s.x}`);
+  assert.ok(kf.getRejectedCount() >= 5, "rejections must be counted for diagnostics");
 });
 
 // ── Real recorded 4-node fused_room data ────────────────────────────────

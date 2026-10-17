@@ -398,8 +398,15 @@ test("fused_room: radialTarget broadcast and roomFusedSnapshot both reflect the 
   // tick (no `balance` field -> processFrame's fused_room branch) so this
   // test isolates the wiring under test: does radX/radZ/roomFusedSnapshot
   // actually read the Kalman-filtered output, or the raw value below?
-  const rawFused = { x: 1.23, z: -0.45, distToNearestNodeM: 1, classifierCorroboration: "inconclusive", maxMotion: 1 };
-  server.computeFusedTarget = () => rawFused;
+  // Alternating raw positions: the filter initializes at the first raw
+  // value, so a constant input would make filtered == raw and prove nothing.
+  let tick = 0;
+  let rawFused = { x: 1.23, z: -0.45, distToNearestNodeM: 1, classifierCorroboration: "inconclusive", maxMotion: 1 };
+  server.computeFusedTarget = () => {
+    const jitter = tick++ % 2 === 0 ? 0 : 0.1;
+    rawFused = { ...rawFused, x: 1.23 + jitter, z: -0.45 - jitter };
+    return rawFused;
+  };
 
   // The MUSIC/point-cloud/DBSCAN/classification/fusion block only runs once
   // this.sampleBuffer reaches config.arrayLength (16) -- one sample is
@@ -467,6 +474,10 @@ test("fused_room localization still runs when ISAR/MUSIC is disabled", () => {
   const radial = lastRadialTarget(dashboard);
   assert.ok(radial, "fused localization must not depend on the ISAR/MUSIC toggle");
   assert.equal(radial!.positionBasis, "fused_room_centroid");
+  // ...and must not be wiped straight after broadcast by the single-node
+  // "insufficient_window" clear.
+  assert.equal(server.currentTargetState.target_visible, true, "fused target must stay visible");
+  assert.ok(server.currentRadialTarget, "fused radialTarget must not be cleared");
 });
 
 test("micro-Doppler classifier is fed the per-node background-subtracted residual", () => {
