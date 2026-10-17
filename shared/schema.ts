@@ -273,6 +273,17 @@ export const radialTargetSchema = z.object({
   classifierCorroboration: z
     .enum(["confirmed", "contradicted", "inconclusive", "not_evaluated"])
     .optional(),
+  // Phase-1 bug audit: whether x/z is grounded in real two-node/N-node
+  // cross-node fusion geometry, or derived from the single-antenna MUSIC AoA
+  // angle that tracking.ts documents as carrying no physically valid spatial
+  // aperture on this hardware. Lets a consumer of `radialTarget` alone (e.g.
+  // recording-export.ts) tell the two apart without cross-referencing the
+  // separately-broadcast `targetState.node_mode`. `fused_room_centroid` is the
+  // 3-4 node perturbation-weighted 2-D centroid (fuseNodeTargets) — not
+  // ranging, and confined to the anchors' convex hull.
+  positionBasis: z
+    .enum(["fused_1d", "fused_room_centroid", "synthetic_single_node_aoa"])
+    .default("fused_1d"),
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 
@@ -368,6 +379,21 @@ export type NodeFeatureState = z.infer<typeof nodeFeatureStateSchema>;
 // nodeFeatures WS payload: latest fresh feature state per node.
 export const nodeFeatureStatesSchema = z.array(nodeFeatureStateSchema);
 
+// Per-node CSI signal summary: the max-power subcarrier's amplitude and
+// phase from the most recent frame (same representative sample already used
+// as the amplitude-window fallback in recordNodeAmplitude) — a live
+// diagnostic readout, not a spatial measurement.
+export const nodeSignalStateSchema = z.object({
+  node_id: z.number(),
+  amplitude: z.number(),
+  phase_deg: z.number(),
+  age_ms: z.number(), // ms since the sample was received (server clock)
+});
+export type NodeSignalState = z.infer<typeof nodeSignalStateSchema>;
+
+// nodeSignal WS payload: latest signal summary per node.
+export const nodeSignalStatesSchema = z.array(nodeSignalStateSchema);
+
 export const targetDebugSchema = z.object({
   hardware_queue_length: z.number(),
   last_sample_rx_ms: z.number().nullable(),
@@ -440,6 +466,7 @@ export const wsMessageTypeSchema = z.enum([
   "targetDebug",
   "nodes",
   "nodeFeatures",
+  "nodeSignal",
   "signalField",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
@@ -462,6 +489,7 @@ export const streamFrameSchema = z.object({
     targetDebugSchema,
     z.array(sensorNodeSchema),
     nodeFeatureStatesSchema,
+    nodeSignalStatesSchema,
     signalFieldSchema,
   ]),
 });

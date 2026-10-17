@@ -428,3 +428,122 @@ test("fused_room: radialTarget broadcast and roomFusedSnapshot both reflect the 
   assert.equal(lastRadial.x, filteredState.x, "radialTarget.x must be the filtered position, not raw fused.x");
   assert.equal(lastRadial.z, filteredState.z, "radialTarget.z must be the filtered position, not raw fused.z");
 });
+
+// ── Phase 1 framework fixes (RuView port plan) ─────────────────────────────
+
+const STUB_ROOM_FUSED = { x: 0.8, z: -1.1, distToNearestNodeM: 1, classifierCorroboration: "inconclusive", maxMotion: 1 };
+
+function newFourNodeRoomServer(): { server: any; dashboard: ReturnType<typeof makeClient> } {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+  for (const nodeId of [1, 2, 3, 4]) {
+    ingestNoisyAmplitudes(server, nodeId, [10, 10, 10, 10], 20);
+  }
+  server.computeFusedTarget = () => ({ ...STUB_ROOM_FUSED });
+  return { server, dashboard };
+}
+
+function lastRadialTarget(dashboard: ReturnType<typeof makeClient>) {
+  const msgs = dashboard.sent.filter((m: Captured) => m.type === "radialTarget" && m.data);
+  return msgs.length ? (msgs[msgs.length - 1].data as Record<string, unknown>) : undefined;
+}
+
+test("fused_room radialTarget is labeled fused_room_centroid, not the 1-D two-node basis", () => {
+  const { server, dashboard } = newFourNodeRoomServer();
+  for (let i = 0; i < server.config.arrayLength; i++) server.processFrame();
+
+  const radial = lastRadialTarget(dashboard);
+  assert.ok(radial, "sanity: a fused_room radialTarget must broadcast");
+  assert.equal(radial!.positionBasis, "fused_room_centroid");
+});
+
+test("fused_room localization still runs when ISAR/MUSIC is disabled", () => {
+  const { server, dashboard } = newFourNodeRoomServer();
+  server.config.isarEnabled = false;
+  server.processFrame();
+  server.processFrame();
+
+  const radial = lastRadialTarget(dashboard);
+  assert.ok(radial, "fused localization must not depend on the ISAR/MUSIC toggle");
+  assert.equal(radial!.positionBasis, "fused_room_centroid");
+});
+
+test("micro-Doppler classifier is fed the per-node background-subtracted residual", () => {
+  const server = newProcessingServer();
+  server.config.clutterRemovalEnabled = true;
+  server.config.isarEnabled = false;
+  const fed: number[] = [];
+  const realPush = server.microDopplerClassifier.push.bind(server.microDopplerClassifier);
+  server.microDopplerClassifier.push = (v: number) => {
+    fed.push(v);
+    return realPush(v);
+  };
+  server.computeFusedTarget = () => null;
+
+  // Two nodes with very different but CONSTANT complex channels. A shared
+  // subtractor would see node-to-node differences as "motion"; the old
+  // |h1Proc − h1| input was the background mean (~|h1|), never ~0.
+  const baseTs = Date.now();
+  for (let i = 0; i < 12; i++) {
+    for (const [nodeId, h] of [[1, { re: 20, im: 5 }], [2, { re: 2, im: 1 }]] as const) {
+      server.ingestSample({
+        timestamp: baseTs + i * 20,
+        h1: h,
+        h2: h,
+        rssi: -45,
+        nodeId,
+        amplitudes: [10, 10, 10],
+      });
+    }
+  }
+  for (let i = 0; i < 16; i++) server.processFrame();
+
+  assert.ok(fed.length > 0, "sanity: classifier must have been fed");
+  for (const v of fed) {
+    assert.ok(Math.abs(v) < 1e-9, `constant per-node channel must yield ~0 residual, got ${v}`);
+  }
+});
+
+test("hardware queue is bounded per node so a 4-node burst cannot pin it at the global cap", () => {
+  const server = newProcessingServer();
+  for (const nodeId of [1, 2, 3, 4]) {
+    ingestNoisyAmplitudes(server, nodeId, [10, 11, 12], 200);
+  }
+  const queued: number[] = server.hardwareSampleQueue.map((s: { nodeId?: number }) => s.nodeId ?? 1);
+  for (const nodeId of [1, 2, 3, 4]) {
+    const count = queued.filter((id) => id === nodeId).length;
+    assert.ok(count > 0, `node ${nodeId} must still be queued`);
+    assert.ok(count <= 8, `node ${nodeId} has ${count} queued samples; per-node cap is 8`);
+  }
+  // The newest sample of each node must be the one retained.
+  const node1 = server.hardwareSampleQueue.filter((s: { nodeId?: number }) => s.nodeId === 1);
+  const newestTs = Math.max(...node1.map((s: { timestamp: number }) => s.timestamp));
+  assert.equal(node1[node1.length - 1].timestamp, newestTs);
+});
+
+test("targetDebug reports fps and motion for every anchored node, not just 1 and 2", () => {
+  const server = newProcessingServer();
+  for (const nodeId of [1, 2, 3, 4]) {
+    ingestNoisyAmplitudes(server, nodeId, [10, 11, 12], 20);
+  }
+  server.updateTargetDebug();
+  const debug = server.currentTargetDebug;
+  for (const key of ["1", "2", "3", "4"]) {
+    assert.ok(key in debug.node_fps, `node_fps must include node ${key}`);
+    assert.ok(key in debug.node_motion, `node_motion must include node ${key}`);
+  }
+});
+
+test("trackActiveNodeSet reports join/leave transitions exactly once", () => {
+  const server = newProcessingServer();
+  ingestSampleFor(server, 1);
+  ingestSampleFor(server, 2);
+  ingestSampleFor(server, 3);
+  assert.deepEqual(server.trackActiveNodeSet(), { changed: true, joined: [1, 2, 3], left: [] });
+  assert.deepEqual(server.trackActiveNodeSet(), { changed: false, joined: [], left: [] });
+
+  server.hardwareNodeLastSeenMs.set(2, Date.now() - 2000);
+  assert.deepEqual(server.trackActiveNodeSet(), { changed: true, joined: [], left: [2] });
+  assert.deepEqual(server.trackActiveNodeSet(), { changed: false, joined: [], left: [] });
+});

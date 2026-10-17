@@ -32,6 +32,13 @@ const MOTION_WINDOW_MS = Number.parseInt(
   process.env.PHANTOM_MOTION_WINDOW_MS ?? "1500",
   10,
 );
+/**
+ * Max queued legacy-chain samples kept PER NODE. processFrame consumes ~20
+ * samples/s while 4 nodes deliver ~200/s, so an unbounded-per-node queue sat
+ * pinned at the 1000 global cap and spent each tick discarding stale frames.
+ * Motion/fusion read the per-node amplitude windows, not this queue.
+ */
+const PER_NODE_QUEUE_CAP = 8;
 import {
   fuseTwoNodeTarget,
   fuseNodeTargets,
@@ -132,7 +139,12 @@ export class SignalProcessingServer {
   // unlike the MUSIC pseudo-spectrum which has no spatial meaning on
   // single-antenna boards.
   private heatmapAccumulator = new HeatmapAccumulator(0, 63, 64);
-  private backgroundSubtractor = new BackgroundSubtractor(50);
+  // One clutter model PER NODE: interleaved samples from 4 boards through a
+  // single shared subtractor measured node-to-node channel differences, not
+  // motion (each node sees a different static channel).
+  private backgroundSubtractors = new Map<number, BackgroundSubtractor>();
+  /** Live node set as of the last trackActiveNodeSet() call (sorted). */
+  private prevActiveNodeIds: number[] = [];
   private motionGate = new MotionGate();
   private dopplerComputer = new DopplerComputer();
   private trackingProcessor = new TrackingProcessor();
@@ -485,7 +497,7 @@ export class SignalProcessingServer {
     this.isStopping = false;
     this.status.isProcessing = true;
     this.heatmapAccumulator.reset();
-    this.backgroundSubtractor.reset();
+    this.backgroundSubtractors.clear();
     this.motionGate.reset();
     this.dopplerComputer.reset();
     this.trackingProcessor.reset();
@@ -599,7 +611,9 @@ export class SignalProcessingServer {
   private updateConfig(updates: Partial<ProcessingConfig>) {
     this.config = { ...this.config, ...updates };
     if (updates.clutterWindowSize !== undefined) {
-      this.backgroundSubtractor.setWindowSize(updates.clutterWindowSize);
+      for (const subtractor of Array.from(this.backgroundSubtractors.values())) {
+        subtractor.setWindowSize(updates.clutterWindowSize);
+      }
     }
 
     // Persist operator-adjusted motion thresholds so a restart doesn't revert
@@ -629,7 +643,7 @@ export class SignalProcessingServer {
     this.hardwareSampleQueue = [];
     this.hardwareNodeLastSeenMs.clear();
     this.nextHardwareQueueIndex = 0;
-    this.backgroundSubtractor.reset();
+    this.backgroundSubtractors.clear();
     this.motionGate.reset();
     this.dopplerComputer.reset();
     this.trackingProcessor.reset();
@@ -784,6 +798,13 @@ export class SignalProcessingServer {
     }
 
     let sample: CSISample;
+    const nodeSetChange = this.trackActiveNodeSet();
+    if (nodeSetChange.changed) {
+      // A different anchor set makes the fused centroid jump (e.g. 4→3
+      // nodes stays fused_room but drops a corner), so the position filter's
+      // velocity/covariance from the old geometry must not carry over.
+      this.fusedKalman.reset();
+    }
 
     // Ghost-target fix: with zero fresh nodes (none seen ≤1.5 s) there is no
     // live truth — purge any backlog and take the live-gap path immediately,
@@ -838,7 +859,7 @@ export class SignalProcessingServer {
     let dynamicAmplitude = 0;
 
     if (this.config.clutterRemovalEnabled) {
-      const dynamic = this.backgroundSubtractor.process(sample.h1, sample.h2);
+      const dynamic = this.backgroundSubtractorFor(sample.nodeId ?? 1).process(sample.h1, sample.h2);
       h1Proc = dynamic.h1Dynamic;
       h2Proc = dynamic.h2Dynamic;
       dynamicAmplitude = magnitude(h1Proc);
@@ -908,91 +929,23 @@ export class SignalProcessingServer {
     let currentLabel = "";
     let currentDistanceCm = 0;
 
-    if (
-      this.config.isarEnabled &&
-      this.sampleBuffer.length >= this.config.arrayLength
-    ) {
-      const spectrum = computeMUSICSpectrum(
-        this.sampleBuffer,
-        this.config.aoaRangeMin,
-        this.config.aoaRangeMax
-      );
-
-      const peak = findSpectrumPeak(spectrum);
-
-      const isarFrame = {
-        timestamp: estimate.timestamp,
-        spectrum,
-        peakAngle: peak.angle,
-        peakPower: peak.power,
-      };
-
-      this.broadcast("isarFrame", isarFrame);
-
-      // Heatmap: time × subcarrier amplitude waterfall from the real
-      // per-subcarrier vector (dB). Skipped when a packet carried no vector.
-      if (sample.amplitudes && sample.amplitudes.length > 0) {
-        this.heatmapAccumulator.addSpectrum(
-          estimate.timestamp,
-          sample.amplitudes.map((a, i) => ({
-            angle: i,
-            power: 20 * Math.log10(Math.max(a, 1e-3)),
-          })),
-        );
-        this.broadcast("heatmap", this.heatmapAccumulator.getData());
-      }
-
-      // ── 6. Point cloud from spectrum ──
-      const pointCloud: {
-        x: number;
-        y: number;
-        z: number;
-        amplitude: number;
-        timestamp: number;
-      }[] = [];
-      const maxPower = Math.max(...spectrum.map((s) => s.power));
-      const pThreshold = maxPower - 10;
-
-      for (const sp of spectrum) {
-        if (sp.power > pThreshold) {
-          const relPower = Math.max(0, sp.power - pThreshold) / 10;
-          const dist = 1 + (1 - relPower) * 4;
-          const thetaRad = (sp.angle * Math.PI) / 180;
-          pointCloud.push({
-            x: -dist * Math.sin(thetaRad),
-            z: dist * Math.cos(thetaRad),
-            // Single-antenna CSI carries no elevation information — points
-            // stay on the ground plane instead of a fabricated sine wobble.
-            y: 0,
-            amplitude: Math.pow(10, sp.power / 20),
-            timestamp: estimate.timestamp,
-          });
-        }
-      }
-
-      // Broadcast point cloud
-      this.pointCloudHistory.push(...pointCloud);
-      if (this.pointCloudHistory.length > 200) {
-        this.pointCloudHistory = this.pointCloudHistory.slice(-200);
-      }
-      this.broadcast("pointCloud", this.pointCloudHistory);
-
-      // ── 7. Advanced Tracking (DBSCAN + Kalman) ──
-      const trackedTarget = this.trackingProcessor.process(pointCloud);
-      if (trackedTarget) {
-        this.currentTrackedTarget = trackedTarget;
-        this.broadcast("trackedTarget", trackedTarget);
-      } else {
-        this.currentTrackedTarget = null;
-        this.broadcast("trackedTarget", null);
-      }
+    // MUSIC/point-cloud/DBSCAN is the single-node AoA path and stays behind
+    // the ISAR toggle. Fused localization (2+ live nodes) runs on the per-node
+    // amplitude windows, so it must not depend on that toggle — previously
+    // turning ISAR off silently disabled fused_two_node/fused_room entirely.
+    const musicReady =
+      this.config.isarEnabled && this.sampleBuffer.length >= this.config.arrayLength;
+    if (musicReady || this.resolveLiveNodeMode() !== "single_node") {
+      const { peak, trackedTarget } = musicReady
+        ? this.runMusicTracking(estimate.timestamp, sample)
+        : this.skipMusicTracking();
 
       // ── 10. Micro-Doppler Classification ──
-      const dynamicAmp = magnitude({
-        re: h1Proc.re - sample.h1.re,
-        im: h1Proc.im - sample.h1.im,
-      });
-      const classification = this.microDopplerClassifier.push(dynamicAmp);
+      // Fed the per-node clutter-removed residual. The previous input,
+      // |h1Proc − h1|, equals the background MEAN — a smooth, strongly
+      // autocorrelated signal that biased the mechanical-veto score (and was
+      // a constant 0 with clutter removal off).
+      const classification = this.microDopplerClassifier.push(dynamicAmplitude);
 
       // ── 11. PDP Ranging ──
       const pdpResult = this.pdpRanger.push(h1Proc, h2Proc, sample.rssi ?? -50);
@@ -1174,7 +1127,11 @@ export class SignalProcessingServer {
         // Phase-1 bug audit: `fused` is only truthy after computeFusedTarget
         // succeeded on real cross-node measurement; otherwise x/z came from
         // the synthetic single-antenna MUSIC AoA angle (see tracking.ts).
-        positionBasis: fused ? "fused_1d" : "synthetic_single_node_aoa",
+        positionBasis: !fused
+          ? "synthetic_single_node_aoa"
+          : nodeMode === "fused_room"
+            ? "fused_room_centroid"
+            : "fused_1d",
       };
 
       if ((nodeMode === "fused_two_node" || nodeMode === "fused_room") && !fused) {
@@ -1551,6 +1508,98 @@ export class SignalProcessingServer {
     });
   }
 
+  /**
+   * Single-node AoA stages: MUSIC spectrum → heatmap → point cloud →
+   * DBSCAN+Kalman tracking, with their broadcasts. Only runs while ISAR is
+   * enabled and the sample buffer is full (see processFrame).
+   */
+  private runMusicTracking(
+    timestamp: number,
+    sample: CSISample,
+  ): { peak: ReturnType<typeof findSpectrumPeak>; trackedTarget: TrackedTarget | null } {
+    const spectrum = computeMUSICSpectrum(
+      this.sampleBuffer,
+      this.config.aoaRangeMin,
+      this.config.aoaRangeMax
+    );
+    const peak = findSpectrumPeak(spectrum);
+    this.broadcast("isarFrame", {
+      timestamp,
+      spectrum,
+      peakAngle: peak.angle,
+      peakPower: peak.power,
+    });
+
+    // Heatmap: time × subcarrier amplitude waterfall from the real
+    // per-subcarrier vector (dB). Skipped when a packet carried no vector.
+    if (sample.amplitudes && sample.amplitudes.length > 0) {
+      this.heatmapAccumulator.addSpectrum(
+        timestamp,
+        sample.amplitudes.map((a, i) => ({
+          angle: i,
+          power: 20 * Math.log10(Math.max(a, 1e-3)),
+        })),
+      );
+      this.broadcast("heatmap", this.heatmapAccumulator.getData());
+    }
+
+    // ── 6. Point cloud from spectrum ──
+    const pointCloud: {
+      x: number;
+      y: number;
+      z: number;
+      amplitude: number;
+      timestamp: number;
+    }[] = [];
+    const maxPower = Math.max(...spectrum.map((s) => s.power));
+    const pThreshold = maxPower - 10;
+    for (const sp of spectrum) {
+      if (sp.power > pThreshold) {
+        const relPower = Math.max(0, sp.power - pThreshold) / 10;
+        const dist = 1 + (1 - relPower) * 4;
+        const thetaRad = (sp.angle * Math.PI) / 180;
+        pointCloud.push({
+          x: -dist * Math.sin(thetaRad),
+          z: dist * Math.cos(thetaRad),
+          // Single-antenna CSI carries no elevation information — points
+          // stay on the ground plane instead of a fabricated sine wobble.
+          y: 0,
+          amplitude: Math.pow(10, sp.power / 20),
+          timestamp,
+        });
+      }
+    }
+    this.pointCloudHistory.push(...pointCloud);
+    if (this.pointCloudHistory.length > 200) {
+      this.pointCloudHistory = this.pointCloudHistory.slice(-200);
+    }
+    this.broadcast("pointCloud", this.pointCloudHistory);
+
+    // ── 7. Advanced Tracking (DBSCAN + Kalman) ──
+    const trackedTarget = this.trackingProcessor.process(pointCloud);
+    this.currentTrackedTarget = trackedTarget;
+    this.broadcast("trackedTarget", trackedTarget);
+    return { peak, trackedTarget };
+  }
+
+  /** ISAR off / buffer not full: no AoA bearing and no DBSCAN track this tick. */
+  private skipMusicTracking(): { peak: ReturnType<typeof findSpectrumPeak>; trackedTarget: null } {
+    if (this.currentTrackedTarget) {
+      this.currentTrackedTarget = null;
+      this.broadcast("trackedTarget", null);
+    }
+    return { peak: findSpectrumPeak([]), trackedTarget: null };
+  }
+
+  private backgroundSubtractorFor(nodeId: number): BackgroundSubtractor {
+    let subtractor = this.backgroundSubtractors.get(nodeId);
+    if (!subtractor) {
+      subtractor = new BackgroundSubtractor(this.config.clutterWindowSize);
+      this.backgroundSubtractors.set(nodeId, subtractor);
+    }
+    return subtractor;
+  }
+
   private nodeFpsFor(nodeId: number): number {
     // Same wall-clock cutoff as nodeMotionFor: a silent node's fps must decay
     // to 0 rather than freezing at its last live value.
@@ -1563,6 +1612,7 @@ export class SignalProcessingServer {
 
   private updateTargetDebug() {
     const nowMs = Date.now();
+    const anchoredIds = Object.keys(NODE_ANCHORS).map(Number);
     this.currentTargetDebug = {
       hardware_queue_length: this.hardwareSampleQueue.length,
       last_sample_rx_ms: this.lastSampleRxMs,
@@ -1572,11 +1622,10 @@ export class SignalProcessingServer {
       radial_target_present: Boolean(this.currentRadialTarget),
       tracked_target_present: Boolean(this.currentTrackedTarget),
       hold_state: resolveLiveHoldState(this.lastTruthfulTargetUpdateMs || null, nowMs),
-      node_fps: { "1": this.nodeFpsFor(1), "2": this.nodeFpsFor(2) },
-      node_motion: {
-        "1": Math.round(this.nodeMotionFor(1).motion * 1000) / 1000,
-        "2": Math.round(this.nodeMotionFor(2).motion * 1000) / 1000,
-      },
+      node_fps: Object.fromEntries(anchoredIds.map((id) => [String(id), this.nodeFpsFor(id)])),
+      node_motion: Object.fromEntries(
+        anchoredIds.map((id) => [String(id), Math.round(this.nodeMotionFor(id).motion * 1000) / 1000]),
+      ),
     };
     this.broadcast("targetDebug", this.currentTargetDebug);
   }
@@ -1629,6 +1678,22 @@ export class SignalProcessingServer {
       }
     }
     return active.sort((a, b) => a - b);
+  }
+
+  /**
+   * Compare the live node set with the previous call's and log each node
+   * joining or going stale exactly once. Previously a node aging out of the
+   * 1.5 s window was completely silent, so a mid-session dropout (and the
+   * resulting fused-centroid jump) could not be diagnosed from logs.
+   */
+  private trackActiveNodeSet(): { changed: boolean; joined: number[]; left: number[] } {
+    const active = this.activeHardwareNodeIds();
+    const joined = active.filter((id) => !this.prevActiveNodeIds.includes(id));
+    const left = this.prevActiveNodeIds.filter((id) => !active.includes(id));
+    for (const id of joined) console.log(`[NODES] node ${id} live (active: ${active.join(",") || "none"})`);
+    for (const id of left) console.warn(`[NODES] node ${id} stale >1.5s (active: ${active.join(",") || "none"})`);
+    this.prevActiveNodeIds = active;
+    return { changed: joined.length > 0 || left.length > 0, joined, left };
   }
 
   /**
@@ -2036,7 +2101,8 @@ export class SignalProcessingServer {
     }
 
     // fps sanity: warn (≤ every 10 s) if an active node isn't near the ~40 fps
-    // the 3 s window assumes. Ties to the firmware self-ping lineage question.
+    // the motion window (MOTION_WINDOW_MS) assumes. Ties to the firmware
+    // self-ping lineage question.
     const now = Date.now();
     if (now - this.lastNodeFpsLogMs > 10000) {
       for (const key of Object.keys(NODE_ANCHORS).map(Number)) {
@@ -2046,7 +2112,7 @@ export class SignalProcessingServer {
           const fps = win.length / spanS;
           if (fps < 20) {
             console.warn(
-              `[NODES] node ${key} ~${fps.toFixed(0)} fps (<20) — 3 s window assumes ~40 fps; check firmware self-ping yield`,
+              `[NODES] node ${key} ~${fps.toFixed(0)} fps (<20) — ${MOTION_WINDOW_MS} ms motion window assumes ~40 fps; check firmware self-ping yield`,
             );
           }
         }
@@ -2150,7 +2216,7 @@ export class SignalProcessingServer {
     // Forward raw sample to the AI inference client
     this.broadcastToAI("rawSample", sample);
 
-    this.hardwareSampleQueue.push(sample);
+    this.enqueueBoundedPerNode(sample);
     this.hardwareNodeLastSeenMs.set(sample.nodeId ?? 1, Date.now());
     this.recordNodeAmplitude(sample);
     this.lastSampleRxMs = Date.now();
@@ -2175,6 +2241,26 @@ export class SignalProcessingServer {
     if (this.hardwareSampleQueue.length > 1000) {
       this.hardwareSampleQueue = this.hardwareSampleQueue.slice(-1000);
     }
+  }
+
+  /** Append a sample, evicting that node's oldest queued sample past PER_NODE_QUEUE_CAP. */
+  private enqueueBoundedPerNode(sample: CSISample): void {
+    const nodeId = sample.nodeId ?? 1;
+    let nodeCount = 0;
+    let oldestIndex = -1;
+    for (let i = 0; i < this.hardwareSampleQueue.length; i++) {
+      if ((this.hardwareSampleQueue[i].nodeId ?? 1) === nodeId) {
+        if (oldestIndex < 0) oldestIndex = i;
+        nodeCount++;
+      }
+    }
+    if (nodeCount >= PER_NODE_QUEUE_CAP && oldestIndex >= 0) {
+      this.hardwareSampleQueue.splice(oldestIndex, 1);
+      if (this.nextHardwareQueueIndex > oldestIndex) {
+        this.nextHardwareQueueIndex--;
+      }
+    }
+    this.hardwareSampleQueue.push(sample);
   }
 
   ingestSamples(samples: CSISample[]): void {
