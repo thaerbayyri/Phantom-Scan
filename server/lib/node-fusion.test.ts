@@ -11,6 +11,7 @@ import {
   computeGainNormalizedPerturbation,
   computeAgcNormalizedPerturbation,
   computeRadialTrends,
+  computePositionUncertaintyM,
   hasSingleNodePresenceEvidence,
   evaluateClassifierCorroboration,
   wasSuppressedByClassifier,
@@ -712,4 +713,24 @@ test("computeRadialTrends: walking toward node 3 approaches 3 and recedes from 1
 test("computeRadialTrends: speed inside the deadband is stable for every node", () => {
   const trends = computeRadialTrends({ x: 0.5, z: -1 }, { vx: 0.01, vz: -0.02 }, ROOM_ANCHORS);
   for (const id of [1, 2, 3, 4]) assert.equal(trends[id], "stable");
+});
+
+// ── Position uncertainty (display radius for the fused_room centroid) ───────
+
+test("computePositionUncertaintyM shrinks with stronger evidence and grows when one node dominates", () => {
+  const spread = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
+  const dominated = { 1: 0.85, 2: 0.05, 3: 0.05, 4: 0.05 };
+  const weak = computePositionUncertaintyM(spread, 0.1, 4);
+  const strong = computePositionUncertaintyM(spread, 1.0, 4);
+  const snapped = computePositionUncertaintyM(dominated, 1.0, 4);
+  assert.ok(strong < weak, `strong ${strong} should be < weak ${weak}`);
+  assert.ok(snapped > strong, `one dominant node (${snapped}) is less trustworthy than a spread (${strong})`);
+});
+
+test("computePositionUncertaintyM is bounded by the room size and never below a floor", () => {
+  const lo = computePositionUncertaintyM({ 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 }, 5, 4);
+  const hi = computePositionUncertaintyM({ 1: 1 }, 0, 4);
+  assert.ok(lo >= 0.3, `floor, got ${lo}`);
+  assert.ok(hi <= 0.6 * 4 + 1e-9, `cap, got ${hi}`);
+  assert.ok(Number.isFinite(computePositionUncertaintyM({}, Number.NaN, 0)));
 });

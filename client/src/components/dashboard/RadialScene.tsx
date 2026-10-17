@@ -194,6 +194,39 @@ function SignalRipple({ color = "#00ffcc" }: { color?: string }) {
 
 // Faint connector lines from the target to each node so the two per-node
 // distances are visually legible as segments.
+/**
+ * Translucent disc + ring of radius positionUncertaintyM around the smoothed
+ * target marker. The fused_room position is a coarse perturbation centroid, so
+ * the honest drawing is "somewhere inside this circle", not a precise dot.
+ * The radius is a heuristic display size (see computePositionUncertaintyM), not
+ * a measured error.
+ */
+function PositionUncertaintyRing({
+    radiusM,
+    positionRef,
+}: {
+    radiusM: number;
+    positionRef: React.MutableRefObject<THREE.Vector3>;
+}) {
+    const group = useRef<THREE.Group>(null);
+    useFrame(() => {
+        if (group.current) group.current.position.set(positionRef.current.x, 0.03, positionRef.current.z);
+    });
+    const outer = Math.max(0.15, radiusM);
+    return (
+        <group ref={group}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                <circleGeometry args={[outer, 64]} />
+                <meshBasicMaterial color="#38bdf8" transparent opacity={0.09} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[Math.max(0.05, outer - 0.04), outer, 64]} />
+                <meshBasicMaterial color="#38bdf8" transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+        </group>
+    );
+}
+
 function TargetLinks({ target, nodes }: { target: RadialTarget; nodes: SensorNode[] }) {
     const geometries = useMemo(
         () =>
@@ -647,6 +680,9 @@ export function RadialScene({
                             speedRef={smoothedSpeed}
                         />
                     ) : null}
+                    {fusedRoom && radialTarget.positionUncertaintyM !== undefined && (
+                        <PositionUncertaintyRing radiusM={radialTarget.positionUncertaintyM} positionRef={smoothedPosition} />
+                    )}
                     {showAxisMotionVector && (
                         <TargetMotionVector target={fusedArrowTarget ?? radialTarget} />
                     )}
@@ -662,7 +698,12 @@ export function RadialScene({
                                 anchorX="center"
                                 anchorY="middle"
                             >
-                                {targetState.node_mode === "fused_room" ? "room-centroid estimate" : "axis projection"}
+                                {targetState.node_mode === "fused_room"
+                                    ? "room-centroid estimate" +
+                                      (radialTarget.positionUncertaintyM !== undefined
+                                          ? ` ~ within ${radialTarget.positionUncertaintyM.toFixed(1)} m`
+                                          : "")
+                                    : "axis projection"}
                             </Text>
                         </Billboard>
                     )}

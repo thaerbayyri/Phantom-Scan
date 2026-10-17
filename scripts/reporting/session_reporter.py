@@ -49,6 +49,18 @@ else:
     )
 
 
+# Epoch timestamps above this are milliseconds (seconds would be year ~5138+).
+_MS_EPOCH_THRESHOLD = 1e11
+# A gap longer than this between frames is a dropout, not continuous movement.
+MAX_INTEGRATION_STEP_S = 1.0
+
+
+def _to_seconds(ts: float) -> float:
+    """Normalise an epoch timestamp that may be in ms (server) or s (python) to seconds."""
+    ts = float(ts)
+    return ts / 1000.0 if ts > _MS_EPOCH_THRESHOLD else ts
+
+
 class SessionReporter:
     """
     Aggregates CSI processing results over a session and generates reports.
@@ -142,7 +154,11 @@ class SessionReporter:
         if not self._started:
             self.start()
 
-        ts = pipeline_result.get("timestamp", time.time())
+        ts = _to_seconds(pipeline_result.get("timestamp", time.time()))
+        if "timestamp" in pipeline_result and not self._timestamps:
+            # Replayed/recorded frames: the session clock is the DATA clock,
+            # not the wall time the reporter happened to be started at.
+            self._start_time = ts
         self._timestamps.append(ts)
         self._frame_count += 1
 
@@ -218,7 +234,7 @@ class SessionReporter:
             Complete session report with classification, metrics, and timeline.
         """
         now = time.time()
-        end_time = self._end_time if self._end_time else now
+        end_time = self._end_time if self._end_time else (self._timestamps[-1] if self._timestamps else now)
         start_time = self._start_time if self._start_time else now
         duration = max(0.0, end_time - start_time)
 
@@ -390,18 +406,13 @@ class SessionReporter:
         avg_speed = float(np.mean(speeds))
         max_speed = float(np.max(speeds))
 
-        # Total distance: integrate speed over time
+        # Total distance: integrate speed over time. Timestamps are already
+        # normalised to seconds at ingestion (_to_seconds). A recording gap
+        # (node dropout) must not be integrated as continuous travel, so each
+        # step is capped at MAX_INTEGRATION_STEP_S.
         if len(self._timestamps) > 1:
-            dt_array = np.diff(self._timestamps) / 1000.0  # ms → s (if timestamps in ms)
-            # If timestamps look like they're in seconds already
-            if np.mean(dt_array) > 100:
-                dt_array = np.diff(self._timestamps)  # Already in seconds
-            elif np.mean(dt_array) > 1:
-                dt_array = dt_array  # Already in seconds
-            else:
-                dt_array = np.diff(self._timestamps)
-
-            total_dist = float(np.sum(speeds[1:] * np.abs(dt_array[:len(speeds)-1])))
+            dt_array = np.clip(np.abs(np.diff(self._timestamps)), 0.0, MAX_INTEGRATION_STEP_S)
+            total_dist = float(np.sum(speeds[1:len(dt_array) + 1] * dt_array[:len(speeds) - 1]))
         else:
             total_dist = avg_speed * duration_s
 

@@ -235,7 +235,16 @@ export class KalmanFilter {
         const S = this.add(this.multiply(HP, this.transpose(H)), this.R);
 
         // Kalman Gain: K = P*H'*inv(S)
-        const K = this.multiply(this.multiply(this.P, this.transpose(H)), this.invert3x3(S));
+        const Sinv = this.invert3x3(S);
+        if (Sinv === null) {
+            // Phase-1 bug audit: S was singular/near-singular — skip this
+            // update rather than injecting NaN/Infinity into tracked
+            // position/velocity, which would otherwise corrupt the track
+            // until the next trackingProcessor.reset().
+            console.warn("[Kalman] skipping update: singular innovation covariance");
+            return;
+        }
+        const K = this.multiply(this.multiply(this.P, this.transpose(H)), Sinv);
 
         // Update State: x = x + K*y
         for (let i = 0; i < 6; i++) {
@@ -298,12 +307,19 @@ export class KalmanFilter {
         return A[0].map((_, i) => A.map(row => row[i]));
     }
 
-    private invert3x3(m: number[][]): number[][] {
+    private invert3x3(m: number[][]): number[][] | null {
         // Standard 3x3 inversion
         const det =
             m[0][0] * (m[1][1] * m[2][2] - m[2][1] * m[1][2]) -
             m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
             m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+        // Phase-1 bug audit: a singular/near-singular S previously produced
+        // invDet = Infinity/NaN with no guard, silently corrupting the
+        // tracked state. Reject rather than propagate.
+        if (!Number.isFinite(det) || Math.abs(det) < 1e-9) {
+            return null;
+        }
 
         const invDet = 1 / det;
 

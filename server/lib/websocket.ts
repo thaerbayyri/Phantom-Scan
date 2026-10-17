@@ -29,6 +29,15 @@ import { compassBearingRad } from "@shared/bearing";
  * At the measured 20-40 fps a 1.5 s window still holds 30-60 frames — plenty
  * for the per-subcarrier temporal std. Override via PHANTOM_MOTION_WINDOW_MS.
  */
+/** No walking/running person exceeds this; faster reported speeds are filter artefacts. */
+const MAX_HUMAN_SPEED_MPS = 4;
+/**
+ * Contrast exponent for the fused_room centroid weights (excess^p). The old
+ * 2.0 (inherited from the 2-node balance) made the strongest node win almost
+ * outright; 1.0 keeps the estimate a genuine blend of the nodes that see the
+ * disturbance, and a lone strong node still pulls toward its corner.
+ */
+const ROOM_POSITION_CONTRAST_EXPONENT = 1.0;
 const MOTION_WINDOW_MS = Number.parseInt(
   process.env.PHANTOM_MOTION_WINDOW_MS ?? "1500",
   10,
@@ -49,6 +58,7 @@ import {
   computeGainNormalizedPerturbation,
   computeAgcNormalizedPerturbation,
   computeRadialTrends,
+  computePositionUncertaintyM,
   hasSingleNodePresenceEvidence,
   evaluateClassifierCorroboration,
   wasSuppressedByClassifier,
@@ -99,6 +109,7 @@ import {
   type GroundTruthTag,
   type RecordingRow,
   type RecordingSessionMeta,
+  type RoomRecordingExtras,
 } from "./recording-export";
 import * as fs from "fs";
 import * as path from "path";
@@ -222,6 +233,8 @@ export class SignalProcessingServer {
   private roomPresence = new RoomPresence();
   private lastRoomTier: PresenceTier = "absent";
   private lastNodeRises: Record<string, number> = {};
+  private lastNodeExcess: Record<string, number> = {};
+  private lastRoomUncertaintyM: number | undefined;
 
   // Smooths the raw per-tick fused x/z (fused_two_node and fused_room both
   // feed the same instance — mutually exclusive per tick) into a stable
@@ -493,6 +506,12 @@ export class SignalProcessingServer {
         // sidecar — it resets the sidecar's own activity-state motion
         // baseline (scripts/ai_inference.py), never a deterministic value.
         if (client && !client.isAI) {
+          // "Calibrate Empty Room" must also re-teach the REAL detector: restart
+          // every node's baseline (it re-warms for ~5 s from the room as it is
+          // now) and drop any held target, instead of only resetting the AI.
+          this.nodeBaselines.clear();
+          this.roomPresence.reset();
+          this.clearFusedSnapshot();
           this.broadcastToAI("calibrateBaseline", null);
           void this.auditClientAction(client, "ai_baseline_calibration_requested");
         }
@@ -1087,6 +1106,15 @@ export class SignalProcessingServer {
         const nowFusedMs = Date.now();
         this.fusedKalman.predict(nowFusedMs);
         this.fusedKalman.update([fused.x, fused.z]);
+        if (fused.balance === undefined) {
+          // fused_room: a weighted centroid of the anchors can never leave
+          // their bounding box, so anything outside is constant-velocity
+          // overshoot (test_3 reached z = −3.66 in a ±3 m room). Pull the
+          // filter state back in and cap the velocity at a human limit
+          // (test_3 reported 8 m/s after a re-init jump).
+          const b = this.anchorBounds();
+          this.fusedKalman.constrain(b.minX, b.maxX, b.minZ, b.maxZ, MAX_HUMAN_SPEED_MPS);
+        }
         const filteredPos = this.fusedKalman.getState();
         radX = filteredPos.x;
         radZ = filteredPos.z;
@@ -1187,6 +1215,7 @@ export class SignalProcessingServer {
           : nodeMode === "fused_room"
             ? "fused_room_centroid"
             : "fused_1d",
+        positionUncertaintyM: fused && nodeMode === "fused_room" ? fused.positionUncertaintyM : undefined,
       };
 
       if ((nodeMode === "fused_two_node" || nodeMode === "fused_room") && !fused) {
@@ -1406,6 +1435,7 @@ export class SignalProcessingServer {
             syncMarker: this.pendingSyncMarker,
             groundTruthTag: this.activeGroundTruthTag,
             classifierCorroboration: this.lastTickClassifierCorroboration,
+            roomExtras: this.buildRoomRecordingExtras(),
           }),
         );
         this.pendingSyncMarker = false;
@@ -1840,9 +1870,13 @@ export class SignalProcessingServer {
    * node's rise above its own empty-room level. The baseline is frozen while
    * a target is visible so a still person is not learned as "empty".
    */
-  private updateRoomPresence(activeIds: number[], nowMs: number): { tier: PresenceTier; rises: Record<number, number> } {
+  private updateRoomPresence(
+    activeIds: number[],
+    nowMs: number,
+  ): { tier: PresenceTier; rises: Record<number, number>; excesses: Record<number, number> } {
     const freeze = this.currentTargetState.target_visible;
     const rises: Record<number, number> = {};
+    const excesses: Record<number, number> = {};
     const tiers: PresenceTier[] = [];
     for (const id of activeIds) {
       let tracker = this.nodeBaselines.get(id);
@@ -1852,6 +1886,7 @@ export class SignalProcessingServer {
       }
       const update = tracker.update(computeAgcNormalizedPerturbation(this.nodeWindowFrames(id)), nowMs, freeze);
       rises[id] = update.rise;
+      excesses[id] = update.excess;
       tiers.push(update.tier);
     }
     // A node that dropped out (reboot, re-placement, long outage) must
@@ -1867,7 +1902,34 @@ export class SignalProcessingServer {
     this.lastNodeRises = Object.fromEntries(
       Object.entries(rises).map(([id, rise]) => [id, Math.round(rise * 1000) / 1000]),
     );
-    return { tier, rises };
+    this.lastNodeExcess = Object.fromEntries(
+      Object.entries(excesses).map(([id, v]) => [id, Math.round(v * 10000) / 10000]),
+    );
+    return { tier, rises, excesses };
+  }
+
+  /** fused_room columns for the session CSV (undefined outside fused_room / without a fresh target). */
+  private buildRoomRecordingExtras(): RoomRecordingExtras | undefined {
+    if (this.resolveLiveNodeMode() !== "fused_room") return undefined;
+    const snap = this.roomFusedSnapshot;
+    const fresh = snap !== null && Date.now() - snap.atMs <= 1500;
+    return {
+      tier: this.lastRoomTier,
+      excess: Object.fromEntries(Object.entries(this.lastNodeExcess).map(([id, v]) => [Number(id), v])),
+      trends: fresh ? computeRadialTrends({ x: snap.x, z: snap.z }, { vx: snap.vx, vz: snap.vz }, this.room.anchors) : {},
+      positionUncertaintyM: this.lastRoomUncertaintyM,
+    };
+  }
+
+  /** Bounding box of the configured anchors — the region a centroid can occupy. */
+  private anchorBounds(): { minX: number; maxX: number; minZ: number; maxZ: number } {
+    const pts = Object.values(this.room.anchors);
+    return {
+      minX: Math.min(...pts.map((p) => p.x)),
+      maxX: Math.max(...pts.map((p) => p.x)),
+      minZ: Math.min(...pts.map((p) => p.z)),
+      maxZ: Math.max(...pts.map((p) => p.z)),
+    };
   }
 
   /**
@@ -1885,8 +1947,8 @@ export class SignalProcessingServer {
   private computeRoomFusedTarget(
     activeIds: number[],
     classifier?: ClassifierGateInput,
-  ): (FusedTarget & { maxMotion: number; stationaryHold?: boolean }) | null {
-    const { tier, rises } = this.updateRoomPresence(activeIds, Date.now());
+  ): (FusedTarget & { maxMotion: number; stationaryHold?: boolean; positionUncertaintyM?: number }) | null {
+    const { tier, rises, excesses } = this.updateRoomPresence(activeIds, Date.now());
     const movingGate = tierAtLeast(tier, "present_moving");
     const stillHold = tier === "present_still" && this.roomFusedSnapshot !== null;
     const { suppress } = evaluateClassifierCorroboration(classifier);
@@ -1897,11 +1959,21 @@ export class SignalProcessingServer {
     const confidence = Math.min(1, maxRise / DEFAULT_TIER_THRESHOLDS.active);
     const samples: NodeFuseSample[] = activeIds.map((id) => ({
       id,
-      r: rises[id] ?? 0,
+      // Weight by ABSOLUTE excess above the node's own baseline, not by the
+      // relative rise: a node with a tiny baseline turns a small disturbance
+      // into a huge ratio and, with a contrast exponent, won the whole
+      // position (test_3 sat on node 2's corner for 40+ s).
+      r: excesses[id] ?? 0,
       motion: this.nodeMotionFor(id).motion, // display only; the gate is the tier above
       anchor: this.room.anchors[id],
     }));
-    const fusedRoom = movingGate ? fuseNodeTargets(samples, { motionThreshold: 0, classifier }) : null;
+    const fusedRoom = movingGate
+      ? fuseNodeTargets(samples, {
+          motionThreshold: 0,
+          classifier,
+          contrastExponent: ROOM_POSITION_CONTRAST_EXPONENT,
+        })
+      : null;
     if (fusedRoom) {
       return {
         x: fusedRoom.x,
@@ -1909,6 +1981,11 @@ export class SignalProcessingServer {
         distToNearestNodeM: fusedRoom.distToNearestNodeM,
         classifierCorroboration: fusedRoom.classifierCorroboration,
         maxMotion: confidence,
+        positionUncertaintyM: (this.lastRoomUncertaintyM = computePositionUncertaintyM(
+          fusedRoom.weights,
+          confidence,
+          Math.min(this.room.roomWidthM, this.room.roomDepthM),
+        )),
       };
     }
     const held = this.roomFusedSnapshot;
@@ -1922,6 +1999,7 @@ export class SignalProcessingServer {
       classifierCorroboration: evaluateClassifierCorroboration(classifier).corroboration,
       maxMotion: confidence,
       stationaryHold: true,
+      positionUncertaintyM: this.lastRoomUncertaintyM,
     };
   }
 
@@ -1941,7 +2019,7 @@ export class SignalProcessingServer {
 
   private computeFusedTarget(
     classifier?: ClassifierGateInput,
-  ): (FusedTarget & { maxMotion: number; stationaryHold?: boolean }) | null {
+  ): (FusedTarget & { maxMotion: number; stationaryHold?: boolean; positionUncertaintyM?: number }) | null {
     const activeIds = this.activeHardwareNodeIds();
 
     // fused_room (3-4 active nodes): adaptive-baseline presence gate +

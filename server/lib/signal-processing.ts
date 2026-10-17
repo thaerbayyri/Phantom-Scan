@@ -324,6 +324,13 @@ export class HeatmapAccumulator {
   }
 
   addSpectrum(timestamp: number, spectrum: AoASpectrumPoint[]) {
+    // Phase-1 bug audit: the reduce() below has no seed, so it throws on an
+    // empty spectrum. The current sole call site pre-filters to a non-empty
+    // array, but this guard makes the method safe on its own contract too.
+    if (spectrum.length === 0) {
+      return;
+    }
+
     if (this.startTime === 0) {
       this.startTime = timestamp;
     }
@@ -961,10 +968,14 @@ export class CSIDataParser {
         const h1 = obj.h1 as Record<string, number>;
         const h2 = obj.h2 as Record<string, number>;
 
+        // Phase-1 bug audit: was `||`, which coerces a legitimate 0 the same
+        // as a missing field, silently corrupting phase data for a
+        // genuinely-zero channel sample. `??` only falls through on
+        // null/undefined.
         return {
           timestamp: obj.timestamp as number,
-          h1: { re: h1.re || h1.real || 0, im: h1.im || h1.imag || 0 },
-          h2: { re: h2.re || h2.real || 0, im: h2.im || h2.imag || 0 },
+          h1: { re: h1.re ?? h1.real ?? 0, im: h1.im ?? h1.imag ?? 0 },
+          h2: { re: h2.re ?? h2.real ?? 0, im: h2.im ?? h2.imag ?? 0 },
           rssi: obj.rssi as number | undefined,
         };
       }

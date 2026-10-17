@@ -216,6 +216,33 @@ export class FusedPositionKalman {
     this.rejectedCount = 0;
   }
 
+  /**
+   * Keep the track inside [minX,maxX]×[minZ,maxZ] and at or below `maxSpeed`.
+   * A weighted centroid of the anchors cannot leave their bounding box, so a
+   * position outside it is constant-velocity overshoot; the state is pulled
+   * back and the velocity component pushing outward is removed so the filter
+   * does not wind up against the wall. Speed is scaled (direction kept).
+   */
+  public constrain(minX: number, maxX: number, minZ: number, maxZ: number, maxSpeed: number): void {
+    this.constrainAxis(this.xAxis, minX, maxX);
+    this.constrainAxis(this.zAxis, minZ, maxZ);
+    const speed = Math.hypot(this.xAxis.vel, this.zAxis.vel);
+    if (speed > maxSpeed && speed > 0) {
+      const k = maxSpeed / speed;
+      this.xAxis.vel *= k;
+      this.zAxis.vel *= k;
+    }
+  }
+
+  private constrainAxis(axis: Axis1DState, lo: number, hi: number): void {
+    if (axis.pos < lo) {
+      axis.pos = lo;
+      axis.vel = Math.max(0, axis.vel);
+    } else if (axis.pos > hi) {
+      axis.pos = hi;
+      axis.vel = Math.min(0, axis.vel);
+    }
+  }
   private reinitializeAt(x: number, z: number): void {
     this.xAxis = axisStateAt(x, R_X);
     this.zAxis = axisStateAt(z, R_Z);

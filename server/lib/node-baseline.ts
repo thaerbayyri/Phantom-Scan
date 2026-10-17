@@ -84,7 +84,13 @@ export interface BaselineTrackerOptions {
 export interface BaselineUpdate {
   smoothed: number;
   baseline: number;
+  /** Relative rise: smoothed/baseline − 1. Presence EVIDENCE only — a node
+   *  with a tiny baseline gets a huge ratio from a small disturbance. */
   rise: number;
+  /** Absolute rise: max(0, smoothed − baseline), in the same gain-invariant
+   *  units for every node. This — not `rise` — is comparable across nodes and
+   *  is what weights the position estimate. */
+  excess: number;
   /** Debounced tier. */
   tier: PresenceTier;
   warmingUp: boolean;
@@ -192,6 +198,7 @@ export class NodeBaselineTracker {
       smoothed: this.smoothed,
       baseline: this.baseline,
       rise: this.rise(),
+      excess: Math.max(0, this.smoothed - this.baseline),
       tier: this.tier,
       warmingUp: this.startMs !== null && nowMs - this.startMs < this.warmupMs,
     };

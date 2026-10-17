@@ -269,3 +269,41 @@ test("FusedPositionKalman: filtering the real recorded session tracks the raw tr
   assert.ok(median < 0.05, `median deviation from raw ${median}m should stay tight (real data: ~0.0024m)`);
   assert.ok(p95 < 0.1, `p95 deviation from raw ${p95}m should stay bounded (real data: ~0.021m)`);
 });
+
+// ── constrain(): keep the track inside the anchor box and at a human speed ──
+
+test("FusedPositionKalman.constrain pulls an overshoot back into the box and removes outward velocity", () => {
+  const kf = new FusedPositionKalman();
+  let t = 0;
+  for (let i = 0; i < 40; i++) {
+    t += 50;
+    kf.predict(t);
+    kf.update([i * 0.05, -i * 0.07]); // steady drift toward −z
+  }
+  // Extrapolate far beyond the wall with no new measurement.
+  for (let i = 0; i < 20; i++) {
+    t += 300;
+    kf.predict(t);
+  }
+  kf.constrain(-2, 2, -3, 3, 4);
+  const s = kf.getState();
+  assert.ok(s.x >= -2 && s.x <= 2 && s.z >= -3 && s.z <= 3, `outside box: ${s.x},${s.z}`);
+  if (s.z <= -3 + 1e-9) assert.ok(s.vz >= 0, "velocity must not keep pushing out of the wall");
+});
+
+test("FusedPositionKalman.constrain caps speed while preserving direction", () => {
+  const kf = new FusedPositionKalman();
+  let t = 0;
+  kf.predict(t);
+  kf.update([-1.5, -1.5]);
+  for (let i = 0; i < 6; i++) {
+    t += 50;
+    kf.predict(t);
+    kf.update([-1.5 + (i + 1) * 0.4, -1.5]); // 8 m/s of apparent motion along +x
+  }
+  kf.constrain(-2, 2, -3, 3, 4);
+  const s = kf.getState();
+  const speed = Math.hypot(s.vx, s.vz);
+  assert.ok(speed <= 4 + 1e-9, `speed ${speed}`);
+  assert.ok(s.vx >= 0, "direction preserved");
+});

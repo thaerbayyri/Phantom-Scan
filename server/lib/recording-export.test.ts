@@ -170,3 +170,47 @@ test("serialized CSV carries metadata with the explicit x/x_disp contract", () =
   assert.match(csv, new RegExp(RECORDING_POSITION_CONTRACT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(csv, /"fused_motion_threshold":0\.42/);
 });
+
+test("recording rows carry the room tier, per-node excess, and real N3/N4 trends for fused_room", () => {
+  for (const col of ["room_tier", "excess_n1", "excess_n2", "excess_n3", "excess_n4", "trend_n3", "trend_n4", "position_uncertainty_m"]) {
+    assert.ok(RECORDING_COLUMNS.includes(col as never), `missing column ${col}`);
+  }
+  const row = buildRecordingRow({
+    sample,
+    sessionStartMs: 10_000,
+    radialTarget,
+    targetState: fusedTargetState,
+    fusedSnapshot: null,
+    nodeMotion: { 1: 0.2, 2: 0.3, 3: 0.4, 4: 0.5 },
+    nodeRawPerturbation: { 1: 0.05, 2: 0.06, 3: 0.07, 4: 0.08 },
+    nodeFps: { 1: 20, 2: 20, 3: 20, 4: 20 },
+    roomExtras: {
+      tier: "present_moving",
+      excess: { 1: 0.01, 2: 0.02, 3: 0.03, 4: 0.04 },
+      trends: { 1: "approaching", 2: "receding", 3: "approaching", 4: "stable" },
+      positionUncertaintyM: 1.25,
+    },
+  });
+  assert.equal(row.room_tier, "present_moving");
+  assert.equal(row.excess_n3, 0.03);
+  assert.equal(row.trend_n1, "approaching");
+  assert.equal(row.trend_n3, "approaching");
+  assert.equal(row.trend_n4, "stable");
+  assert.equal(row.position_uncertainty_m, 1.25);
+});
+
+test("recording rows without room extras keep the legacy trend source and leave the new columns empty", () => {
+  const row = buildRecordingRow({
+    sample,
+    sessionStartMs: 10_000,
+    radialTarget,
+    targetState: fusedTargetState,
+    fusedSnapshot: null,
+    nodeMotion: { 1: 0.2, 2: 0.3 },
+    nodeRawPerturbation: { 1: 0.05, 2: 0.06 },
+    nodeFps: { 1: 20, 2: 20 },
+  });
+  assert.equal(row.room_tier, undefined);
+  assert.equal(row.excess_n1, undefined);
+  assert.equal(row.trend_n3, "stable");
+});

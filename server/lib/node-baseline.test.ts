@@ -104,3 +104,22 @@ test("room presence upgrades immediately but holds a downgrade for 1.5 s", () =>
   assert.equal(room.update(["absent", "absent"], 1600), "absent");
   assert.equal(room.update(["active"], 1650), "active");
 });
+
+test("excess is the absolute rise above baseline, comparable across nodes with different baselines", () => {
+  const quiet = new NodeBaselineTracker(); // empty-room level 0.05
+  const noisy = new NodeBaselineTracker(); // empty-room level 0.20
+  const q = feed(quiet, 0.05, 6, 20, 0);
+  const n = feed(noisy, 0.2, 6, 20, 0);
+  // The same absolute disturbance (+0.10) hits both nodes.
+  const qd = feed(quiet, 0.15, 3, 20, q.endMs).last;
+  const nd = feed(noisy, 0.3, 3, 20, n.endMs).last;
+  assert.ok(Math.abs(qd.excess - nd.excess) < 0.01, `excess ${qd.excess} vs ${nd.excess}`);
+  // The RELATIVE rise differs 4x — which is why it must not weight position.
+  assert.ok(qd.rise > 3 * nd.rise, `rise ${qd.rise} vs ${nd.rise}`);
+});
+
+test("excess is never negative and is ~0 in a settled empty room", () => {
+  const tr = new NodeBaselineTracker();
+  const { last } = feed(tr, 0.1, 8, 20, 0);
+  assert.ok(last.excess >= 0 && last.excess < 0.01, `excess ${last.excess}`);
+});

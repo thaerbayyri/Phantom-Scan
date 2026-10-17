@@ -333,6 +333,9 @@ export const radialTargetSchema = z.object({
   positionBasis: z
     .enum(["fused_1d", "fused_room_centroid", "synthetic_single_node_aoa"])
     .default("fused_1d"),
+  // fused_room only: heuristic display radius (m) around x/z (see
+  // computePositionUncertaintyM). A drawing aid, NOT a measured error.
+  positionUncertaintyM: z.number().optional(),
 });
 export type RadialTarget = z.infer<typeof radialTargetSchema>;
 

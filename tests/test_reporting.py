@@ -360,3 +360,50 @@ class TestSessionReporter:
             )
         report = reporter.generate_report()
         assert report.target_classification == ActivityLabel.HUMAN_WALKING
+
+
+# ── test_3 regression: frames carry MILLISECOND timestamps ─────────────────
+
+def _ms_frames(reporter, seconds=60, hz=20, base_ms=1_792_269_500_000, speed=1.0):
+    n = int(seconds * hz)
+    for i in range(n):
+        reporter.add_frame({
+            "timestamp": base_ms + i * (1000 // hz),
+            "x": 0.0, "z": 0.0, "speed": speed,
+            "isMoving": (i // 40) % 2 == 0,   # toggles every 2 s
+            "label": "human", "distanceCm": 120.0,
+        })
+
+
+def test_report_duration_and_elapsed_use_the_frame_clock_in_ms():
+    from reporting.session_reporter import SessionReporter
+
+    r = SessionReporter()
+    _ms_frames(r, seconds=60)
+    report = r.generate_report()
+    assert report.duration_s == pytest.approx(60.0, abs=0.2)
+    assert report.start_time == pytest.approx(1_792_269_500.0, abs=0.01)
+    assert report.end_time == pytest.approx(1_792_269_560.0, abs=0.2)
+    assert report.event_timeline, "motion toggles must produce events"
+    assert all(0.0 <= e.elapsed_s <= 61.0 for e in report.event_timeline)
+    assert all(len(e.elapsed_formatted) == 5 for e in report.event_timeline)  # MM:SS
+
+
+def test_total_distance_integrates_speed_over_seconds_not_milliseconds():
+    from reporting.session_reporter import SessionReporter
+
+    r = SessionReporter()
+    _ms_frames(r, seconds=60, speed=1.0)  # 1 m/s for 60 s ≈ 60 m
+    kd = r.generate_report().kinematic_data
+    assert kd.total_distance_m == pytest.approx(60.0, rel=0.05)
+
+
+def test_second_based_timestamps_still_work():
+    from reporting.session_reporter import SessionReporter
+
+    r = SessionReporter()
+    for i in range(100):
+        r.add_frame({"timestamp": 1_000.0 + i * 0.05, "x": 0, "z": 0, "speed": 2.0, "isMoving": True, "label": "human", "distanceCm": 50})
+    report = r.generate_report()
+    assert report.duration_s == pytest.approx(4.95, abs=0.1)
+    assert report.kinematic_data.total_distance_m == pytest.approx(9.9, rel=0.1)

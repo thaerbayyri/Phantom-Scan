@@ -107,6 +107,25 @@ export interface RecordingRow {
    * session can distinguish "energy gate never fired" from "energy gate
    * fired but the classifier vetoed it" purely from the recording. */
   classifier_corroboration: ClassifierCorroboration;
+  /** fused_room only (empty otherwise): debounced room presence tier. */
+  room_tier?: string;
+  /** fused_room only: each node's ABSOLUTE excess over its own baseline - the quantity that weights the position. */
+  excess_n1?: number;
+  excess_n2?: number;
+  excess_n3?: number;
+  excess_n4?: number;
+  /** Approach/recede for nodes 3 and 4 (n1/n2 above also read the room trends when present). */
+  trend_n3: NodeTrend;
+  trend_n4: NodeTrend;
+  /** Heuristic display radius of the position estimate (m). NOT a measured error. */
+  position_uncertainty_m?: number;
+}
+
+export interface RoomRecordingExtras {
+  tier: string;
+  excess: Record<number, number>;
+  trends: Record<number, NodeTrend>;
+  positionUncertaintyM?: number;
 }
 
 export interface BuildRecordingRowInput {
@@ -124,6 +143,8 @@ export interface BuildRecordingRowInput {
   /** Item 1/2: this tick's classifier corroboration decision, captured
    * regardless of whether a target ended up visible this tick. */
   classifierCorroboration?: ClassifierCorroboration;
+  /** fused_room extras (tier, per-node excess, all four trends, uncertainty). */
+  roomExtras?: RoomRecordingExtras;
 }
 
 export const RECORDING_POSITION_CONTRACT =
@@ -174,6 +195,14 @@ export const RECORDING_COLUMNS: Array<keyof RecordingRow> = [
   "gt_point_id",
   "gt_source",
   "classifier_corroboration",
+  "room_tier",
+  "excess_n1",
+  "excess_n2",
+  "excess_n3",
+  "excess_n4",
+  "trend_n3",
+  "trend_n4",
+  "position_uncertainty_m",
 ];
 
 export function buildRecordingSessionMeta(input: {
@@ -268,8 +297,16 @@ export function buildRecordingRow(input: BuildRecordingRowInput): RecordingRow {
     raw_perturbation_n2: input.nodeRawPerturbation[2],
     raw_perturbation_n3: input.nodeRawPerturbation[3],
     raw_perturbation_n4: input.nodeRawPerturbation[4],
-    trend_n1: visible ? input.fusedSnapshot?.trends[1] ?? "stable" : "stable",
-    trend_n2: visible ? input.fusedSnapshot?.trends[2] ?? "stable" : "stable",
+    trend_n1: visible ? input.roomExtras?.trends[1] ?? input.fusedSnapshot?.trends[1] ?? "stable" : "stable",
+    trend_n2: visible ? input.roomExtras?.trends[2] ?? input.fusedSnapshot?.trends[2] ?? "stable" : "stable",
+    trend_n3: visible ? input.roomExtras?.trends[3] ?? "stable" : "stable",
+    trend_n4: visible ? input.roomExtras?.trends[4] ?? "stable" : "stable",
+    room_tier: input.roomExtras?.tier,
+    excess_n1: input.roomExtras?.excess[1],
+    excess_n2: input.roomExtras?.excess[2],
+    excess_n3: input.roomExtras?.excess[3],
+    excess_n4: input.roomExtras?.excess[4],
+    position_uncertainty_m: visible ? input.roomExtras?.positionUncertaintyM : undefined,
     node_mode: input.targetState.node_mode,
     target_state: input.targetState.state,
     target_visible: visible ? 1 : 0,

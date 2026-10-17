@@ -28,6 +28,13 @@ export function unwrapPhase(phases: number[]): number[] {
  */
 export function computeDFT(data: number[], sampleRate: number): { frequencies: number[], magnitudes: number[] } {
     const N = data.length;
+    // Phase-1 bug audit: N===0 previously divided-by-zero into a NaN mean
+    // and NaN-filled output with no guard at this function's own boundary
+    // (currently unreachable via computeVitals's call site, but this is an
+    // exported function with no other invariant enforcing non-empty input).
+    if (N === 0) {
+        return { frequencies: [], magnitudes: [] };
+    }
     const frequencies = new Array(N);
     const magnitudes = new Array(N);
 

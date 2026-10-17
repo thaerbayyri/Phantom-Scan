@@ -641,7 +641,7 @@ function newRoomServerWithPresence(tier: string, rises: Record<number, number>) 
   for (const nodeId of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, nodeId, [10, 10, 10, 10], 20);
   server.updateRoomPresence = () => {
     server.lastRoomTier = tier;
-    return { tier, rises };
+    return { tier, rises, excesses: rises };
   };
   return server;
 }
@@ -755,4 +755,90 @@ test("a node that went silent and returns re-warms its baseline instead of reusi
   server.updateRoomPresence([1, 2, 3], Date.now() + 100); // node 4 silent
   assert.equal(server.nodeBaselines.has(4), false, "silent node's tracker must be dropped");
   assert.equal(server.nodeBaselines.has(1), true);
+});
+
+// ── test_3 fixes: position must not snap to an anchor corner ───────────────
+
+test("fused_room: a quiet-baseline node with a large RELATIVE rise does not win the position", () => {
+  // Node 2 has a tiny baseline so a small disturbance is a huge relative rise,
+  // but its ABSOLUTE excess is the same as the others'.
+  const server = newRoomServerWithPresence("present_moving", { 1: 0.4, 2: 6.0, 3: 0.4, 4: 0.4 });
+  server.updateRoomPresence = () => ({
+    tier: "present_moving",
+    rises: { 1: 0.4, 2: 6.0, 3: 0.4, 4: 0.4 },
+    excesses: { 1: 0.1, 2: 0.1, 3: 0.1, 4: 0.1 },
+  });
+  const fused = server.computeFusedTarget();
+  assert.ok(fused);
+  assert.ok(Math.abs(fused.x) < 0.01 && Math.abs(fused.z) < 0.01, `equal excess must give the room centre, got ${fused.x},${fused.z}`);
+});
+
+test("fused_room: position weights fall off gently (no winner-take-all snap to the strongest corner)", () => {
+  const server = newRoomServerWithPresence("present_moving", {});
+  server.updateRoomPresence = () => ({
+    tier: "present_moving",
+    rises: { 1: 1, 2: 1, 3: 1, 4: 1 },
+    excesses: { 1: 0.30, 2: 0.10, 3: 0.10, 4: 0.10 },
+  });
+  const fused = server.computeFusedTarget();
+  assert.ok(fused);
+  const cornerDist = Math.hypot(fused.x - -2, fused.z - -3);
+  assert.ok(cornerDist > 1.5, `node 1 is 3x stronger but the estimate must stay inside the room, got ${fused.x},${fused.z}`);
+});
+
+test("filtered fused position is clamped to the room and reported speed is physically capped", () => {
+  const { server, dashboard } = newFourNodeRoomServer();
+  // Raw fixes that would drive the Kalman filter outside the anchor hull.
+  let k = 0;
+  server.computeFusedTarget = () => {
+    k++;
+    return { x: 2 + k * 0.4, z: -3 - k * 0.6, distToNearestNodeM: 1, classifierCorroboration: "inconclusive", maxMotion: 1 };
+  };
+  for (let i = 0; i < 40; i++) server.processFrame();
+  const radials = dashboard.sent.filter((m: Captured) => m.type === "radialTarget" && m.data).map((m: Captured) => m.data as Record<string, number>);
+  assert.ok(radials.length > 0);
+  for (const r of radials) {
+    assert.ok(Math.abs(r.x) <= 2 + 1e-9 && Math.abs(r.z) <= 3 + 1e-9, `outside room: ${r.x},${r.z}`);
+    assert.ok(r.speed <= 4 + 1e-9, `speed ${r.speed} exceeds the human cap`);
+  }
+});
+
+test("Calibrate Empty Room re-warms the real detector's baselines, not only the AI sidecar", () => {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+  for (const id of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, id, [10, 10, 10, 10], 20);
+  server.updateRoomPresence([1, 2, 3, 4], Date.now());
+  assert.equal(server.nodeBaselines.size, 4);
+  server.roomFusedSnapshot = { x: 1, z: 1, vx: 0, vz: 0, atMs: Date.now() };
+  server.handleMessage("dashboard", { type: "calibrateBaseline", data: null });
+  assert.equal(server.nodeBaselines.size, 0, "baselines must restart");
+  assert.equal(server.roomFusedSnapshot, null, "a held target must not survive recalibration");
+  assert.equal(server.roomPresence.tier, "absent");
+});
+
+test("fused_room radialTarget carries a bounded position uncertainty radius", () => {
+  const { server, dashboard } = newFourNodeRoomServer();
+  server.computeFusedTarget = () => ({
+    x: 0.5, z: -0.5, distToNearestNodeM: 1, classifierCorroboration: "inconclusive", maxMotion: 0.8, positionUncertaintyM: 1.2,
+  });
+  server.processFrame();
+  server.processFrame();
+  const radial = lastRadialTarget(dashboard);
+  assert.equal(radial?.positionUncertaintyM, 1.2);
+});
+
+test("recording rows get the room tier, excess and four-node trends while fused_room is live", () => {
+  const server = newProcessingServer();
+  for (const id of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, id, [10, 10, 10, 10], 20);
+  server.lastRoomTier = "present_moving";
+  server.lastNodeExcess = { "1": 0.01, "2": 0.02, "3": 0.03, "4": 0.04 };
+  server.lastRoomUncertaintyM = 1.4;
+  server.roomFusedSnapshot = { x: 0, z: 0, vx: 0.4, vz: 0.6, atMs: Date.now() };
+  const extras = server.buildRoomRecordingExtras();
+  assert.equal(extras.tier, "present_moving");
+  assert.equal(extras.excess[3], 0.03);
+  assert.equal(extras.trends[3], "approaching");
+  assert.equal(extras.trends[1], "receding");
+  assert.equal(extras.positionUncertaintyM, 1.4);
 });

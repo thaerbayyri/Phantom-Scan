@@ -673,3 +673,26 @@ export function hasSingleNodePresenceEvidence(
   const { suppress } = evaluateClassifierCorroboration(classifier, mechanicalRejectHumanProbMax);
   return !suppress;
 }
+
+/**
+ * Heuristic DISPLAY radius (m) of a fused_room centroid — "the person is
+ * somewhere within about this distance of the marker". It is NOT a measured
+ * error: with one antenna per node and an amplitude-perturbation centroid the
+ * true error has never been validated against ground truth. It encodes three
+ * honest facts: the estimate is coarse (base ≈ 35% of the shorter room side),
+ * stronger evidence makes it better (confidence 0..1), and when one node
+ * dominates the weights the centroid snaps toward that node's corner, which
+ * is least trustworthy (+50% at full dominance).
+ */
+export function computePositionUncertaintyM(
+  weights: Record<number, number>,
+  confidence: number,
+  roomMinDimM: number,
+): number {
+  const room = Number.isFinite(roomMinDimM) && roomMinDimM > 0 ? roomMinDimM : 4;
+  const conf = Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0;
+  const maxShare = Math.max(0, ...Object.values(weights).filter(Number.isFinite));
+  const dominance = Math.min(1, Math.max(0, (maxShare - 0.5) / 0.5));
+  const radius = 0.35 * room * (1.4 - 0.6 * conf) * (1 + 0.5 * dominance);
+  return Math.round(Math.min(0.6 * room, Math.max(0.3, radius)) * 100) / 100;
+}
