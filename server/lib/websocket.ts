@@ -1854,6 +1854,14 @@ export class SignalProcessingServer {
       rises[id] = update.rise;
       tiers.push(update.tier);
     }
+    // A node that dropped out (reboot, re-placement, long outage) must
+    // re-warm from scratch when it returns: its old baseline and EMAs
+    // describe a channel that may no longer exist, and the first update after
+    // a gap would jump toward the new level and read as a large "rise".
+    const live = new Set(activeIds);
+    for (const id of Array.from(this.nodeBaselines.keys())) {
+      if (!live.has(id)) this.nodeBaselines.delete(id);
+    }
     const tier = this.roomPresence.update(tiers, nowMs);
     this.lastRoomTier = tier;
     this.lastNodeRises = Object.fromEntries(
@@ -2352,12 +2360,27 @@ export class SignalProcessingServer {
 
   ingestSample(sample: CSISample): void {
     if (this.datasetRecorder.isRecording && sample.amplitudes && sample.amplitudes.length > 0) {
-      this.datasetRecorder.record({
-        tMs: sample.timestamp ?? Date.now(),
-        nodeId: sample.nodeId ?? 1,
-        rssi: sample.rssi ?? -100,
-        amps: sample.amplitudes,
-      });
+      try {
+        this.datasetRecorder.record({
+          tMs: sample.timestamp ?? Date.now(),
+          nodeId: sample.nodeId ?? 1,
+          rssi: sample.rssi ?? -100,
+          amps: sample.amplitudes,
+        });
+      } catch (error: unknown) {
+        // A recorder fault (disk full, folder unwritable) must never take down
+        // live ingest: stop the recording, tell the operator, keep detecting.
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(`[DATASET] write failed, stopping recording: ${reason}`);
+        let status: unknown = null;
+        try {
+          status = this.datasetRecorder.stop();
+        } catch {
+          /* stop() already cleaned up in its finally block */
+        }
+        this.broadcast("datasetStatus", status ?? { recording: false, frames: 0, skipped: 0, perNode: {}, files: [] });
+        this.broadcast("error", `Dataset recording stopped: ${reason}`);
+      }
     }
     // Forward raw sample to the AI inference client
     this.broadcastToAI("rawSample", sample);

@@ -111,3 +111,35 @@ test("per-node frame counts are tracked for the operator", () => {
   assert.deepEqual(rec.status().perNode, { "1": 2, "4": 1 });
   rec.stop();
 });
+
+test("stop() always closes the file and clears recording state even if the final flush fails", () => {
+  const root = tempRoot();
+  const rec = new DatasetRecorder({ rootDir: root });
+  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
+  rec.record(FRAME);
+  // Break the underlying fd so the pending flush throws.
+  fs.closeSync((rec as unknown as { fd: number }).fd);
+  assert.throws(() => rec.stop());
+  assert.equal(rec.isRecording, false, "recorder must be reusable after a failed stop");
+  assert.equal(rec.status().recording, false);
+  assert.doesNotThrow(() => rec.start(parseDatasetStart({ roomId: "lab2", label: "empty" }), {}));
+  rec.stop();
+});
+
+test("a failed flush drops the pending buffer instead of growing without bound", () => {
+  const root = tempRoot();
+  const rec = new DatasetRecorder({ rootDir: root });
+  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
+  fs.closeSync((rec as unknown as { fd: number }).fd);
+  let threw = 0;
+  for (let i = 0; i < 450; i++) {
+    try {
+      rec.record(FRAME);
+    } catch {
+      threw++;
+    }
+  }
+  assert.ok(threw >= 1, "a write failure must surface");
+  assert.ok((rec as unknown as { pending: string[] }).pending.length < 200, "pending buffer must not accumulate");
+  try { rec.stop(); } catch { /* expected: fd already closed */ }
+});

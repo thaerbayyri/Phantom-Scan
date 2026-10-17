@@ -54,6 +54,11 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+        /* Re-pin the CSI source filter to the AP we just associated with, so a
+         * roam to another BSSID (no new GOT_IP) cannot leave the filter on the
+         * old AP and silently drop every frame. */
+        csi_collector_refresh_filter_mac();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         g_wifi_connected = false;
         if (s_retry_num < MAX_RETRY) {

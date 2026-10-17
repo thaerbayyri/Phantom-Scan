@@ -196,12 +196,22 @@ export class DatasetRecorder {
 
   stop(): DatasetStatus {
     const finished = this.status();
-    this.flush();
-    if (this.fd !== null) {
-      fs.closeSync(this.fd);
-      this.fd = null;
+    // Always release the fd and clear state, even when the final flush fails
+    // (disk full / unwritable): otherwise the recorder is stuck "recording".
+    try {
+      this.flush();
+    } finally {
+      if (this.fd !== null) {
+        try {
+          fs.closeSync(this.fd);
+        } catch {
+          /* fd already invalid — nothing left to release */
+        }
+        this.fd = null;
+      }
+      this.request = null;
+      this.pending = [];
     }
-    this.request = null;
     return { ...finished, recording: false };
   }
 
@@ -225,12 +235,13 @@ export class DatasetRecorder {
       fs.closeSync(this.fd);
       this.fd = null;
     }
-    this.part++;
+    const part = this.part + 1; // committed only after the file really opens
     const dir = path.join(this.rootDir, request.roomId);
     fs.mkdirSync(dir, { recursive: true });
-    const suffix = this.part === 1 ? "" : `.part${this.part}`;
+    const suffix = part === 1 ? "" : `.part${part}`;
     const file = path.join(dir, `${this.baseName}${suffix}.jsonl`);
     this.fd = fs.openSync(file, "wx");
+    this.part = part;
     this.files.push(file);
     this.framesInPart = 0;
     const header = {
@@ -251,7 +262,10 @@ export class DatasetRecorder {
 
   private flush(): void {
     if (this.fd === null || this.pending.length === 0) return;
-    fs.writeSync(this.fd, `${this.pending.join("\n")}\n`);
+    const batch = this.pending;
+    // Drop the batch whether or not the write succeeds: retrying a failing
+    // write would grow the buffer without bound while the error persists.
     this.pending = [];
+    fs.writeSync(this.fd, `${batch.join("\n")}\n`);
   }
 }

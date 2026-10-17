@@ -723,3 +723,36 @@ test("dataset recording: start/stop messages validate input and record live ampl
   assert.equal(final.frames, 5);
   assert.deepEqual(final.perNode, { "2": 5 });
 });
+
+// ── Review fixes: recorder faults must not crash ingest; stale baselines reset ──
+
+test("a dataset recorder I/O failure auto-stops the recording and never throws out of ingestSample", () => {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+  let stopped = 0;
+  server.datasetRecorder = {
+    isRecording: true,
+    record() {
+      throw new Error("ENOSPC: no space left on device");
+    },
+    stop() {
+      stopped++;
+      server.datasetRecorder.isRecording = false;
+      return { recording: false, frames: 0, skipped: 0, perNode: {}, files: [] };
+    },
+  };
+  assert.doesNotThrow(() => ingestNoisyAmplitudes(server, 1, [10, 11, 12], 3));
+  assert.equal(stopped, 1, "must stop exactly once, not on every packet");
+  assert.ok(dashboard.sent.some((m: Captured) => m.type === "error" && String(m.data).includes("Dataset recording stopped")));
+});
+
+test("a node that went silent and returns re-warms its baseline instead of reusing stale state", () => {
+  const server = newProcessingServer();
+  for (const id of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, id, [10, 10, 10, 10], 20);
+  server.updateRoomPresence([1, 2, 3, 4], Date.now());
+  assert.ok(server.nodeBaselines.has(4));
+  server.updateRoomPresence([1, 2, 3], Date.now() + 100); // node 4 silent
+  assert.equal(server.nodeBaselines.has(4), false, "silent node's tracker must be dropped");
+  assert.equal(server.nodeBaselines.has(1), true);
+});
