@@ -164,6 +164,28 @@ def fuse_count(
     }
 
 
+EMBED_MODEL_ID = "csi-embed-v2"
+
+
+def fuse_embedding_drift(
+    drift_by_node: Mapping[int, float], ref_age_s: "float | None", room_id: str
+) -> "dict[str, Any] | None":
+    """Advisory 'environment changed vs the empty-room baseline' from fresh nodes.
+
+    Reports the largest per-node drift (the most-changed link). None when no
+    node has a calibrated reference yet. Not a presence claim and never feeds
+    the deterministic gate (F1).
+    """
+    if not drift_by_node:
+        return None
+    return {
+        "embeddingDrift": float(max(drift_by_node.values())),
+        "embeddingRefAgeS": None if ref_age_s is None else float(ref_age_s),
+        "embeddingModelId": EMBED_MODEL_ID,
+        "roomId": room_id,
+    }
+
+
 @dataclass(frozen=True)
 class FusedVitals:
     respiration_rpm: float | None

@@ -51,6 +51,7 @@ from phantom.sidecar import (  # noqa: E402
     count_window_from_history,
     fuse_activity,
     fuse_count,
+    fuse_embedding_drift,
     activity_from_motion,
     advisory_human_prob,
     credentials_from_env,
@@ -63,6 +64,13 @@ from phantom.sidecar import (  # noqa: E402
 )
 from phantom.activity_model import ActivityModel  # noqa: E402
 from phantom.count_model import CountPredictor  # noqa: E402
+from phantom.embedding import (  # noqa: E402
+    cosine_drift,
+    load_standardizer,
+    mean_embedding,
+    ruview_scale_features,
+    standardize,
+)
 from phantom.subcarriers import NUM_DATA_SUBCARRIERS, lltf_amplitudes  # noqa: E402
 
 # ─── Model Definitions ────────────────────────────────────────────────
@@ -164,6 +172,8 @@ WS_URL = os.environ.get("PHANTOM_WS_URL", "ws://127.0.0.1:5000/ws")
 
 MODEL_DIR = os.path.join("ai model and densepose", "model")
 EMBED_WEIGHTS = os.path.join(MODEL_DIR, "csi-embed-v2.safetensors")
+# The int4 bin carries the encoder's input standardizer (fp16 mean[8], std[8]).
+EMBED_STANDARDIZER = os.path.join(MODEL_DIR, "csi-embed-v2-int4.bin")
 POSE_WEIGHTS = os.path.join(MODEL_DIR, "pose_v1.safetensors")
 PRESENCE_HEAD = os.path.join(MODEL_DIR, "presence-head.json")
 NODE_ADAPTERS = {1: os.path.join(MODEL_DIR, "node-1.json"),
@@ -252,6 +262,18 @@ CALIBRATION_HISTORY_LEN = 50
 CALIBRATION_MIN_SAMPLES = 10
 node_calibrated_baseline = {}
 
+# csi-embed-v2 empty-room reference: per-node recent embeddings reduced to a
+# mean unit vector by "Calibrate Empty Room"; drift from it is advisory only.
+node_embed_long = {}
+EMBED_HISTORY_LEN = 50
+EMBED_MIN_SAMPLES = 10
+node_empty_embed = {}
+embed_ref_time = None
+# Input standardizer for the encoder; replaced by the shipped values on load.
+EMBED_MEAN = np.zeros(8)
+EMBED_STD = np.ones(8)
+embed_loaded = False
+
 # ─── Model Loading ────────────────────────────────────────────────────
 
 print("[AI] Loading models...")
@@ -261,15 +283,16 @@ print(f"[AI] Using device: {device}")
 # 1. Embedding model
 embed_model = Enc().to(device)
 try:
-    if os.path.exists(EMBED_WEIGHTS):
-        missing, unexpected = embed_model.load_state_dict(load_file(EMBED_WEIGHTS), strict=False)
-        if missing:    print(f"[WARN] embed missing keys: {missing}")
-        if unexpected: print(f"[WARN] embed unexpected keys: {unexpected}")
-        print("[AI] Loaded csi-embed-v2 weights.")
+    if os.path.exists(EMBED_WEIGHTS) and os.path.exists(EMBED_STANDARDIZER):
+        # strict: a mismatched state dict must not silently leave random weights.
+        embed_model.load_state_dict(load_file(EMBED_WEIGHTS), strict=True)
+        EMBED_MEAN, EMBED_STD = load_standardizer(EMBED_STANDARDIZER)
+        embed_loaded = True
+        print("[AI] Loaded csi-embed-v2 weights and standardizer.")
     else:
-        print(f"[WARN] Embed weights not found at {EMBED_WEIGHTS}")
+        print(f"[WARN] Embed weights/standardizer not found in {MODEL_DIR}; embedding disabled")
 except Exception as e:
-    print(f"[ERROR] Failed to load embed model: {e}")
+    print(f"[ERROR] Failed to load embed model, embedding disabled: {e}")
 embed_model.eval()
 
 # 2. Pose model
@@ -418,21 +441,15 @@ def extract_features_8d(mags_history, rssi_history, fs, prev_window_mean=None):
     # Features 2-3: derived vitals
     breathing, heart_rate, vitals_reliable = estimate_vitals(mags_arr, fs)
 
-    # Features 4-7: auxiliary. person_count / fall have no measured source on
-    # this hardware — they were hardcoded 1.0 / 0.0 before; now explicitly 0
-    # (absent) so the encoder input carries no fabricated evidence.
-    phase_variance = float(np.var(mags_arr))
-    person_count = 0.0
-    fall_detected = 0.0
     rssi_mean = float(np.mean(rssi_history))
 
-    features = np.array([presence, motion, breathing or 0.0, heart_rate or 0.0,
-                         phase_variance, person_count, fall_detected, rssi_mean])
-
-    # Per-feature Z-score across the 8 features (preserves relative magnitude).
-    mean_val = np.mean(features)
-    std_val = np.std(features) + 1e-8
-    features_std = (features - mean_val) / std_val
+    # Map onto the 0-1 scale csi-embed-v2 was trained on, then apply its shipped
+    # per-feature standardizer. Dims 4-6 (phase variance, person count, fall)
+    # were constant in training and have no Phantom source, so they are masked
+    # to 0 rather than divided by a vanishing std. The old per-vector z-score
+    # across the 8 features destroyed absolute magnitudes and is gone.
+    raw_features = ruview_scale_features(presence, motion, breathing, heart_rate, rssi_mean)
+    features_std = standardize(raw_features, EMBED_MEAN, EMBED_STD)
 
     vitals = {"breathing": breathing, "heart_rate": heart_rate, "reliable": vitals_reliable}
     return features_std, motion, current_window_mean, vitals
@@ -494,17 +511,30 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
     # ── Embedding + LoRA + presence head ──
     features_8d, motion_raw, current_mean, vitals = extract_features_8d(
         mags_hist, rssi_hist, fs, prev_mean)
-    feat_tensor = torch.tensor(features_8d).float().unsqueeze(0).to(device)
-    with torch.no_grad():
-        z, pre = embed_model(feat_tensor)
-    z = z.cpu().numpy()[0]
-    pre = pre.cpu().numpy()[0]
+    z = pre = None
+    if embed_loaded:
+        feat_tensor = torch.tensor(features_8d).float().unsqueeze(0).to(device)
+        with torch.no_grad():
+            z_t, pre_t = embed_model(feat_tensor)
+        z = z_t.cpu().numpy()[0]
+        pre = pre_t.cpu().numpy()[0]
 
     # Room adaptation on the un-normalized activation.
-    adapter = lora_adapters.get(node_id)
+    adapter = lora_adapters.get(node_id) if pre is not None else None
     pre_adapted = adapter.apply(pre) if adapter is not None else pre
 
-    presence_prob = presence_head.predict(pre_adapted) if presence_head is not None else None
+    presence_prob = (
+        presence_head.predict(pre_adapted) if presence_head is not None and pre_adapted is not None else None
+    )
+
+    # Advisory drift of this node's embedding from its empty-room reference
+    # (set by "Calibrate Empty Room"); None until calibrated.
+    embedding_drift = None
+    if z is not None:
+        node_embed_long.setdefault(node_id, deque(maxlen=EMBED_HISTORY_LEN)).append(z)
+        reference = node_empty_embed.get(node_id)
+        if reference is not None:
+            embedding_drift = cosine_drift(z, reference)
 
     # ── Classification ──
     # ADVISORY ONLY: this AI presence/human verdict is displayed alongside the
@@ -549,6 +579,7 @@ def compute_node_result(node_id, mags_hist, rssi_hist, timestamps, prev_mean):
         "vitals": vitals,
         "current_mean": current_mean,
         "embedding": z,
+        "embedding_drift": embedding_drift,
     }
 
 # ─── Dual-node fusion + transmit ───────────────────────────────────────
@@ -637,6 +668,13 @@ def fuse_and_emit():
     )
     if room_count:
         identity.update(room_count)
+    room_embedding = fuse_embedding_drift(
+        {int(r["node_id"]): r["embedding_drift"] for r in results if r.get("embedding_drift") is not None},
+        None if embed_ref_time is None else now - embed_ref_time,
+        ROOM_ID,
+    )
+    if room_embedding:
+        identity.update(room_embedding)
 
     if not (ws_connected and ws is not None):
         return
@@ -752,11 +790,23 @@ def _run_calibration():
     reasonable to run while standing in an empty room so ambient noise
     (fan, HVAC) captured right now stops reading as "walking"/"rapid_change"
     afterward."""
+    global embed_ref_time
     calibrated = []
     for node_id, long_hist in list(node_motion_long.items()):
         if len(long_hist) >= CALIBRATION_MIN_SAMPLES:
             node_calibrated_baseline[node_id] = float(np.median(list(long_hist)))
             calibrated.append(node_id)
+    # Embedding reference: the room as it is right now, per node.
+    embed_calibrated = []
+    for node_id, embeds in list(node_embed_long.items()):
+        if len(embeds) >= EMBED_MIN_SAMPLES:
+            reference = mean_embedding(list(embeds))
+            if reference is not None:
+                node_empty_embed[node_id] = reference
+                embed_calibrated.append(node_id)
+    if embed_calibrated:
+        embed_ref_time = time.time()
+        print(f"[AI] Captured empty-room embedding reference for nodes={embed_calibrated}")
     for hist in node_motion_history.values():
         hist.clear()
     levels = {n: round(node_calibrated_baseline[n], 4) for n in calibrated}
