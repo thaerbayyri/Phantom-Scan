@@ -7,6 +7,7 @@ import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
 
 const UDP_PORT = parseInt(process.env.UDP_PORT || "5005", 10);
 const UDP_HOST = "0.0.0.0";
+const UDP_RECV_BUFFER_BYTES = 4 * 1024 * 1024;
 
 // Local advisory-only Python AI sidecar (ADR-051): loopback-only by
 // convention, but configurable rather than hardcoded like every other
@@ -740,6 +741,13 @@ export function startUDPServer() {
     server.on("listening", () => {
         const address = server.address();
         console.log(`[UDP] CSI Receiver listening on ${address.address}:${address.port}`);
+        // Four nodes burst ~160-200 packets/s; the OS default buffer can overflow
+        // while the event loop is busy, dropping frames before any counter sees them.
+        try {
+            server.setRecvBufferSize(UDP_RECV_BUFFER_BYTES);
+        } catch (err) {
+            console.warn(`[UDP] Could not enlarge receive buffer: ${err instanceof Error ? err.message : err}`);
+        }
     });
 
     server.bind(UDP_PORT, UDP_HOST);

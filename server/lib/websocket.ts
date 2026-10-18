@@ -39,6 +39,8 @@ const MAX_HUMAN_SPEED_MPS = 4;
  */
 const ROOM_POSITION_CONTRAST_EXPONENT = 1.0;
 const MOTION_WINDOW_MS = Number.parseInt(
+  // 1500 ms. 800 ms was tried and scored no better on recorded ground truth
+  // (scripts/eval-presence-on-datasets.ts: walking vs empty AUC 0.45 vs 0.51).
   process.env.PHANTOM_MOTION_WINDOW_MS ?? "1500",
   10,
 );
@@ -49,6 +51,9 @@ const MOTION_WINDOW_MS = Number.parseInt(
  * Motion/fusion read the per-node amplitude windows, not this queue.
  */
 const PER_NODE_QUEUE_CAP = 8;
+const DATASET_PROGRESS_INTERVAL_MS = 1000;
+const SCAN_DEBUG_INTERVAL_MS = 100;
+const IDLE_DEBUG_INTERVAL_MS = 1000;
 import {
   fuseTwoNodeTarget,
   fuseNodeTargets,
@@ -170,6 +175,7 @@ export class SignalProcessingServer {
   /** Node anchors + room size — config/room.json or PHANTOM_ROOM_CONFIG, else defaults. */
   private room: RoomGeometry = getRoomGeometry();
   private datasetRecorder = new DatasetRecorder();
+  private lastDatasetStatusMs = 0;
   private backgroundSubtractors = new Map<number, BackgroundSubtractor>();
   /** Live node set as of the last trackActiveNodeSet() call (sorted). */
   private prevActiveNodeIds: number[] = [];
@@ -206,7 +212,7 @@ export class SignalProcessingServer {
   private prevFusedZ: number | null = null;
   private prevFusedMs = 0;
   private lastNodeFpsLogMs = 0;
-  private lastIdleDebugMs = 0;
+  private lastDebugBroadcastMs = 0;
   // Single per-tick fused snapshot: BOTH the radialTarget broadcast (x) and
   // buildSensorNodes (distanceM/trend) read this same value so the target dot
   // and the node distance labels can never disagree within a tick.
@@ -359,6 +365,7 @@ export class SignalProcessingServer {
       this.sendLiveSnapshotToClient(clientId);
       this.sendToClient(clientId, "targetState", this.currentTargetState);
       this.sendToClient(clientId, "targetDebug", this.currentTargetDebug);
+      this.sendDatasetStatusTo(clientId);
       this.sendToClient(clientId, "recordingStatus", {
         isRecording: this.isRecording,
         sampleCount: this.recordingBuffer.length,
@@ -606,7 +613,10 @@ export class SignalProcessingServer {
           .map(([id, a]) => `N${id}=(${a.x},${a.z})`)
           .join(" ") +
         ` room=${this.room.roomWidthM}x${this.room.roomDepthM}m` +
-        ` sep(N1-N2)=${nodePairSeparationM(this.room).toFixed(2)}m source=${this.room.source}`,
+        ` sep(N1-N2)=${nodePairSeparationM(this.room).toFixed(2)}m source=${this.room.source}` +
+        (this.room.router
+          ? ` router=(${this.room.router.x},${this.room.router.z}) position=link-model`
+          : " position=anchor-centroid"),
     );
     const diversity = geometricDiversity(this.room.anchors);
     if (Object.keys(this.room.anchors).length >= 3 && diversity < 0.5) {
@@ -1972,6 +1982,9 @@ export class SignalProcessingServer {
           motionThreshold: 0,
           classifier,
           contrastExponent: ROOM_POSITION_CONTRAST_EXPONENT,
+          // Known router: each node's signal is its node->router link, so place
+          // the target with the link model instead of an anchor centroid.
+          ...(this.room.router ? { router: this.room.router, bounds: this.anchorBounds() } : {}),
         })
       : null;
     if (fusedRoom) {
@@ -2421,12 +2434,32 @@ export class SignalProcessingServer {
         firmwareFilterMac: process.env.PHANTOM_FIRMWARE_FILTER_MAC,
       });
       console.log(`[DATASET] recording ${request.label} (count=${request.count}) room=${request.roomId} -> ${status.files[0]}`);
+      this.lastDatasetStatusMs = Date.now();
       this.broadcast("datasetStatus", status);
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[DATASET] start refused: ${reason}`);
       this.broadcast("error", `Dataset recording: ${reason}`);
     }
+  }
+
+  /**
+   * The capture panel shows running frame counts, so while recording the status
+   * is pushed about once a second (at ~65 packets/s per node a per-packet
+   * broadcast would flood the socket). Without this the panel read "0 frames /
+   * none yet" for the whole recording and only updated on Stop.
+   */
+  private maybeBroadcastDatasetProgress(): void {
+    const now = Date.now();
+    if (now - this.lastDatasetStatusMs < DATASET_PROGRESS_INTERVAL_MS) return;
+    this.lastDatasetStatusMs = now;
+    this.broadcast("datasetStatus", this.datasetRecorder.status());
+  }
+
+  /** A page opened or reloaded mid-recording must show REC, not "Start recording". */
+  private sendDatasetStatusTo(clientId: string): void {
+    if (!this.datasetRecorder.isRecording) return;
+    this.sendToClient(clientId, "datasetStatus", this.datasetRecorder.status());
   }
 
   private stopDatasetRecording(): void {
@@ -2445,6 +2478,7 @@ export class SignalProcessingServer {
           rssi: sample.rssi ?? -100,
           amps: sample.amplitudes,
         });
+        this.maybeBroadcastDatasetProgress();
       } catch (error: unknown) {
         // A recorder fault (disk full, folder unwritable) must never take down
         // live ingest: stop the recording, tell the operator, keep detecting.
@@ -2469,12 +2503,12 @@ export class SignalProcessingServer {
     this.lastSampleRxMs = Date.now();
     this.status.connected = true;
     this.status.lastUpdate = this.lastSampleRxMs;
-    // While stopped, don't broadcast targetDebug per UDP packet (~80/s churn
-    // that makes the UI look alive); throttle to 1/s. Full rate when scanning.
-    if (this.status.isProcessing) {
-      this.updateTargetDebug();
-    } else if (this.lastSampleRxMs - this.lastIdleDebugMs >= 1000) {
-      this.lastIdleDebugMs = this.lastSampleRxMs;
+    // targetDebug walks every node's window, so doing it per UDP packet (~160-200/s
+    // with 4 nodes) loads the event loop enough to drop frames. Throttle to ~10/s
+    // while scanning and 1/s while stopped (stopped churn makes the UI look alive).
+    const debugIntervalMs = this.status.isProcessing ? SCAN_DEBUG_INTERVAL_MS : IDLE_DEBUG_INTERVAL_MS;
+    if (this.lastSampleRxMs - this.lastDebugBroadcastMs >= debugIntervalMs) {
+      this.lastDebugBroadcastMs = this.lastSampleRxMs;
       this.updateTargetDebug();
     }
 

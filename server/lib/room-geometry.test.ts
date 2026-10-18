@@ -98,3 +98,24 @@ test("loadRoomGeometry reports invalid JSON with the file path", () => {
   const read = () => "{ not json";
   assert.throws(() => loadRoomGeometry({ PHANTOM_ROOM_CONFIG: "bad.json" }, read), /bad\.json/);
 });
+
+test("an optional router position is parsed and returned", () => {
+  const geometry = parseRoomGeometry({ ...VALID, router: { x: 2.4, z: -2.1 } }, "test");
+  assert.deepEqual(geometry.router, { x: 2.4, z: -2.1 });
+});
+
+test("no router means no link model: router is undefined", () => {
+  assert.equal(parseRoomGeometry(VALID, "test").router, undefined);
+  assert.equal(DEFAULT_ROOM_GEOMETRY.router, undefined);
+});
+
+test("a router far outside the room is rejected with a clear message", () => {
+  assert.throws(
+    () => parseRoomGeometry({ ...VALID, router: { x: 9, z: 0 } }, "test"),
+    /router.*outside the room/,
+  );
+});
+
+test("a router with an unknown field is rejected (strict schema)", () => {
+  assert.throws(() => parseRoomGeometry({ ...VALID, router: { x: 0, z: 0, y: 1 } }, "test"), /router/);
+});

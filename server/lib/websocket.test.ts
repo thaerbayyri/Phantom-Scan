@@ -566,6 +566,9 @@ function deterministicTrace(withAiInjection: boolean) {
           advisoryActivityConfidence: 1,
           advisoryCount: 8,
           advisoryCountConfidence: 1,
+          embeddingDrift: 2,
+          embeddingRefAgeS: 0,
+          embeddingModelId: "csi-embed-v2",
         },
       });
       server.handleMessage("ai", {
@@ -608,6 +611,11 @@ test("malformed AI advisory payloads are dropped at the WS boundary, not relayed
   wireClient(server, dashboard);
 
   server.handleMessage("ai", { type: "targetIdentity", data: { label: "alien", humanProb: "1" } });
+  // Out-of-range embedding drift (valid range is 0-2) must be rejected too.
+  server.handleMessage("ai", {
+    type: "targetIdentity",
+    data: { label: "unknown", humanProb: 0.5, mechanicalProb: 0.5, embeddingDrift: 9 },
+  });
   server.handleMessage("ai", { type: "vitalSigns", data: { heartRateBpm: "fast" } });
   server.handleMessage("ai", {
     type: "vitalSigns",
@@ -636,8 +644,10 @@ test("trackActiveNodeSet reports join/leave transitions exactly once", () => {
 
 // ── Phase 5: fused_room adaptive-baseline presence ─────────────────────────
 
-function newRoomServerWithPresence(tier: string, rises: Record<number, number>) {
+function newRoomServerWithPresence(tier: string, rises: Record<number, number>, withRouter = false) {
   const server = newProcessingServer();
+  // The centroid tests must not depend on whether config/room.json names a router.
+  server.room = { ...server.room, router: withRouter ? { x: 2, z: -3 } : undefined };
   for (const nodeId of [1, 2, 3, 4]) ingestNoisyAmplitudes(server, nodeId, [10, 10, 10, 10], 20);
   server.updateRoomPresence = () => {
     server.lastRoomTier = tier;
@@ -652,6 +662,15 @@ test("fused_room: position is weighted by each node's rise above its own baselin
   assert.ok(fused, "moving tier must produce a target");
   assert.deepEqual([fused.x, fused.z], [-2, -3], "only node 1 rose above its baseline -> its corner");
   assert.ok(!fused.stationaryHold);
+});
+
+test("fused_room with a router: evidence on node 1 only is placed on node 1's link, not at a far corner", () => {
+  const server = newRoomServerWithPresence("present_moving", { 1: 2.0, 2: 0, 3: 0, 4: 0 }, true);
+  const fused = server.computeFusedTarget();
+  assert.ok(fused, "moving tier must produce a target");
+  // Node 1's link runs along the z = -3 wall to the router at (2, -3).
+  assert.ok(fused.z < -1.5, `expected the node 1/2 wall, got z=${fused.z}`);
+  assert.ok(fused.x <= 0.5, `expected the node 1 end of that wall, got x=${fused.x}`);
 });
 
 test("fused_room: no target while the room tier is absent", () => {
@@ -841,4 +860,61 @@ test("recording rows get the room tier, excess and four-node trends while fused_
   assert.equal(extras.trends[3], "approaching");
   assert.equal(extras.trends[1], "receding");
   assert.equal(extras.positionUncertaintyM, 1.4);
+});
+
+// ── Dashboard capture panel: live progress + late-joining clients ──────────
+
+async function newRecordingServer(label = "walking") {
+  const fs = await import("fs");
+  const os = await import("os");
+  const path = await import("path");
+  const { DatasetRecorder } = await import("./dataset-recorder");
+  const server = newProcessingServer();
+  server.datasetRecorder = new DatasetRecorder({ rootDir: fs.mkdtempSync(path.join(os.tmpdir(), "phantom-ds-progress-")) });
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+  server.handleMessage("dashboard", { type: "startDatasetRecording", data: { roomId: "lab", subjectId: "s1", label } });
+  return { server, dashboard };
+}
+
+const datasetStatuses = (c: ReturnType<typeof makeClient>) =>
+  c.sent.filter((m: Captured) => m.type === "datasetStatus").map((m: Captured) => m.data as { recording: boolean; frames: number });
+
+test("dataset recording: the panel gets live frame counts while recording (not only at start/stop)", async () => {
+  const { server, dashboard } = await newRecordingServer();
+  const atStart = datasetStatuses(dashboard).length;
+
+  // A burst inside one second must not flood the socket (~65 packets/s per node).
+  ingestNoisyAmplitudes(server, 1, [10, 11, 12], 40);
+  assert.ok(datasetStatuses(dashboard).length - atStart <= 1, "progress must be throttled to about 1/s");
+
+  // After the interval has elapsed the next sample reports the real running count.
+  server.lastDatasetStatusMs = Date.now() - 1500;
+  ingestNoisyAmplitudes(server, 1, [10, 11, 12], 1);
+  const live = datasetStatuses(dashboard);
+  const latest = live[live.length - 1];
+  assert.equal(latest.recording, true);
+  assert.equal(latest.frames, 41, "progress must carry the running frame count");
+});
+
+test("dataset recording: a client that connects mid-recording is told it is recording", async () => {
+  const { server } = await newRecordingServer("empty");
+  ingestNoisyAmplitudes(server, 3, [10, 11, 12], 7);
+  const late = makeClient("late");
+  wireClient(server, late);
+
+  server.sendDatasetStatusTo("late");
+
+  const statuses = datasetStatuses(late);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].recording, true);
+  assert.equal(statuses[0].frames, 7);
+});
+
+test("dataset recording: nothing is sent to a new client when no recording is running", () => {
+  const server = newProcessingServer();
+  const late = makeClient("late");
+  wireClient(server, late);
+  server.sendDatasetStatusTo("late");
+  assert.equal(datasetStatuses(late).length, 0);
 });

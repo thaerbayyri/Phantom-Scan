@@ -98,6 +98,15 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
                         )}
                     </div>
                 )}
+                {identity?.embeddingDrift != null && (
+                    <div
+                        className="text-[10px] font-mono uppercase text-purple-300/80"
+                        title={`RuView ${identity.embeddingModelId ?? "csi-embed-v2"} embedding distance from the empty-room reference (0 = same, 2 = opposite). It means the signal environment changed, not that someone is present; a moved door or router also raises it.`}
+                    >
+                        Environment change vs empty room: {identity.embeddingDrift.toFixed(3)}
+                        {identity.embeddingRefAgeS != null && ` · ref ${Math.round(identity.embeddingRefAgeS)}s old`}
+                    </div>
+                )}
                 {identity && !hasRoomModel && (
                     <div className="text-[10px] font-mono uppercase text-purple-300/50">
                         No model trained for this room

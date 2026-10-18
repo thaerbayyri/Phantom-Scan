@@ -31,6 +31,11 @@ export interface RoomGeometry {
   roomDepthM: number;
   /** Keyed by runtime node id (1-4), in perimeter order 1→2→3→4. */
   anchors: Record<number, NodeAnchorPosition>;
+  /**
+   * The Wi-Fi router/AP every node's CSI link ends at. When set, position comes
+   * from the node->router link model instead of an anchor centroid.
+   */
+  router?: NodeAnchorPosition;
   /** Where this geometry came from ("defaults" or a file path) — logged at startup. */
   source: string;
 }
@@ -50,6 +55,7 @@ export const roomGeometryConfigSchema = z
     roomWidthM: dimensionSchema,
     roomDepthM: dimensionSchema,
     anchors: z.record(z.string(), anchorSchema),
+    router: anchorSchema.optional(),
   })
   .strict();
 
@@ -122,7 +128,14 @@ export function parseRoomGeometry(raw: unknown, source: string): RoomGeometry {
         "2-D room fusion needs nodes spread around the room",
     );
   }
-  return { roomWidthM, roomDepthM, anchors, source };
+  const router = parsed.data.router;
+  if (router && (Math.abs(router.x) > halfW || Math.abs(router.z) > halfD)) {
+    throw new Error(
+      `[ROOM] invalid room config (${source}): router at (${router.x}, ${router.z}) is outside the room ` +
+        `(${roomWidthM} x ${roomDepthM} m centred on the origin)`,
+    );
+  }
+  return { roomWidthM, roomDepthM, anchors, ...(router ? { router: { x: router.x, z: router.z } } : {}), source };
 }
 
 /**

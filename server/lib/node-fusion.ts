@@ -594,6 +594,92 @@ export interface FusedRoomTarget {
  * node's saturated motion clears the threshold, or there is no perturbation
  * energy at all.
  */
+export interface LinkModelBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+/** Shortest distance from point `p` to the segment a-b (a zero-length segment is a point). */
+export function distanceToSegment(p: NodeAnchor, a: NodeAnchor, b: NodeAnchor): number {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len2 = dx * dx + dz * dz;
+  if (len2 < EPS) return Math.hypot(p.x - a.x, p.z - a.z);
+  const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.z - (a.z + t * dz));
+}
+
+/** Footprint of a person on a link (wider than the ~0.4 m first Fresnel radius: real rooms smear it). */
+const LINK_SIGMA_M = 1.0;
+const LINK_GRID_STEP_M = 0.1;
+/** Keeps a point far from every link from giving an all-zero prediction vector. */
+const LINK_FLOOR = 0.02;
+/** Softness of the arg-min: points within ~tau of the best cost share the estimate. */
+const LINK_SOFTMIN_TAU = 0.002;
+/** Tie-break weight toward the nodes carrying the evidence (see locateByLinkModel). */
+const LINK_NODE_PULL = 0.01;
+
+/**
+ * Locate a disturbance from per-link evidence. Each node measures the link
+ * node -> router, so a person is felt on a link when they stand near its LINE,
+ * not near the node. For every grid cell we predict how the disturbance would
+ * split across the links (a Gaussian of the distance to each segment,
+ * normalised to shares) and keep the cell whose predicted split best matches the
+ * measured shares. Near the router every link is hit equally; near a far node
+ * only that node's link is. A soft arg-min averages the near-ties so the
+ * estimate does not jump between cells. Returns null without usable evidence.
+ */
+export function locateByLinkModel(
+  links: { anchor: NodeAnchor; share: number }[],
+  router: NodeAnchor,
+  bounds: LinkModelBounds,
+): { x: number; z: number } | null {
+  const usable = links.filter((l) => Number.isFinite(l.share) && l.share >= 0);
+  const total = usable.reduce((sum, l) => sum + l.share, 0);
+  if (usable.length === 0 || total < EPS) return null;
+
+  const nx = Math.max(1, Math.round((bounds.maxX - bounds.minX) / LINK_GRID_STEP_M));
+  const nz = Math.max(1, Math.round((bounds.maxZ - bounds.minZ) / LINK_GRID_STEP_M));
+  const diag = Math.hypot(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) || 1;
+  const e = usable.map((l) => l.share / total);
+  const eNorm = Math.hypot(...e);
+  const cells: { x: number; z: number; cost: number }[] = [];
+  let best = Infinity;
+  for (let i = 0; i <= nx; i++) {
+    const x = bounds.minX + ((bounds.maxX - bounds.minX) * i) / nx;
+    for (let j = 0; j <= nz; j++) {
+      const z = bounds.minZ + ((bounds.maxZ - bounds.minZ) * j) / nz;
+      const g = usable.map((l) => LINK_FLOOR + Math.exp(-((distanceToSegment({ x, z }, l.anchor, router) / LINK_SIGMA_M) ** 2)));
+      const gNorm = Math.hypot(...g);
+      let dot = 0;
+      let nodePull = 0;
+      for (let k = 0; k < usable.length; k++) {
+        dot += e[k] * g[k];
+        nodePull += e[k] * (Math.hypot(x - usable[k].anchor.x, z - usable[k].anchor.z) / diag) ** 2;
+      }
+      // Shape mismatch (1 - cosine) plus a small pull toward the nodes that see
+      // the most: a single hit link fits every point along its line equally, and
+      // a person close to a node disturbs that node most.
+      const cost = 1 - dot / (eNorm * gNorm) + LINK_NODE_PULL * nodePull;
+      cells.push({ x, z, cost });
+      if (cost < best) best = cost;
+    }
+  }
+
+  let wSum = 0;
+  let x = 0;
+  let z = 0;
+  for (const c of cells) {
+    const w = Math.exp(-(c.cost - best) / LINK_SOFTMIN_TAU);
+    wSum += w;
+    x += c.x * w;
+    z += c.z * w;
+  }
+  return { x: x / wSum, z: z / wSum };
+}
+
 export function fuseNodeTargets(
   samples: NodeFuseSample[],
   opts: {
@@ -601,6 +687,10 @@ export function fuseNodeTargets(
     contrastExponent?: number;
     classifier?: ClassifierGateInput;
     mechanicalRejectHumanProbMax?: number;
+    /** Router position: switches position from the anchor centroid to the link model. */
+    router?: NodeAnchor;
+    /** Region the link model searches (required with `router`). */
+    bounds?: LinkModelBounds;
   } = {},
 ): FusedRoomTarget | null {
   const clean = samples.map((s) => ({
@@ -645,6 +735,20 @@ export function fuseNodeTargets(
     for (const s of weighted) weights[s.id] = 1 / weighted.length;
     x = weighted.reduce((sum, s) => sum + s.anchor.x, 0) / weighted.length;
     z = weighted.reduce((sum, s) => sum + s.anchor.z, 0) / weighted.length;
+  }
+
+  // With a known router the anchors are not where the evidence is: each node's
+  // signal is its node->router link. Re-place the estimate on the link model.
+  if (opts.router && opts.bounds && totalW > EPS) {
+    const located = locateByLinkModel(
+      weighted.map((s) => ({ anchor: s.anchor, share: weights[s.id] })),
+      opts.router,
+      opts.bounds,
+    );
+    if (located) {
+      x = located.x;
+      z = located.z;
+    }
   }
 
   let nearestNodeId = clean[0].id;

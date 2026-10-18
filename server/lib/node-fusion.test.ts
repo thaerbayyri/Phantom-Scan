@@ -734,3 +734,98 @@ test("computePositionUncertaintyM is bounded by the room size and never below a 
   assert.ok(hi <= 0.6 * 4 + 1e-9, `cap, got ${hi}`);
   assert.ok(Number.isFinite(computePositionUncertaintyM({}, Number.NaN, 0)));
 });
+
+// ── Router-aware link model (fused_room with a known router position) ──────
+//
+// Each node measures the link node -> router. A person disturbs a link when
+// they are near its line, not near the node. Simulate that physics and check the
+// fused position follows the person; the plain anchor centroid cannot.
+
+import { distanceToSegment, locateByLinkModel } from "./node-fusion";
+
+const ROUTER_AT_NODE_2 = { x: 2, z: -3 };
+const ROOM_BOUNDS = { minX: -2, maxX: 2, minZ: -3, maxZ: 3 };
+
+function simulateLinkDisturbance(person: { x: number; z: number }, sigmaM = 0.6) {
+  return Object.entries(ROOM_ANCHORS).map(([id, anchor]) => {
+    const d = distanceToSegment(person, anchor, ROUTER_AT_NODE_2);
+    return { id: Number(id), r: 0.02 + Math.exp(-((d / sigmaM) ** 2)), motion: 1, anchor };
+  });
+}
+
+function fuseWithRouter(person: { x: number; z: number }) {
+  return fuseNodeTargets(simulateLinkDisturbance(person), {
+    motionThreshold: 0,
+    contrastExponent: 1,
+    router: ROUTER_AT_NODE_2,
+    bounds: ROOM_BOUNDS,
+  });
+}
+
+test("distanceToSegment: projects onto the segment and clamps at the ends", () => {
+  const a = { x: 0, z: 0 };
+  const b = { x: 4, z: 0 };
+  assert.equal(distanceToSegment({ x: 2, z: 3 }, a, b), 3);
+  assert.equal(distanceToSegment({ x: -3, z: 4 }, a, b), 5); // beyond a
+  assert.equal(distanceToSegment({ x: 7, z: 4 }, a, b), 5); // beyond b
+});
+
+test("distanceToSegment: a zero-length link (node next to the router) is a point", () => {
+  const p = { x: 2, z: -3 };
+  assert.equal(distanceToSegment({ x: 5, z: 1 }, p, p), 5);
+});
+
+test("link model: person near node 1 or node 2 is placed on that side, not at nodes 3/4", () => {
+  const nearNode1 = fuseWithRouter({ x: -1.6, z: -2.6 });
+  const nearNode2 = fuseWithRouter({ x: 1.6, z: -2.6 });
+  assert.ok(nearNode1 && nearNode2);
+  assert.ok(nearNode1.z < -1.5, `near node 1 must be on the node 1/2 wall, got z=${nearNode1.z}`);
+  assert.ok(nearNode2.z < -1.5, `near node 2 must be on the node 1/2 wall, got z=${nearNode2.z}`);
+  assert.ok(nearNode1.x < nearNode2.x, "node 1 side is left of node 2 side");
+});
+
+test("link model: person near node 3 and node 4 is placed on the far wall", () => {
+  const nearNode3 = fuseWithRouter({ x: 1.7, z: 2.6 });
+  const nearNode4 = fuseWithRouter({ x: -1.7, z: 2.6 });
+  assert.ok(nearNode3 && nearNode4);
+  assert.ok(nearNode3.z > 1.0, `got z=${nearNode3.z}`);
+  assert.ok(nearNode4.z > 1.0, `got z=${nearNode4.z}`);
+  assert.ok(nearNode3.x > nearNode4.x);
+});
+
+test("link model: beats the plain anchor centroid for people near the router", () => {
+  const person = { x: 1.5, z: -2.4 };
+  const samples = simulateLinkDisturbance(person);
+  const linked = fuseNodeTargets(samples, {
+    motionThreshold: 0,
+    contrastExponent: 1,
+    router: ROUTER_AT_NODE_2,
+    bounds: ROOM_BOUNDS,
+  });
+  const centroid = fuseNodeTargets(samples, { motionThreshold: 0, contrastExponent: 1 });
+  assert.ok(linked && centroid);
+  const err = (t: { x: number; z: number }) => Math.hypot(t.x - person.x, t.z - person.z);
+  assert.ok(err(linked) < err(centroid), `linked ${err(linked)} should beat centroid ${err(centroid)}`);
+  assert.ok(err(linked) < 1.2);
+});
+
+test("link model: position stays inside the room bounds even with degenerate input", () => {
+  const t = fuseNodeTargets(
+    Object.entries(ROOM_ANCHORS).map(([id, anchor]) => ({ id: Number(id), r: 1, motion: 1, anchor })),
+    { motionThreshold: 0, contrastExponent: 1, router: ROUTER_AT_NODE_2, bounds: ROOM_BOUNDS },
+  );
+  assert.ok(t);
+  assert.ok(t.x >= ROOM_BOUNDS.minX && t.x <= ROOM_BOUNDS.maxX);
+  assert.ok(t.z >= ROOM_BOUNDS.minZ && t.z <= ROOM_BOUNDS.maxZ);
+});
+
+test("link model: without a router the result is exactly the old anchor centroid", () => {
+  const samples = simulateLinkDisturbance({ x: 1, z: 1 });
+  const plain = fuseNodeTargets(samples, { motionThreshold: 0, contrastExponent: 1 });
+  const withBounds = fuseNodeTargets(samples, { motionThreshold: 0, contrastExponent: 1, bounds: ROOM_BOUNDS });
+  assert.deepEqual(plain, withBounds);
+});
+
+test("locateByLinkModel: returns null when there are no usable shares", () => {
+  assert.equal(locateByLinkModel([], ROUTER_AT_NODE_2, ROOM_BOUNDS), null);
+});

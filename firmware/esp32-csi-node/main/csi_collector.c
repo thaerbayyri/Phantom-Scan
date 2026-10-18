@@ -16,6 +16,8 @@
 #include "edge_processing.h"
 #include "nvs_config.h"
 #include "csi_filter_pure.h"
+#include "csi_ping_pure.h"
+#include "esp_rom_sys.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -105,9 +107,11 @@ void csi_collector_refresh_filter_mac(void)
  * Minimum interval between UDP sends in microseconds.
  * CSI callbacks can fire hundreds of times per second in promiscuous mode.
  * We cap the send rate to avoid exhausting lwIP packet buffers (ENOMEM).
- * Default: 20 ms = 50 Hz max send rate.
+ * Default: 10 ms = 100 Hz max send rate. The ping (CSI source) is the real
+ * limiter; the gate only has to be shorter than the ping interval so it does
+ * not alias with it (see csi_ping_pure.h).
  */
-#define CSI_MIN_SEND_INTERVAL_US  (20 * 1000)
+#define CSI_MIN_SEND_INTERVAL_US  (CSI_MIN_SEND_INTERVAL_MS * 1000)
 static int64_t s_last_send_us = 0;
 
 static void csi_ping_cb_noop(esp_ping_handle_t hdl, void *args)
@@ -148,7 +152,10 @@ static void csi_start_self_ping(void)
     esp_ping_config_t ping_config = ESP_PING_DEFAULT_CONFIG();
     ping_config.target_addr = target_addr;
     ping_config.count = ESP_PING_COUNT_INFINITE;
-    ping_config.interval_ms = 20;
+    ping_config.interval_ms = CSI_PING_INTERVAL_MS;
+    /* Short reply wait: the 1000 ms default froze this node's CSI source for a
+     * second per lost echo reply (see csi_ping_pure.h). */
+    ping_config.timeout_ms = CSI_PING_TIMEOUT_MS;
     ping_config.data_size = 1;
 
     esp_ping_callbacks_t callbacks = {
@@ -165,6 +172,9 @@ static void csi_start_self_ping(void)
         return;
     }
 
+    /* Stagger node start times so four boards do not ping the AP in lockstep. */
+    esp_rom_delay_us(csi_ping_start_offset_ms(csi_node_id(), CSI_PING_INTERVAL_MS) * 1000U);
+
     err = esp_ping_start(s_self_ping);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "self-ping start failed: %s", esp_err_to_name(err));
@@ -173,7 +183,8 @@ static void csi_start_self_ping(void)
         return;
     }
 
-    ESP_LOGI(TAG, "self-ping started -> " IPSTR " @50Hz (CSI OFDM source)", IP2STR(&ip_info.gw));
+    ESP_LOGI(TAG, "self-ping started -> " IPSTR " every %ums (CSI OFDM source)",
+             IP2STR(&ip_info.gw), (unsigned)CSI_PING_INTERVAL_MS);
 }
 
 /* ---- ADR-029: Channel-hop state ---- */

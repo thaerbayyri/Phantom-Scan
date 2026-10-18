@@ -268,6 +268,12 @@ export const advisoryIdentitySchema = targetIdentitySchema.extend({
   modelId: z.string().max(80).optional(),
   roomId: z.string().max(80).optional(),
   nodesFused: z.array(z.number().int()).max(8).optional(),
+  // csi-embed-v2: cosine distance (0-2) of the live embedding from the
+  // empty-room reference captured by "Calibrate Empty Room". "Environment
+  // changed", NOT "occupied"; absent until calibrated.
+  embeddingDrift: z.number().min(0).max(2).optional(),
+  embeddingRefAgeS: z.number().min(0).nullable().optional(),
+  embeddingModelId: z.string().max(80).optional(),
 });
 export type AdvisoryIdentity = z.infer<typeof advisoryIdentitySchema>;
 

@@ -51,3 +51,5 @@ recordings/
 .claude/
 **/.claude/
 .docx_deps/
+
+firmware/esp32-csi-node/build_*/

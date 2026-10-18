@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DatasetStatus } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,17 +35,25 @@ export function DatasetRecorderPanel({ status, onStart, onStop }: DatasetRecorde
     const [subjectId, setSubjectId] = useState("s1");
     const [label, setLabel] = useState<string>("empty");
     const [countdown, setCountdown] = useState<number | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const recording = status?.recording === true;
     const valid = ID_PATTERN.test(roomId) && ID_PATTERN.test(subjectId);
 
+    // Leaving the page mid-countdown must cancel it: otherwise a recording starts
+    // later with no panel on screen to stop it.
+    useEffect(() => () => {
+        if (timerRef.current !== null) clearInterval(timerRef.current);
+    }, []);
+
     const begin = () => {
         let remaining = COUNTDOWN_S;
         setCountdown(remaining);
-        const timer = setInterval(() => {
+        timerRef.current = setInterval(() => {
             remaining -= 1;
             if (remaining <= 0) {
-                clearInterval(timer);
+                if (timerRef.current !== null) clearInterval(timerRef.current);
+                timerRef.current = null;
                 setCountdown(null);
                 onStart({ roomId, subjectId, label });
             } else {
