@@ -113,6 +113,8 @@ cycle the individual node frames arrive asynchronously (per
 `MultistaticConfig::guard_interval_us`), making a hybrid approach optimal:
 DTDG at the cycle level, CTDG for intra-cycle event recording.
 
+> **Phantom Scan scope caveat:** the `MultistaticFuser`/TDMA mesh described in this document is RuView's own ADR-029/ADR-031 architecture, `Proposed` (not `Accepted`) in RuView's repo, with no attached Results & Proof table, and architecturally inapplicable to Phantom Scan's 2-node, single-antenna hardware regardless of status. Phantom Scan's own multi-node roadmap is simpler multilateration-based 2D localization (`JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4), and its own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5) argues against more nodes as a near-term accuracy lever.
+
 ### 2.2 Key Frameworks
 
 #### 2.2.1 Temporal Graph Networks (TGN)
@@ -140,7 +142,7 @@ Kumar et al. (2019) model interactions between two types of nodes using
 coupled RNN-based projections. Each interaction updates both nodes'
 embeddings and projects them forward in time.
 
-**Relevance to RuView**: The TX-RX duality in our multistatic mesh is
+**Relevance to RuView**: The TX-RX duality in RuView's `Proposed` multistatic mesh (see scope caveat above) is
 analogous to JODIE's user-item pairs. When person P crosses link L(A,B),
 we can update both the "transmitter A state" and "receiver B state"
 simultaneously, projecting both forward to the next expected observation.

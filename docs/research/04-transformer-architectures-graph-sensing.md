@@ -3,6 +3,8 @@
 **Research Document 04** | March 2026
 **Context**: RuView / wifi-densepose — 16-node ESP32 mesh, CSI coherence-weighted graphs, mincut-based boundary detection, real-time inference requirements.
 
+> **Phantom Scan scope caveat:** the 16-node mesh described here is RuView's own ADR-029/ADR-031 architecture, `Proposed` (not `Accepted`) in RuView's repo, with no attached Results & Proof table, and architecturally inapplicable to Phantom Scan's 2-node, single-antenna hardware regardless of status. Phantom Scan's own multi-node roadmap is simpler multilateration-based 2D localization (`JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4), and its own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5) argues against more nodes as a near-term accuracy lever.
+
 ---
 
 ## Abstract
@@ -893,4 +895,4 @@ The differentiable mincut predictor enables end-to-end gradient flow from downst
 
 ---
 
-*This document supports ADR-029 (RuvSense multistatic sensing mode) and ADR-031 (RuView sensing-first RF mode) by providing the theoretical foundation for transformer-based inference on RF topological graphs.*
+*This document supports ADR-029 (RuvSense multistatic sensing mode) and ADR-031 (RuView sensing-first RF mode) by providing the theoretical foundation for transformer-based inference on RF topological graphs — both `Proposed`, not shipped Phantom Scan capabilities (see scope caveat above).*

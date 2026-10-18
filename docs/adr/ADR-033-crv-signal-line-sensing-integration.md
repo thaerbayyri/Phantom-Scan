@@ -722,6 +722,8 @@ Additionally, the CRV module benefits from existing ruvector integrations alread
 | ADR-031 (RuView Viewpoint Fusion) | **Complementary**: RuView fuses viewpoints within a room; CRV convergence matches identities across rooms |
 | ADR-032 (Mesh Security) | **Consumed**: Authenticated beacons and frame integrity (ADR-032) ensure CRV Stage IV AOL detection reflects genuine signal quality, not spoofed frames |
 
+> **Phantom Scan scope caveat:** ADR-029 and ADR-031 above are RuView's own multistatic-mesh architecture, `Proposed` (not `Accepted`) in RuView's catalog, with no attached Results & Proof table, and architecturally inapplicable to Phantom Scan's 2-node, single-antenna hardware regardless of status. Phantom Scan's own multi-node roadmap is simpler multilateration-based 2D localization (`JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4), and its own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5) argues against more nodes as a near-term accuracy lever.
+
 ---
 
 ## 9. References

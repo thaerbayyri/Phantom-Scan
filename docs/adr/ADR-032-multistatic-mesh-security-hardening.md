@@ -9,6 +9,8 @@
 
 ---
 
+> **Phantom Scan scope caveat:** this ADR hardens ADR-029/ADR-030/ADR-031's multistatic mesh, which are themselves `Proposed`, not `Accepted`, in RuView's own catalog — i.e. this secures a mesh design that has not shipped. It carries no attached Results & Proof table and is architecturally inapplicable to Phantom Scan's 2-node, single-antenna hardware regardless of status. Phantom Scan's own multi-node roadmap is simpler multilateration-based 2D localization (`JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4), and its own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5) argues against more nodes as a near-term accuracy lever.
+
 ## 1. Context
 
 ### 1.1 Security Audit of ADR-029/030/031

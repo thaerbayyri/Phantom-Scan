@@ -127,6 +127,8 @@ bidirectional link. For N nodes, the maximum number of links is:
 L = N * (N - 1) / 2
 ```
 
+> **Phantom Scan scope caveat:** this N-node deployment model is RuView's own ADR-029/ADR-031 architecture, `Proposed` (not `Accepted`) in RuView's repo, with no attached Results & Proof table, and architecturally inapplicable to Phantom Scan's 2-node, single-antenna hardware regardless of status. Phantom Scan's own multi-node roadmap is simpler multilateration-based 2D localization (`JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4), and its own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5) argues against more nodes as a near-term accuracy lever.
+
 Each link samples the RF field along a different spatial trajectory.
 The collection of all links forms a spatial sampling pattern analogous
 to a CT scanner's projection geometry. Resolution depends on:

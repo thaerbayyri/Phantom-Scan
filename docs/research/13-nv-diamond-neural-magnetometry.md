@@ -457,6 +457,8 @@ t = 0 ms:    WiFi CSI detects actual body movement
 This enables **predictive** body tracking: RuView knows the person will move before
 the movement physically occurs.
 
+> **Phantom Scan scope caveat:** this NV-diamond-fused prediction describes a speculative future extension to RuView's own `Proposed` (not `Accepted`) multistatic architecture (ADR-029/ADR-031), with no attached Results & Proof table and no relationship to Phantom Scan's shipped 2-node, single-antenna hardware. Phantom Scan's own multi-node roadmap is simpler multilateration-based 2D localization (`JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4), and its own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5) argues against more nodes as a near-term accuracy lever.
+
 ---
 
 ## 8. Real-Time Neural Current Flow Mapping

@@ -74,6 +74,8 @@ A single-viewpoint system suffers from a fundamental geometric limitation: body 
 
 Multistatic geometry addresses this by creating an N_tx x N_rx virtual antenna array with spatial diversity gain. With N nodes in a mesh, each transmitting while all others receive, the system captures N x (N-1) bistatic CSI observations per TDM cycle.
 
+> **Phantom Scan scope caveat:** this describes RuView's own ADR-029 ("RuvSense Multistatic Sensing Mode") architecture, whose status in RuView's repo is `Proposed`, not `Accepted` — unlike RuView's validated 82.3%/82.69% headline figures, it carries no attached Results & Proof table. It is also architecturally inapplicable to Phantom Scan's 2-node, single-antenna hardware regardless of status. Phantom Scan's own future multi-node roadmap item is multilateration-based 2D localization — a materially simpler range-proxy technique, not multistatic Doppler/pose fusion (see `JODDB_PHASE2_TECHNICAL_PROPOSAL.md` §4.4) — and Phantom Scan's own "dilution effect" finding (`PhantomScan_Research_Gap_Analysis.md` §5: a single well-placed link outperformed 72-link fusion) argues against treating additional nodes as a near-term accuracy lever.
+
 **Geometric Diversity Index (GDI).** Quantify viewpoint quality:
 
     GDI = (1/N) * sum_i min_{j != i} |theta_i - theta_j|
@@ -348,7 +350,7 @@ G_bias is a learnable geometric bias derived from viewpoint pair geometry (angul
 | Deployment time | 30 min | Hours | 1 hour | Hours | Minutes |
 | IEEE 802.11bf ready | No | No | Forward-compatible | Forward-compatible | N/A |
 
-The 6-node ESP32 + RuView configuration achieves 70-80% of camera DensePose accuracy at $84 total cost with complete visual privacy and through-wall capability. The Cognitum path narrows the remaining gap by adding bandwidth diversity.
+The 6-node ESP32 + RuView configuration *targets* 70-80% of camera DensePose accuracy at $84 total cost with complete visual privacy and through-wall capability — the "(target)" figures in the table above are projections, not measured results (RuView's ADR-029 multistatic mode is `Proposed`, unvalidated, and architecturally inapplicable to Phantom Scan's 2-node single-antenna hardware; see the caveat in §2.3). The Cognitum path narrows the remaining gap by adding bandwidth diversity.
 
 ---
 

@@ -85,22 +85,10 @@ export function AoASpectrum({ frame, className = "" }: AoASpectrumProps) {
               fillcolor: "hsla(217, 91%, 60%, 0.2)",
               hovertemplate: "Steering coord: %{x}<br>Power: %{y:.1f} dB<extra></extra>",
             },
-            {
-              type: "scatter",
-              mode: "markers",
-              x: [plotData.peakAngle],
-              y: [Math.max(...plotData.powers)],
-              marker: {
-                // De-emphasized (was red/size 10): the peak is a signature
-                // feature, not a measured direction — it must not read as a
-                // confident spatial fix.
-                color: "hsl(217, 30%, 55%)",
-                size: 6,
-                symbol: "diamond-open",
-              },
-              name: "Peak",
-              hovertemplate: "Signature peak (steering coord %{x} — not a spatial angle)<extra></extra>",
-            },
+            // No peak marker: a marked peak reads as a confident spatial
+            // fix even when de-emphasized (PS-GAP-MUSIC-001 honesty caveat,
+            // Task 1a) — the curve alone conveys the signature without
+            // implying a resolved direction.
           ]}
           layout={{
             autosize: true,
