@@ -769,7 +769,7 @@ def chapter_4(doc: Document) -> list[int]:
             ["FR11", "The dashboard shall render node beacons, the fused target, motion vectors, spectral views, and Board-DSP cards, gated by presentation-honesty helpers.", "client/src/components/dashboard/"],
             ["FR12", "Operators shall authenticate before accessing the dashboard or privileged actions; security-relevant events shall be audit-logged.", "server/auth/, server/audit/"],
             ["FR13", "The system shall support session recording (JSONL/CSV) and deterministic replay for offline analysis and testing.", "recording-export.ts, phantom/ package"],
-            ["FR14", "The system shall provide an empty-room calibration tool that derives the motion gate from a recorded baseline (mean + k*sigma).", "scripts/calibrate-threshold.ts"],
+            ["FR14", "The system shall provide an empty-room and negative-control calibration tool: a single short run yields descriptive statistics only, and a candidate threshold requires an empty soak of at least 60 min plus a fan control of at least 5 min in one link state with the drift check passing. The current gate is provisional.", "scripts/calibrate-threshold.ts"],
         ],
         widths=[0.5, 4.0, 2.0],
     )
@@ -1446,7 +1446,7 @@ def chapter_8(doc: Document) -> list[int]:
     add_text_paragraph(doc, "Recommendations for future work, in priority order:")
     add_numbered_list(doc, [
         "Execute the full positional-fidelity campaign (stages P0-S8) and the measurement plan, populating the results ledger with defensible live numbers [20], [21].",
-        "Run the empty-room calibration tool in each deployment room and replace the placeholder gate with a mean + k*sigma calibrated threshold, validated against fan/curtain negative controls.",
+        "Recalibrate the placeholder gate in each deployment room from a live empty-room soak of at least 60 minutes (with an entry log) plus a fan/vibration negative control in the same link state, using the calibration tool's --evaluate mode; the current gate is provisional and its false-alarm and detection rates are [TO BE MEASURED].",
         "Extend the geometry beyond one dimension: a third node (the firmware's channel-hop and multistatic decision records already sketch this path) would resolve off-axis position and front/back ambiguity [12].",
         "Promote the firmware edge-DSP tier so board-side presence/respiration estimates can cross-check host fusion, with the host remaining authoritative.",
         "Investigate multi-antenna ESP32-S3 configurations or a hybrid node to enable live AoA and reduce the single-target limitation.",

@@ -7,7 +7,8 @@
  * window -> computeNodeMotionFromMatrix), sampling max(motion1, motion2).
  * With --spatial it ALSO samples per-packet total amplitude energy (the same
  * magnitude quantity TrackingProcessor's cluster-energy gate sums) and
- * reports a mean+k*sigma suggestion for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
+ * reports a descriptive, provisional mean+k*sigma figure (not drift- or pooling-checked;
+ * never apply it from a single run) for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
  * calibrateEnergyThreshold (server/lib/tracking.ts).
  *
  * Usage:
@@ -44,7 +45,7 @@ const samples: number[] = [];
 const packetCounts = new Map<number, number>();
 /** --spatial: per-packet total amplitude energy (sum of per-subcarrier
  * amplitudes) — the magnitude quantity the TrackingProcessor cluster gate
- * sums. Collected raw here; mean+k*sigma computed by calibrateEnergyThreshold. */
+ * sums. Collected raw here; a descriptive, provisional mean+k*sigma is computed by calibrateEnergyThreshold. */
 const energySamples: number[] = [];
 
 const sock = dgram.createSocket("udp4");

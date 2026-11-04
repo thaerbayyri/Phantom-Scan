@@ -439,7 +439,7 @@ In addition to the server-side Python pipeline, the ESP32 firmware implements a 
 | Biquad IIR bandpass | Butterworth, Respiration: 0.1–0.5 Hz; Cardiac: 0.8–2.0 Hz | 28 bytes per filter |
 | Welford running variance | Numerically stable online algorithm | 12 bytes per subcarrier |
 | Top-K subcarrier selection | Variance-ranked partial sort | K=8, refresh every 300 frames |
-| Presence detection | Adaptive threshold: μ + 3σ (60-second sliding window) | 1,200-sample calibration |
+| Presence detection | Adaptive threshold: μ + 3σ over a 60-second sliding window (firmware edge-tier design target, **provisional**; false-alarm and detection rates `[TO BE MEASURED]`) | 1,200-sample calibration |
 | Fall detection | Phase acceleration spike > 2.0 rad/s² | < 200 ms latency |
 | Multi-person vitals | Subcarrier group clustering (up to 4 persons) | Concurrent BPM/RPM per person |
 | Delta compression | XOR + RLE for bandwidth reduction | 40–60% payload reduction |

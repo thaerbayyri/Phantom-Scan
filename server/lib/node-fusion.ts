@@ -31,12 +31,16 @@ export const MOTION_SATURATION_SCALE = 4;
 /**
  * Presence/motion gate for emitting a fused target. THIS IS THE DETECTOR.
  *
- * Calibrated 2026-07-20 against this rig's measured empty-room baseline
+ * PROVISIONAL. Set 2026-07-20 from a single 60 s empty-room recording on this rig
  * (`max(motion1, motion2)` over 296 samples: mean 0.49, sigma 0.027, max 0.58 —
- * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that noise ceiling.
- * Re-calibrate via scripts/calibrate-threshold.ts (and re-validate against a
- * negative control: a fan/curtain must be REJECTED while a still, breathing-only
- * person is still detected) if the room or hardware setup changes materially.
+ * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that recording's maximum;
+ * it is not a mean + k*sigma result and does not account for empty-vs-empty drift
+ * between recordings. Real recalibration needs a live empty-room soak of >= 60 min
+ * (with an entry log) plus a fan/vibration negative control in the same link state,
+ * evaluated with `scripts/calibrate-threshold.ts --evaluate`. False-alarm and
+ * detection rates: [TO BE MEASURED]. Re-validate against a negative control (a
+ * fan/curtain must be REJECTED while a still, breathing-only person is still
+ * detected) if the room or hardware setup changes materially.
  * Override at runtime via PHANTOM_MOTION_THRESHOLD, or persistently via the
  * "Fused Target Presence Threshold" slider (server/lib/runtime-settings.ts).
  */

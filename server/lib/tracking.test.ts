@@ -10,8 +10,8 @@ import {
 import type { PointCloudPoint } from "@shared/schema";
 
 // ── calibrateEnergyThreshold (Item 4) ──────────────────────────────────────
-// Same mean+k*sigma statistical method as scripts/calibrate-threshold.ts's
-// motion-gate calibration; here applied to a pure array of synthetic
+// mean+k*sigma over given samples (a descriptive helper; scripts/calibrate-threshold.ts
+// no longer derives the motion gate this way); here applied to a pure array of synthetic
 // empty-room energy samples (no live UDP capture — that's the real,
 // hardware-gated calibration run, tracked as [TO BE MEASURED]).
 

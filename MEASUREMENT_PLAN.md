@@ -35,7 +35,7 @@ node 1 at `[-1.5, 0]`, node 2 at `[+1.5, 0]` — 3 m separation, origin at the c
 5. Pass criterion for the synthetic unit test is `balance ~= 0.5 -> x ~= 0 m` (midpoint is
    ~1.5 m from each node); live hardware tolerance is `[TO BE MEASURED]`.
    Negative control: an empty room / on-axis fan must yield **no target** (motion below the
-   calibrated `PHANTOM_MOTION_THRESHOLD`), not a centered ghost.
+   provisional `PHANTOM_MOTION_THRESHOLD`, 0.6; false-alarm rate `[TO BE MEASURED]`), not a centered ghost.
 6. Distance-readout accuracy (per trial): at 3+ tape-marked points on the axis, record
    **displayed per-node `distanceM` vs actual tape-measured distance** to each node, so the
    readout has an error figure instead of "looks right". Same trial logs whether the per-node

@@ -22,15 +22,18 @@ already covers moving targets.
 ## What changed (this session)
 
 1. `server/lib/tracking.ts` — new pure `calibrateEnergyThreshold(samples, k)`
-   (mean + k·σ, the same statistical method `scripts/calibrate-threshold.ts`
-   uses for the motion gate), plus `DEFAULT_SPATIAL_ENERGY_THRESHOLD`
+   (mean + k·σ over whatever samples it is given — a **provisional**,
+   descriptive helper: it is not drift- or pooling-checked, and since PS-FIX-11
+   `scripts/calibrate-threshold.ts` no longer derives the motion gate this way), plus `DEFAULT_SPATIAL_ENERGY_THRESHOLD`
    (env `PHANTOM_SPATIAL_ENERGY_THRESHOLD`, default **10 — identical to the old
    hardcoded literal**, so behavior is unchanged until an operator applies a
    real calibration). `TrackingProcessor` now accepts the threshold as a
    constructor parameter instead of a buried literal.
 2. `scripts/calibrate-threshold.ts` — new `--spatial` flag: alongside the
    motion-gate calibration it samples per-packet total amplitude energy and
-   prints a suggested `PHANTOM_SPATIAL_ENERGY_THRESHOLD` (mean+3σ / mean+4σ).
+   prints a **provisional**, descriptive `PHANTOM_SPATIAL_ENERGY_THRESHOLD`
+   suggestion (mean+3σ / mean+4σ over that one run). It is not drift- or
+   pooling-checked: do not apply it from a single run.
 3. `server/lib/tracking.test.ts` — unit tests for the calibration math
    (synthetic samples, clearly labeled) and regression tests pinning the
    default threshold to the historical value.
@@ -53,12 +56,27 @@ not identical to in-pipeline cluster energy (which depends on the MUSIC point
 cloud and DBSCAN membership). Treat its suggestion as a starting point, then
 validate behaviorally.
 
-## Procedure (hardware session, ~15 min)
+## Procedure (hardware session: hours, not minutes)
+
+A 5-minute run cannot support a threshold. The committed 0.6 motion gate came from a
+single 60 s empty recording, and recordings of the same empty room separate from each
+other (symmetric AUC upper bounds 0.68–0.91 against a 0.65 limit, `reports/fix-2026-11/13-PS-FIX-11.md`).
+The procedure below is **provisional** until it has been run; the resulting false-alarm
+and detection figures stay `[TO BE MEASURED]`.
 
 1. Stop the dashboard (the calibration tool must own UDP :5005).
-2. Empty the room completely. Run:
-   `npx tsx scripts/calibrate-threshold.ts --seconds 300 --spatial`
-3. Note both suggestions (motion threshold and spatial energy threshold).
+2. Empty the room completely and keep an entry log (time, who, door). Collect an
+   **empty soak of at least 60 minutes**, nodes not moved (add `--spatial` to also
+   sample spatial energy):
+   `npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600 --out .tmp/cal/empty1.json`
+   Then, in the **same link state**, a **fan negative control of at least 5 minutes**
+   (fan or other vibration source, no person):
+   `npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --out .tmp/cal/fan.json`
+3. Evaluate offline (no socket):
+   `npx tsx scripts/calibrate-threshold.ts --evaluate --empty .tmp/cal/empty1.json --fan .tmp/cal/fan.json`
+   The tool refuses to print a candidate when the soak is too short, the negative
+   control is missing, the runs span a link-state change, or the empty-vs-empty control
+   shows drift. A refusal is a valid outcome. The spatial-energy figure is descriptive only.
 4. Restart the dashboard with the candidate value:
    `PHANTOM_SPATIAL_ENERGY_THRESHOLD=<suggested> npm run dev`
 5. Validate per ADR-057's own recommendation: leave the room empty >5 s in

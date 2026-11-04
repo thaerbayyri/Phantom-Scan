@@ -24,9 +24,9 @@ import type { PointCloudPoint, TrackedTarget } from "@shared/schema";
 
 /**
  * Empty-room / negative-control calibration for a magnitude-only energy
- * threshold — same mean+k*sigma statistical method as
- * scripts/calibrate-threshold.ts's PHANTOM_MOTION_THRESHOLD calibration,
- * applied here to cluster energy (or raw MUSIC spectrum power) samples
+ * threshold — mean+k*sigma over the samples given: a provisional, descriptive
+ * helper, not drift- or pooling-checked (scripts/calibrate-threshold.ts no longer
+ * derives PHANTOM_MOTION_THRESHOLD this way; PS-FIX-11), applied here to cluster energy (or raw MUSIC spectrum power) samples
  * instead of temporal motion variance. Pure and unit-testable with
  * synthetic OR real recorded empty-room samples — this function itself
  * makes no live/network calls.
