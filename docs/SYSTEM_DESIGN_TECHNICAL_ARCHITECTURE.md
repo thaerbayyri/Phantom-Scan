@@ -458,7 +458,7 @@ FUNCTION select_top_k(variance_array[N]) -> index_set:
 |---|---|
 | Total subcarriers $N$ | 52 (HT20) / 114 (HT40) |
 | Selected subset $K$ | 8 (configurable, 6–12 range) |
-| Variance threshold $\tau$ | 0.001 (auto-calibrated via noise floor) |
+| Variance threshold $\tau$ | 0.001 (design value, provisional: auto-calibrated via the noise floor in the design; top-K subcarrier selection, not the presence gate; not checked against the implementation `[UNVERIFIED]`) |
 | Selection refresh interval | Every 300 frames (15 seconds) |
 | Execution tier | Tier 1 (ESP32 Core 1) → Tier 2 (Server) |
 

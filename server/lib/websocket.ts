@@ -1814,9 +1814,10 @@ export class SignalProcessingServer {
    * samples, ~2.4s at ~42fps) whenever `motionGateEnabled` is false — the
    * live config default (`websocket.ts` config, `motionGateEnabled: false`).
    * That short, single-session auto-calibration window is far less robust
-   * than the two-node fused gate's threshold (DEFAULT_MOTION_THRESHOLD,
-   * empirically calibrated against a real empty-room + fan negative control
-   * — see node-fusion.ts). Real empty-room recordings in single_node mode
+   * than the two-node fused gate's threshold (DEFAULT_MOTION_THRESHOLD, 0.6:
+   * PROVISIONAL, set from one 60 s empty-room recording and never validated
+   * against a fan negative control: a fan produced a confident false target at
+   * 0.6, see LIVE_HARDWARE_TEST_REPORT.md finding 5 and node-fusion.ts). Real empty-room recordings in single_node mode
    * (`data/sessions/emty_room_test_2026-07-20T18-18-51-892Z.csv`,
    * `emty_2026-07-20T18-21-17-566Z.csv`) show `motionResult.motionDetected`
    * true on 98-99% of ticks with nobody in the room — a continuous ghost

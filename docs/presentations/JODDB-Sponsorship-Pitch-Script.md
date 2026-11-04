@@ -199,13 +199,13 @@ Pick one language track and stay consistent within a section — switching mid-s
 > With [FUNDING AMOUNT] over [TIMELINE], here's exactly what we'd deliver:
 > **Phase one** — a validated real-hardware calibration campaign: empty-room baselines, negative controls, and thresholds backed by measured data instead of placeholders.
 > **Phase two** — a pilot deployment at [PILOT SITE], proving the system in a real environment with real walls and real interference sources, not a lab bench.
-> **Phase three**, looking further out — extending beyond two nodes toward a multi-node mesh, which is the architecture path toward genuine two-dimensional localization instead of the honest one-dimensional result we have today. I want to be clear that phase three is a research direction, not a promise — but it's the natural next step once the two-node foundation is calibrated and proven.
+> **Phase three**, looking further out — extending beyond two nodes toward a multi-node mesh, which is the architecture path toward genuine two-dimensional localization instead of the honest one-dimensional result we have today. I want to be clear that phase three is a research direction, not a promise — but it's the natural next step once the two-node foundation has actually been calibrated and validated, which it has not yet been (the detection threshold is provisional).
 
 **AR:**
 > بدعم بقيمة [FUNDING AMOUNT] على مدى [TIMELINE]، إليكم بالضبط ما سنقدّمه:
 > **المرحلة الأولى** — حملة معايرة موثّقة على عتاد حقيقي: خطوط أساس لغرفة فارغة، اختبارات ضبط سلبية، وعتبات كشف مبنية على بيانات مقاسة فعليًا بدلًا من قيم افتراضية.
 > **المرحلة الثانية** — نشر تجريبي في [PILOT SITE]، لإثبات عمل النظام في بيئة حقيقية بجدران حقيقية ومصادر تشويش حقيقية، لا على طاولة مختبر.
-> **المرحلة الثالثة**، بمنظور أبعد — التوسع إلى ما هو أبعد من عقدتين نحو شبكة متعددة العقد، وهو المسار المعماري نحو تموضع ثنائي الأبعاد حقيقي بدلًا من النتيجة الصادقة أحادية البُعد التي نمتلكها اليوم. أود أن أوضح أن المرحلة الثالثة هي توجه بحثي، وليست وعدًا — لكنها الخطوة التالية الطبيعية بمجرد معايرة الأساس ثنائي العقدة وإثباته.
+> **المرحلة الثالثة**، بمنظور أبعد — التوسع إلى ما هو أبعد من عقدتين نحو شبكة متعددة العقد، وهو المسار المعماري نحو تموضع ثنائي الأبعاد حقيقي بدلًا من النتيجة الصادقة أحادية البُعد التي نمتلكها اليوم. أود أن أوضح أن المرحلة الثالثة هي توجه بحثي، وليست وعدًا — لكنها الخطوة التالية الطبيعية بمجرد معايرة الأساس ثنائي العقدة والتحقق منه فعليًا، وهو ما لم يتم بعد (عتبة الكشف الحالية مؤقتة).
 
 ---
 

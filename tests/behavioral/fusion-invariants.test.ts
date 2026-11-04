@@ -111,7 +111,7 @@ test("fuseTwoNodeTarget hits the r1^p+r2^p<=EPS fallback (balance=0.5) when pres
   const t = fuseTwoNodeTarget({
     r1: 1e-4,
     r2: 1e-4,
-    motion1: 1, // clears the default 0.12 threshold, so `present` is true
+    motion1: 1, // clears the 0.12 threshold passed explicitly below (NOT the code default, 0.6), so `present` is true
     motion2: 0,
     motionThreshold: 0.12,
     anchors: ANCHORS,

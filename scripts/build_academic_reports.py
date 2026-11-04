@@ -438,7 +438,7 @@ def chapter_1(doc: Document) -> list[int]:
     add_heading(doc, "1.4 Limitations", 2)
     add_bullet(doc, "The fused localization is one-dimensional: the target is placed on the 3 m line between the two node anchors. A person walking off-axis is projected onto that line, and movement perpendicular to the axis is not representable [12], [15].")
     add_bullet(doc, "Each node uses a single antenna, so classical multi-antenna Angle-of-Arrival techniques run only on synthetic or replay inputs, not on the live path [12].")
-    add_bullet(doc, "The detection gate threshold (default 0.12) is an engineering placeholder that must be calibrated per room from an empty-room baseline; the repository ships a calibration tool for this purpose [12].")
+    add_bullet(doc, "The detection gate threshold (default 0.6) is provisional: it was set from a single 60 s empty-room recording and has not been validated against a negative control or a long empty soak; the repository ships a calibration tool that refuses to produce a threshold from a single short run [12]. False-alarm and detection rates are [TO BE MEASURED].")
     add_bullet(doc, "Headline live metrics such as detection rate, false-positive rate, and localization error are defined in measurement protocols but not yet populated from repeated live campaigns [20], [21].")
     add_bullet(doc, "Two people in the sensing area blend into a single fused estimate; multi-target separation is out of the current scope [20].")
 
@@ -761,7 +761,7 @@ def chapter_4(doc: Document) -> list[int]:
             ["FR3", "The host shall be the sole owner of UDP port 5005 and shall parse and validate CSI frames (magic 0xC5110001), heartbeats (0xC51100A1), and firmware feature-state packets (0xC5110006).", "server/lib/udp-server.ts"],
             ["FR4", "The host shall pin each node identity to its source address and reject frames for a known node arriving from a foreign source, with rate-limited security logging.", "SourcePinningGuard in udp-server.ts"],
             ["FR5", "The host shall compute a per-node motion metric as the windowed per-subcarrier temporal standard deviation of CSI amplitude (default window 1500 ms).", "node-fusion.ts, websocket.ts"],
-            ["FR6", "The system shall emit NO target when neither node's motion clears the calibrated gate (default 0.12): an empty room must stay empty on screen.", "fuseTwoNodeTarget empty-room gate"],
+            ["FR6", "The system shall emit NO target when neither node's motion clears the gate (default 0.6, provisional): an empty room must stay empty on screen.", "fuseTwoNodeTarget empty-room gate"],
             ["FR7", "With both nodes live, the host shall fuse the two motion energies into a one-dimensional position on the node axis, with distance-to-nearest-node and per-node approaching/receding/stable trends.", "node-fusion.ts, websocket.ts"],
             ["FR8", "With one node live, the system shall enter an explicitly labeled degraded single-node state and shall not fabricate fused output [18].", "target-state.ts (node_mode)"],
             ["FR9", "Targets shall become 'stale' 1.5 s after the last live sample and shall be hard-cleared after 5 s; disconnects clear all client state.", "target-state.ts, use-websocket.ts"],
@@ -816,7 +816,7 @@ DATAFLOW_DIAGRAM = r"""
                server/lib/websocket.ts  (50 ms loop)
                - per-node 1500 ms amplitude window
                - computeNodeMotionFromMatrix()  [node-fusion.ts]
-               - fuseTwoNodeTarget(): gate 0.12, balance p=2.0
+               - fuseTwoNodeTarget(): gate 0.6 (provisional), balance p=2.0
                - target-state.ts truth machine (none/stale/
                  idle/moving/degraded), trends, distances
                                v
@@ -1000,7 +1000,7 @@ export function computeNodeMotionFromMatrix(frames: number[][]): NodeMotion {
 
 FUSION_EXCERPT = """// server/lib/node-fusion.ts - two-node balance fusion with empty-room gate
 export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
-  const threshold = input.motionThreshold ?? DEFAULT_MOTION_THRESHOLD; // 0.12
+  const threshold = input.motionThreshold ?? DEFAULT_MOTION_THRESHOLD; // 0.6 (provisional)
   const present = Math.max(input.motion1, input.motion2) >= threshold
                   && r1 + r2 > EPS;
   if (!present) return null;              // empty room => NO target (no ghost)
@@ -1119,13 +1119,13 @@ def chapter_6(doc: Document) -> list[int]:
     add_text_paragraph(
         doc,
         "Presence is then decided by an explicit empty-room gate: a fused target exists only if "
-        "max(motion1, motion2) >= PHANTOM_MOTION_THRESHOLD (default 0.12). Below the gate the "
+        "max(motion1, motion2) >= PHANTOM_MOTION_THRESHOLD (default 0.6, provisional). Below the gate the "
         "fusion returns null and the dashboard shows an empty scene - not a centered ghost. The "
-        "threshold is documented in-code as a placeholder to be calibrated per room: "
+        "threshold is documented in-code as provisional (set from one 60 s empty-room recording): "
         "scripts/calibrate-threshold.ts records an empty-room baseline through the exact "
-        "production pipeline and reports mean + 3/4/5-sigma candidates, and the negative-control "
+        "production pipeline and reports descriptive statistics only (it refuses to suggest a threshold from a single run), and the negative-control "
         "requirement (a fan or curtain must be rejected while a still, breathing person is still "
-        "detected) is written into the measurement protocol [21].",
+        "detected) is written into the measurement protocol [21]; it has not yet been met.",
     )
 
     add_heading(doc, "6.3.4 Two-Node Balance Fusion and 1-D Localization", 3)
@@ -1439,7 +1439,7 @@ def chapter_8(doc: Document) -> list[int]:
     add_heading(doc, "8.3 Limitations and Recommendations for Future Work", 2)
     add_text_paragraph(doc, "Principal limitations of the current system:")
     add_bullet(doc, "One-dimensional localization: the target is a projection onto the 3 m node axis; off-axis position and perpendicular movement are not representable [15], [20].")
-    add_bullet(doc, "Uncalibrated default gate: the 0.12 motion threshold is a placeholder pending per-room empty-room calibration and negative-control validation [21].")
+    add_bullet(doc, "Provisional default gate: the 0.6 motion threshold (set from one 60 s empty recording) is pending the live empty-room soak and negative-control validation [21]; its false-alarm and detection rates are [TO BE MEASURED].")
     add_bullet(doc, "Single-target assumption: multiple people blend into one fused estimate.")
     add_bullet(doc, "Pending metrology: detection rate, localization error, and vitals accuracy are protocol-defined but unmeasured [20], [21].")
     add_bullet(doc, "Single-antenna nodes: true Angle-of-Arrival remains replay/synthetic-only on this hardware.")

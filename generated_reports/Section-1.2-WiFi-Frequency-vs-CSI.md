@@ -78,7 +78,7 @@ these amplitudes: over a sliding 1.5-second window the server computes the stand
 deviation of each subcarrier's amplitude and averages across subcarriers, producing a
 motion-energy score per node. In an empty room the channel is static and the score stays
 near zero; a moving person continuously reshapes the multipath, the per-subcarrier
-amplitudes fluctuate, and the score rises above the calibrated empty-room threshold.
+amplitudes fluctuate, and the score rises above the empty-room threshold (provisional: 0.6, set from one 60 s empty recording).
 Comparing the two nodes' scores with the RuView balance ratio then places the person on
 the axis between the nodes [15]. Phase information, although present in raw CSI, is
 deliberately not used on the live detection path: with a single antenna per node, the
@@ -101,5 +101,5 @@ and is unstable frame-to-frame, whereas the amplitude is robust [1], [12].
 
 - Channel → frequency mapping (2412 + (channel−1)·5 MHz): `firmware/esp32-csi-node/main/csi_collector.c`, frequency-derivation block.
 - Raw CSI payload = int8 I/Q pairs per subcarrier; amplitude = √(I²+Q²), capped at 64 subcarriers (antenna 0): `server/lib/udp-server.ts`.
-- Motion energy = per-subcarrier temporal standard deviation over the 1500 ms window; empty-room gate threshold 0.12 (calibratable): `server/lib/` fusion pipeline, `shared/schema.ts` comment on `amplitudes`.
+- Motion energy = per-subcarrier temporal standard deviation over the 1500 ms window; empty-room gate threshold 0.6 (provisional; set from one 60 s empty recording, false-alarm and detection rates [TO BE MEASURED]): `server/lib/` fusion pipeline, `shared/schema.ts` comment on `amplitudes`.
 - Two-node RuView balance localization: report Chapter 6 / reference [15].

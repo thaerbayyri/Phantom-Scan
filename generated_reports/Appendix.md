@@ -68,7 +68,7 @@
 | `server/auth/ws-auth.ts` | WebSocket handshake authentication - validates the operator's JWT/cookie session before any live data flows. |
 | `server/index.ts` | Express application bootstrap: HTTP server, routes, WebSocket layer, and UDP ingest startup. |
 | `server/lib/complex.ts` | Complex-number arithmetic helpers (add, multiply, conjugate, magnitude) used by the DSP chain. |
-| `server/lib/node-fusion.ts` | **The detector.** Pure functions for per-subcarrier turbulence motion (`computeNodeMotionFromMatrix`), the empty-room gate (default 0.12), contrast-sharpened two-node balance fusion (`fuseTwoNodeTarget`, p = 2.0), display bias, and approach/recede trend hysteresis. |
+| `server/lib/node-fusion.ts` | **The detector.** Pure functions for per-subcarrier turbulence motion (`computeNodeMotionFromMatrix`), the empty-room gate (default 0.6, provisional), contrast-sharpened two-node balance fusion (`fuseTwoNodeTarget`, p = 2.0), display bias, and approach/recede trend hysteresis. |
 | `server/lib/recording-export.ts` | CSV export of recorded sessions with the positional-fidelity column contract (gate state, balance, distances, ground-truth join). |
 | `server/lib/session-store.ts` | Persistent store for scan sessions/cases and their recorded artifacts. |
 | `server/lib/signal-processing.ts` | Legacy single-node DSP helpers: background clutter subtraction, motion gate, MUSIC AoA spectrum, point-cloud generation, PDP ranging, micro-Doppler classification. |
@@ -291,4 +291,4 @@ Detection rate, false-positive rate, on-axis localization error versus tape-mark
 - Recording is controlled from the dashboard top bar (REC); sessions are stored as JSONL/CSV under `data/sessions/` and can be exported as CSV.
 - `scripts/replay_to_dashboard.py` replays a recorded session into the live ingest for demonstration or debugging without hardware.
 
-**Tunable environment variables:** `PHANTOM_MOTION_THRESHOLD` (empty-room gate, default 0.12), `PHANTOM_MOTION_WINDOW_MS` (motion window, default 1500), `PHANTOM_BALANCE_CONTRAST` (balance exponent, default 2.0), `PHANTOM_TREND_DEADBAND_MPS` (trend deadband, default 0.05).
+**Tunable environment variables:** `PHANTOM_MOTION_THRESHOLD` (empty-room gate, default 0.6, provisional), `PHANTOM_MOTION_WINDOW_MS` (motion window, default 1500), `PHANTOM_BALANCE_CONTRAST` (balance exponent, default 2.0), `PHANTOM_TREND_DEADBAND_MPS` (trend deadband, default 0.05).
