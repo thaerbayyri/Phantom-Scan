@@ -519,6 +519,8 @@ interface RadialSceneProps {
     nodes?: SensorNode[];
     signalField?: SignalField | null;
     showLivePosition?: boolean;
+    /** Draw the illustrative (procedural, not measured) human figure on the target. */
+    showIllustrativeBody?: boolean;
 }
 
 /**
@@ -535,6 +537,7 @@ export function RadialScene({
     nodes = [],
     signalField = null,
     showLivePosition = false,
+    showIllustrativeBody = false,
 }: RadialSceneProps) {
     const label = radialTarget?.label ?? "unknown";
     const wallDistance = radialTarget?.wallDistance ?? 5.0;
@@ -581,16 +584,14 @@ export function RadialScene({
         dampVector3(smoothedPosition.current, rawTargetVec, decayRate, delta);
         smoothedSpeed.current = dampScalar(smoothedSpeed.current, radialTarget.speed, DECAY_RATES.speed, delta);
     });
-    // Human skeleton/wireframe overlay is a body-shape claim
-    // (shared/target-presentation.ts: canPresentVolumetricTarget) — CSI on
-    // this 1-antenna-per-node hardware cannot honestly support one, whether
-    // driven by the AI poseFrame skeleton or HumanMesh's procedural
-    // walk/breathe fallback for when no poseFrame is streaming. That gate is
-    // hardcoded to false today (dashboard.tsx already withholds poseFrame via
-    // it); mirror the same false here so the procedural fallback can't render
-    // a body either. The abstract dot remains the sole, honest position
-    // anchor. Flip this only alongside canPresentVolumetricTarget.
-    const canRenderConfidentHuman = false;
+    // The human figure is an ILLUSTRATION, not a measurement: CSI on this
+    // 1-antenna-per-node hardware cannot support a body-shape claim, so the AI
+    // poseFrame skeleton stays gated off (canPresentVolumetricTarget) and only
+    // HumanMesh's procedural walk/breathe figure is drawn, driven by the dot's
+    // speed and always captioned. dashboard.tsx derives showIllustrativeBody
+    // from canPresentIllustrativeBody (the same gate as the dot, so the body
+    // can never outlive it) AND the operator's Skeleton toggle.
+    const canRenderIllustrativeBody = showIllustrativeBody;
     // Mechanical (fan/machine) volumetric overlay remains disabled.
     const canRenderVolumetricOverlay = false;
     const spatialSummary = useMemo(
@@ -672,13 +673,26 @@ export function RadialScene({
                     />
                     {label === "mechanical" && canRenderVolumetricOverlay ? (
                         <MachineStatic target={radialTarget} />
-                    ) : label === "human" && canRenderConfidentHuman ? (
-                        <HumanMesh
-                            target={radialTarget}
-                            poseFrame={poseFrame}
-                            positionRef={smoothedPosition}
-                            speedRef={smoothedSpeed}
-                        />
+                    ) : canRenderIllustrativeBody ? (
+                        <>
+                            <HumanMesh
+                                target={radialTarget}
+                                poseFrame={null}
+                                positionRef={smoothedPosition}
+                                speedRef={smoothedSpeed}
+                            />
+                            <Billboard position={[radialTarget.x, 2.1, radialTarget.z]} follow={true}>
+                                <Text
+                                    fontSize={0.09}
+                                    color="#fbbf24"
+                                    fillOpacity={0.75}
+                                    anchorX="center"
+                                    anchorY="middle"
+                                >
+                                    ILLUSTRATIVE BODY - NOT MEASURED POSE
+                                </Text>
+                            </Billboard>
+                        </>
                     ) : null}
                     {fusedRoom && radialTarget.positionUncertaintyM !== undefined && (
                         <PositionUncertaintyRing radiusM={radialTarget.positionUncertaintyM} positionRef={smoothedPosition} />

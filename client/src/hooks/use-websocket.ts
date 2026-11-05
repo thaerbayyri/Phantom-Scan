@@ -23,6 +23,7 @@ import type {
   AdvisoryIdentity,
   AdvisoryVitalSigns,
   DatasetStatus,
+  DemoStatus,
 } from "@shared/schema";
 
 interface WSState {
@@ -49,6 +50,9 @@ interface WSState {
   // if none has happened this session. Advisory-only bookkeeping, same as
   // advisoryIdentity/advisoryVitalSigns above.
   lastCalibratedAt: number | null;
+  // Demo mode lifecycle (scripted walker or recording replay), null until the
+  // server has sent one.
+  demoStatus: DemoStatus | null;
   poseFrame: PoseFrame | null;
   nodes: SensorNode[];
   nodeFeatures: NodeFeatureState[];
@@ -184,6 +188,7 @@ export function useWebSocket() {
     advisoryIdentity: null,
     advisoryVitalSigns: null,
     lastCalibratedAt: null,
+    demoStatus: null,
     poseFrame: null,
     nodes: [],
     nodeFeatures: [],
@@ -486,6 +491,13 @@ export function useWebSocket() {
         }));
         break;
 
+      case "demoStatus":
+        setState((prev) => ({
+          ...prev,
+          demoStatus: (message.data as DemoStatus | null) ?? null,
+        }));
+        break;
+
       case "reportReady":
         console.log("Report is ready and available from history/report views.");
         break;
@@ -587,6 +599,19 @@ export function useWebSocket() {
     sendMessage("calibrateBaseline", null);
   }, [sendMessage]);
 
+  // Demo mode: "synthetic" = scripted walker, "replay" = recorded session through
+  // the real pipeline. The server refuses while live ESP32 nodes are streaming.
+  const startDemo = useCallback(
+    (mode: "synthetic" | "replay") => {
+      sendMessage("startDemo", { mode });
+    },
+    [sendMessage],
+  );
+
+  const stopDemo = useCallback(() => {
+    sendMessage("stopDemo", null);
+  }, [sendMessage]);
+
   useEffect(() => {
     connect();
     // Defense-in-depth staleness watchdog: if the socket stays open but the
@@ -632,6 +657,8 @@ export function useWebSocket() {
     startDatasetRecording,
     stopDatasetRecording,
     calibrateBaseline,
+    startDemo,
+    stopDemo,
     reconnect: connect,
   };
 }

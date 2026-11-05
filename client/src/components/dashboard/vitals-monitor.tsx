@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { TargetState, VitalSigns } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { getVitalsBadge } from "@/lib/vitals-status";
 
 interface VitalsMonitorProps {
     vitals: VitalSigns | null;
@@ -20,21 +21,23 @@ export function VitalsMonitor({ vitals, targetState }: VitalsMonitorProps) {
     const hr = vitals?.heartRateBpm ?? 0;
     const rr = vitals?.respirationRateRpm ?? 0;
     const reliable = vitals?.vitalsReliable ?? false;
-    const targetVisible = Boolean(targetState?.target_visible);
+    const badge = getVitalsBadge(targetState, vitals);
 
     return (
         <Card className="flex h-full min-w-0 flex-col border-white/10 bg-card/50 backdrop-blur-sm">
             <CardHeader className="flex flex-row flex-wrap items-center gap-2 px-5 pb-3 pt-5">
                 <Activity className="h-5 w-5 text-rose-500" />
                 <CardTitle className="text-base font-medium">Vital Signs</CardTitle>
-                {!targetVisible && (
-                    <span className="text-xs text-muted-foreground ml-auto bg-muted px-2 py-0.5 rounded">
-                        NO TARGET
-                    </span>
-                )}
-                {targetVisible && !reliable && hr === 0 && (
-                    <span className="text-xs text-muted-foreground ml-auto bg-muted px-2 py-0.5 rounded">
-                        CALIBRATING
+                {badge && (
+                    <span
+                        className={cn(
+                            "text-xs ml-auto px-2 py-0.5 rounded",
+                            badge === "SIMULATED"
+                                ? "bg-amber-500/15 text-amber-400"
+                                : "bg-muted text-muted-foreground",
+                        )}
+                    >
+                        {badge}
                     </span>
                 )}
             </CardHeader>

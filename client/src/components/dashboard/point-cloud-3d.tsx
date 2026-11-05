@@ -11,6 +11,7 @@ interface PointCloud3DProps {
   nodes?: SensorNode[];
   signalField?: SignalField | null;
   showLivePosition?: boolean;
+  showIllustrativeBody?: boolean;
   className?: string;
 }
 
@@ -27,6 +28,7 @@ export function PointCloud3D({
   nodes,
   signalField,
   showLivePosition = false,
+  showIllustrativeBody = false,
   className = "",
 }: PointCloud3DProps) {
   return (
@@ -41,6 +43,7 @@ export function PointCloud3D({
           nodes={nodes ?? []}
           signalField={signalField ?? null}
           showLivePosition={showLivePosition}
+          showIllustrativeBody={showIllustrativeBody}
         />
         <OrbitControls
           makeDefault

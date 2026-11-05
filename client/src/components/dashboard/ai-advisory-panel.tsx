@@ -24,14 +24,12 @@ function percent(value: number): string {
  * clients (server/lib/websocket.ts advisoryIdentity/advisoryVitalSigns).
  * Visually distinct from TargetIdentityCard/VitalsMonitor (dashed border,
  * amber/purple accent, permanent non-authoritative badge) so this can never
- * be mistaken for the deterministic verdict. Renders nothing when no AI
- * sidecar is connected, so a dashboard without one sees zero UI change.
+ * be mistaken for the deterministic verdict. Always rendered: with no AI
+ * sidecar connected it says so, and "Calibrate Empty Room" stays reachable
+ * because it restarts the real detector's baselines, which needs no sidecar.
  */
 export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedAt }: AIAdvisoryPanelProps) {
-    if (!identity && !vitals) {
-        return null;
-    }
-
+    const sidecarConnected = Boolean(identity || vitals);
     const advisoryLabel = identity?.advisoryLabel ?? "unknown";
     const calibratedSecondsAgo = lastCalibratedAt ? Math.max(0, Math.round((Date.now() - lastCalibratedAt) / 1000)) : null;
     const humanProb = identity?.humanProb ?? 0.5;
@@ -53,6 +51,11 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
                 </span>
             </CardHeader>
             <CardContent className="space-y-3 px-5 pb-5">
+                {!sidecarConnected && (
+                    <div className="text-[10px] font-mono uppercase text-purple-300/60">
+                        No AI sidecar connected - advisory outputs unavailable
+                    </div>
+                )}
                 {identity && (
                     <div className="relative h-6 overflow-hidden rounded-full bg-muted/50 opacity-90">
                         <div
@@ -144,7 +147,7 @@ export function AIAdvisoryPanel({ identity, vitals, onCalibrate, lastCalibratedA
                             size="sm"
                             onClick={onCalibrate}
                             className="h-7 gap-1.5 border-purple-400/30 text-[10px]"
-                            title="Stand in an empty room, then click this to reset the sidecar's activity-state motion baseline to current ambient noise. Does not retrain any model weight."
+                            title="Make sure the room is empty, then click. Restarts every node's adaptive baseline (re-warms for about 5 s from the room as it is now), resets the room-presence debouncer, drops any held target, and asks the AI sidecar (if connected) to reset its activity baseline. Does not retrain any model or change the detection threshold."
                             data-testid="btn-calibrate-empty-room"
                         >
                             <Gauge className="h-3 w-3" />

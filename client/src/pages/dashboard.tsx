@@ -15,10 +15,13 @@ import { SignalStatsCard } from "@/components/dashboard/signal-stats-card";
 import { VitalsMonitor } from "@/components/dashboard/vitals-monitor";
 import { AIAdvisoryPanel } from "@/components/dashboard/ai-advisory-panel";
 import { DatasetRecorderPanel } from "@/components/dashboard/dataset-recorder-panel";
+import { DemoBanner } from "@/components/dashboard/demo-banner";
+import { usePersistedFlag } from "@/hooks/use-persisted-flag";
 import { ResizableWrapper } from "@/components/ui/resizable-wrapper";
 import {
   canPresentLiveTargetPosition,
   canPresentVolumetricTarget,
+  canPresentIllustrativeBody,
   canPresentTruthfulTarget,
   getLivePositionCaveat,
 } from "@shared/target-presentation";
@@ -56,6 +59,9 @@ export default function Dashboard() {
     advisoryVitalSigns,
     lastCalibratedAt,
     calibrateBaseline,
+    demoStatus,
+    startDemo,
+    stopDemo,
     poseFrame,
     nodes,
     nodeFeatures,
@@ -93,6 +99,18 @@ export default function Dashboard() {
   const wallDistance = livePositionVisible && radialTarget ? radialTarget.wallDistance : 0;
   const visibleVitals = truthfulTargetVisible ? vitalSigns : null;
   const visibleIdentity = livePositionVisible ? targetIdentity : null;
+
+  // Illustrative human figure on the target: ON by default, remembered per
+  // viewer. It follows the dot's own gate (never outlives it) and is only ever
+  // an illustration - the scene captions it "not measured pose".
+  const [skeletonEnabled, setSkeletonEnabled] = usePersistedFlag("phantom.showSkeleton", true);
+  const illustrativeBodyVisible =
+    skeletonEnabled &&
+    canPresentIllustrativeBody({
+      dataSource: status.dataSource,
+      radialTarget,
+      targetState,
+    });
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -156,7 +174,14 @@ export default function Dashboard() {
         onMarkSyncEvent={markSyncEvent}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLogout={handleLogout}
+        demoStatus={demoStatus}
+        onStartDemo={startDemo}
+        onStopDemo={stopDemo}
+        showSkeleton={skeletonEnabled}
+        onToggleSkeleton={() => setSkeletonEnabled(!skeletonEnabled)}
       />
+
+      <DemoBanner demoStatus={demoStatus} />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Full-screen 3D Background */}
@@ -169,6 +194,7 @@ export default function Dashboard() {
             nodes={nodes}
             signalField={signalField}
             showLivePosition={livePositionVisible}
+            showIllustrativeBody={illustrativeBodyVisible}
           />
         </div>
 
@@ -193,6 +219,7 @@ export default function Dashboard() {
                 channelEstimate={channelEstimate}
                 isarFrame={isarFrame}
               />
+              <SignalStatsCard nodeSignal={nodeSignal} />
             </section>
 
             <div className="hidden xl:block" aria-hidden="true" />
@@ -215,8 +242,9 @@ export default function Dashboard() {
                 presentationCaveat={livePositionCaveat}
               />
               <VitalsMonitor vitals={visibleVitals} targetState={targetState ?? null} />
-              <NodeFeaturesCard nodeFeatures={nodeFeatures} />
-              <SignalStatsCard nodeSignal={nodeSignal} />
+              {/* Only shown while boards actually send firmware feature-state;
+                  an always-on "no packets" placeholder is just noise. */}
+              {nodeFeatures.length > 0 && <NodeFeaturesCard nodeFeatures={nodeFeatures} />}
               <DatasetRecorderPanel
                 status={datasetStatus}
                 onStart={startDatasetRecording}

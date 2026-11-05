@@ -1,7 +1,7 @@
-import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, LogOut, Shield, ScrollText } from "lucide-react";
+import { Circle, Wifi, WifiOff, Download, FileText, Database, Settings, LogOut, Shield, ScrollText, PersonStanding, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { SystemStatus, MotionStatus, RecordingStatus, TargetState, RadialTarget, SensorNode } from "@shared/schema";
+import type { SystemStatus, MotionStatus, RecordingStatus, TargetState, RadialTarget, SensorNode, DemoStatus } from "@shared/schema";
 import { summarizeTargetSpatial } from "@shared/target-spatial";
 import { ScanController } from "./scan-controller";
 
@@ -21,6 +21,11 @@ interface TopBarProps {
   onMarkSyncEvent: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
+  demoStatus?: DemoStatus | null;
+  onStartDemo?: (mode: "synthetic" | "replay") => void;
+  onStopDemo?: () => void;
+  showSkeleton?: boolean;
+  onToggleSkeleton?: () => void;
 }
 
 export function TopBar({
@@ -39,9 +44,21 @@ export function TopBar({
   onMarkSyncEvent,
   onOpenSettings,
   onLogout,
+  demoStatus,
+  onStartDemo,
+  onStopDemo,
+  showSkeleton = true,
+  onToggleSkeleton,
 }: TopBarProps) {
   const spatialSummary = summarizeTargetSpatial(radialTarget, nodes, targetState);
-  const liveModeBadge = status.isProcessing ? (
+  const demoActive = Boolean(demoStatus?.active);
+  // The server refuses a demo while live ESP32 packets are arriving; say so up front.
+  const liveNodesStreaming = !demoActive && nodes.some((node) => node.active);
+  const liveModeBadge = demoActive ? (
+    <Badge variant="default" className="gap-1 bg-amber-600" data-testid="badge-demo-mode">
+      DEMO • {demoStatus?.mode === "replay" ? "REPLAY" : "SIMULATED"}
+    </Badge>
+  ) : status.isProcessing ? (
     <Badge variant="default" className="gap-1 bg-green-600 animate-pulse">
       <Wifi className="h-3 w-3" />
       LIVE • ESP32
@@ -211,6 +228,72 @@ export function TopBar({
             <ScrollText className="h-3.5 w-3.5" />
             <span className="hidden 2xl:inline">Activity</span>
           </Button>
+
+          {/* Illustrative skeleton toggle (default on; see canPresentIllustrativeBody) */}
+          {onToggleSkeleton && (
+            <Button
+              variant={showSkeleton ? "secondary" : "outline"}
+              size="sm"
+              onClick={onToggleSkeleton}
+              className="gap-1.5"
+              title="Show an illustrative human figure on the target (an illustration, not a measured pose)"
+              data-testid="btn-toggle-skeleton"
+            >
+              <PersonStanding className="h-3.5 w-3.5" />
+              <span className="hidden 2xl:inline">Skeleton</span>
+            </Button>
+          )}
+
+          {/* Demo mode: scripted walker, or a recorded session through the real pipeline */}
+          {onStartDemo && onStopDemo && (
+            demoActive ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onStopDemo}
+                className="gap-1.5"
+                data-testid="btn-stop-demo"
+              >
+                <FlaskConical className="h-3.5 w-3.5" />
+                Stop demo
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onStartDemo("synthetic")}
+                  disabled={liveNodesStreaming}
+                  className="gap-1.5"
+                  title={
+                    liveNodesStreaming
+                      ? "Unavailable while live ESP32 nodes are streaming"
+                      : "Demo: a scripted, simulated walker showing what a detection looks like"
+                  }
+                  data-testid="btn-demo-simulated"
+                >
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  <span className="hidden xl:inline">Demo: Simulated</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onStartDemo("replay")}
+                  disabled={liveNodesStreaming}
+                  className="gap-1.5"
+                  title={
+                    liveNodesStreaming
+                      ? "Unavailable while live ESP32 nodes are streaming"
+                      : "Demo: replay a recorded session through the real detector (may show no target)"
+                  }
+                  data-testid="btn-demo-replay"
+                >
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  <span className="hidden xl:inline">Demo: Replay</span>
+                </Button>
+              </>
+            )
+          )}
 
           {/* Start/Stop processing via ScanController */}
           <ScanController
