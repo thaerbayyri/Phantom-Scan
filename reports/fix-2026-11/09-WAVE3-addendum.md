@@ -437,3 +437,31 @@ A first attempt on the whole recordings gave 118 walking windows instead of 101:
 | sessions guard | snapshot 738 files / 166 entries | **PASS**, 0 changed, 0 new |
 
 Failure direction: neither for this section (no detection path changed); the analysis tool reports both directions in seconds once data exist. **Commit:** the code and tests are new files committed on their own; the two documents live in the (untracked) `reports/` folder: **the owner commits the pre-registration first** (step 1 of `88b-commit-steps.md`).
+
+## 11. After the commits (2026-11-05)
+
+### 11.1 The 88b commit run
+
+26 commits (P, O1-O8, M-01...M-08, M-10...M-14, R; `e3b87ca` ... `4e0ea25`), run by `.tmp/commit-steps/run_steps.py`. For every step the expected `--stat` was printed, the staged `git diff --cached --stat` was printed, and the step was committed only because the two were identical (the stop-on-mismatch path was tested first in a throwaway clone with a deliberately altered expectation). Nothing was pushed; `.tmp/pre-wave3-backup` verified before step 1; sessions guard **PASS** (738 files / 166 entries, 0 new). **Final proof:** `HEAD` blob equals the working-tree file for all 1,903 files outside `data/`, `.tmp/` and `node_modules` (LF-normalised). The only line of `git diff HEAD --stat -- . :!data :!node_modules` is the nested model repository (`ai model and densepose/model`, 0 insertions, 0 deletions): it was already ` m` in the pre-commit `git status` (`.tmp/pre-wave3-backup/git-status.txt`); inside it `README.md` is modified and `pose_v1.safetensors` is untracked; the recorded gitlink commit is unchanged. **Nine commits (P and O1-O8) carry no `Co-Authored-By` trailer** (the runner's message for P left it out); history was not rewritten.
+
+### 11.2 Pre-registration frozen with the owner's values (commit `e3b87ca`, committed before any analysis)
+
+Fan-with-person minimum **10 min**; C1b and C2b lower 95 % bound **>= 0.80**, each a separate claim that does not change the "meets the criteria" rule (C4 gate + C1-C3); **C7 report-only** (both failure directions in seconds per block, no limit, cannot make a candidate meet or fail; the measured values become the basis for the next campaign's limits); C6 (1 per hour), C1 (>= 0.80), C3 (5 %) confirmed; 1.5 s windows confirmed (800 ms, PS-EVAL-016, exploratory only); section 7 keeps the history. `grep "OWNER TO"` on the file: no match. Consequence: `test_the_real_prereg_file_...` (which asserted the open items were still open) was **red from `e3b87ca` until `cfe9158`**; HEAD `f3aab82` therefore had 1 failing test in the Python suite (538 passed, 1 failed, 5 skipped), by design and fixed in the next commit.
+
+### 11.3 PS-FIX-45 (commit `f3aab82`): `pose_v1` is read only when `PHANTOM_AI_POSE` is on
+
+Before: `load_file(POSE_WEIGHTS)` ran at sidecar start whenever the file existed, although inference and `poseFrame` were already gated. After: the load sits behind the same flag; flag off logs why and reads nothing. Test: the load block is cut out of `ai_inference.py` with `ast` and executed against stubs (flag off: 0 reads; flag on: exactly 1; flag on, file missing: warning, 0 reads; flag off, file missing: no "random keypoints" warning; no other statement uses `POSE_WEIGHTS`), 5 tests, red before (3 failed) and green after. F1/F2 3/3 and the licence-hygiene tests pass. Failure direction: with the flag off nothing changes for the operator (pose was never rendered); with the flag on behaviour is identical.
+
+### 11.4 Campaign code now matches the frozen pre-registration (commit `cfe9158`)
+
+C2 is an interval: d = (fan flagged share) - (empty_2 flagged share), 95 % moving-block bootstrap (10 s blocks, 1,000 resamples, fixed seed) at alpha 1 % and 5 %; it fails only if the lower bound is above 0 (new `stats.block_bootstrap_rate_diff`). A test case where the fan's point share (2.0 %) exceeds the empty's (1.0 %) but 6 windows cannot show it passes C2 (the old strict comparison failed it); a loud fan (+5) fails; an identical distribution passes. C1b / C2b are computed per candidate and rendered as separate claims, never in the verdict (test: both false, verdict still MEETS). C7 is rendered as a report-only table (walking / still seconds not flagged, empty_2 / fan-alone seconds flagged, alpha 1 %). The validator enforces the 10 min fan-with-person minimum. The "strict point comparison" sentence in section 10.4 is **superseded by this section**.
+
+### 11.5 Suites
+
+| suite | before (section 4) | after `cfe9158` |
+|--|--|--|
+| TS `npm test` | 450 / 450 | 450 / 450 |
+| `npx tsc --noEmit` | 0 errors | 0 errors |
+| Python (scratch venv) | 534 passed, 5 skipped | **545 passed**, 5 skipped (+5 PS-FIX-45, +5 run_campaign, +1 validator) |
+| F1/F2; AI-firewall whole file / filtered | 3/3; 46/46; 11/11 | 3/3; 46/46; 11/11 |
+| sessions guard | 738 / 166 | **PASS**, 0 changed, 0 new |

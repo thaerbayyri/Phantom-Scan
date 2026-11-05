@@ -11,7 +11,7 @@ Companion to `PREREG-2026-11-recording-campaign.md`. The validator (`python -m s
 | `walking` | `03_walking` | `walking` | ≥ 5 min | 1 | off | not required |
 | `still` | `04_still` | `still` | ≥ 5 min | 1 | off | not required |
 | `empty_2` | `05_empty_2` | `empty` | **≥ 60 min** | none | off | **required** |
-| `fan_with_person` | `06_fan_with_person` | `still` or `walking` (state which in `block.json`) | **[OWNER TO SET]** min | 1 | on | not required |
+| `fan_with_person` | `06_fan_with_person` | `still` or `walking` (state which in `block.json`) | ≥ **10** min (set by the owner 2026-11-04) | 1 | on | not required |
 
 One recording per block (a label never spans two conditions). Order is fixed so the second empty closes the campaign; nodes are not touched between blocks.
 

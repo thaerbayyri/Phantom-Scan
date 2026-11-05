@@ -136,3 +136,15 @@
 | No threshold or setting changed | **PASS** the analysis cannot write settings; the report claims no accuracy figure unless the pre-registered criteria are met | source |
 | Pre-registration | **drafted, not frozen**: the owner must commit it before any recording is analysed (enforced by `run_campaign.py`) | `PREREG-2026-11-recording-campaign.md` |
 | Commits | section 4 code and tests as their own commit; documents are in untracked `reports/` | git log |
+
+## Wave 3 - after the commits (2026-11-05)
+
+| check | result | evidence |
+|--|--|--|
+| 88b commit run | **PASS** 26 commits, every staged stat identical to the expected stat, nothing pushed | `09-WAVE3-addendum.md` section 11.1 |
+| Final tree proof | **PASS** HEAD blob == working-tree file for 1,903 files outside data/, .tmp/, node_modules; only the pre-existing nested-repo gitlink shows in `git diff HEAD --stat` | same |
+| Sessions guard | **PASS** 738 files / 166 entries, 0 new | guard output |
+| PS-FIX-45 | **PASS** 5 tests, red then green; F1/F2 3/3 | section 11.3 |
+| Campaign code vs frozen pre-registration | **PASS** C2 interval, C1b/C2b separate, C7 report-only, 10 min minimum; 6 new tests | section 11.4 |
+| Full suites after `cfe9158` | **PASS** TS 450/450, tsc 0, Python 545 passed + 5 skipped, F1/F2 3/3, firewall 46/46 and 11/11 | section 11.5 |
+| Known | HEAD `f3aab82` had 1 failing test by design (the prereg-open-items test), fixed in `cfe9158`; 9 commits lack the Co-Authored-By trailer | section 11.1-11.2 |
