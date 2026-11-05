@@ -8,9 +8,10 @@
  */
 import fs from "fs";
 import path from "path";
+import { dataDir } from "./data-dir";
 
 const ENABLED = process.env.PHANTOM_PHASE_TEST_LOG === "1";
-const LOG_DIR = process.env.PHANTOM_PHASE_LOG_DIR || path.resolve("data", "phase-tests");
+const LOG_DIR = process.env.PHANTOM_PHASE_LOG_DIR || dataDir("phase-tests");
 
 class PhaseTestLogger {
   private stream: fs.WriteStream | null = null;

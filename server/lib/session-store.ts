@@ -7,6 +7,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { dataDir } from "./data-dir";
 
 export interface SessionSummary {
     id: string;
@@ -43,7 +44,7 @@ export interface StoredSession extends SessionSummary {
     }[];
 }
 
-const DATA_DIR = path.resolve("data", "sessions");
+const DATA_DIR = dataDir("sessions");
 const INDEX_FILE = path.join(DATA_DIR, "_index.json");
 
 function ensureDir() {

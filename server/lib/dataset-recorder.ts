@@ -27,6 +27,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { dataDir } from "./data-dir";
 
 export const DATASET_LABELS = [
   "empty",
@@ -197,7 +198,7 @@ export class PartNodeStats {
 
 export function buildPartSummary(info: { file: string; part: number; startedAtMs: number; partStartedAtMs: number; closedAtMs: number }, stats: Map<number, PartNodeStats>): Record<string, unknown> {
   const perNode: Record<string, unknown> = {};
-  for (const [node, s] of [...stats.entries()].sort((a, b) => a[0] - b[0])) if (s.frames > 0) perNode[String(node)] = s.summary();
+  for (const [node, s] of Array.from(stats.entries()).sort((a, b) => a[0] - b[0])) if (s.frames > 0) perNode[String(node)] = s.summary();
   return {
     type: "part_summary", schema: 1, file: path.basename(info.file), part: info.part, startedAtMs: info.startedAtMs,
     partStartedAtMs: info.partStartedAtMs, closedAtMs: info.closedAtMs, windowSeconds: SUMMARY_WINDOW_MS / 1000,
@@ -307,7 +308,7 @@ export class DatasetRecorder {
   private partStartedAtMs = 0;
 
   constructor(options: DatasetRecorderOptions = {}) {
-    this.rootDir = options.rootDir ?? path.resolve("data", "datasets");
+    this.rootDir = options.rootDir ?? dataDir("datasets");
     this.maxFramesPerFile = options.maxFramesPerFile ?? DEFAULT_MAX_FRAMES_PER_FILE;
     this.now = options.now ?? Date.now;
   }

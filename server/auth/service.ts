@@ -4,6 +4,7 @@ import createMemoryStore from "memorystore";
 import { randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import fs from "fs";
 import path from "path";
+import { dataDir } from "../lib/data-dir";
 import z from "zod";
 import { auditLogger, type AuditDetailsInput } from "../audit/logger";
 
@@ -75,7 +76,7 @@ function isProduction() {
 }
 
 function getOperatorSeedPath() {
-  return process.env.PHANTOM_OPERATOR_SEED_PATH || path.resolve("data", "operator.json");
+  return process.env.PHANTOM_OPERATOR_SEED_PATH || dataDir("operator.json");
 }
 
 function getSessionSecret() {

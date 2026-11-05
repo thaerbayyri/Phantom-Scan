@@ -6,13 +6,14 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { dataDir } from "./data-dir";
 
 export interface RuntimeSettings {
   fusedTargetMotionThreshold?: number;
   motionThreshold?: number;
 }
 
-const DATA_DIR = path.resolve("data");
+const DATA_DIR = dataDir();
 const SETTINGS_FILE = path.join(DATA_DIR, "runtime-settings.json");
 
 function ensureDir() {

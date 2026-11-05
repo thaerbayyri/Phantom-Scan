@@ -125,6 +125,7 @@ import { spawn } from "child_process";
 import type { AuthService } from "../auth/service";
 import { authenticateWebSocketRequest } from "../auth/ws-auth";
 import { auditLogger } from "../audit/logger";
+import { dataDir } from "./data-dir";
 
 interface WSClient {
   ws: WebSocket;
@@ -188,7 +189,7 @@ export class SignalProcessingServer {
     },
     {
       room: this.room,
-      datasetDir: process.env.PHANTOM_DEMO_DATASET_DIR || path.join("data", "datasets", "room1"),
+      datasetDir: process.env.PHANTOM_DEMO_DATASET_DIR || path.join(process.env.PHANTOM_DATA_DIR || "data", "datasets", "room1"),
     },
   );
   private datasetRecorder = new DatasetRecorder();
@@ -1011,7 +1012,7 @@ export class SignalProcessingServer {
   }
 
   private serializeToCSV(): string {
-    const dir = path.resolve("data", "sessions");
+    const dir = dataDir("sessions");
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }

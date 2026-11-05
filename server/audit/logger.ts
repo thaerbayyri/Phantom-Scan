@@ -1,6 +1,7 @@
 import type { Request } from "express";
 import fs from "fs";
 import path from "path";
+import { dataDir } from "../lib/data-dir";
 
 const ROTATED_PREFIX = "audit-";
 const MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024;
@@ -87,7 +88,7 @@ function safeParseLine(line: string): AuditRecord | null {
 
 export class AuditLogger {
   constructor(
-    private readonly dir = process.env.PHANTOM_AUDIT_DIR || path.resolve("data", "audit"),
+    private readonly dir = process.env.PHANTOM_AUDIT_DIR || dataDir("audit"),
   ) {}
 
   async log(input: {
