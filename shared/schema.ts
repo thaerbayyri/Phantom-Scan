@@ -539,8 +539,23 @@ export const wsMessageTypeSchema = z.enum([
   "nodeFeatures",
   "nodeSignal",
   "signalField",
+  "demoStatus",
 ]);
 export type WSMessageType = z.infer<typeof wsMessageTypeSchema>;
+
+// Demo mode lifecycle (server/lib/demo-session.ts), broadcast as "demoStatus".
+// "synthetic" = scripted walker; "replay" = a recorded session fed through the
+// real pipeline. Neither is a live measurement.
+export const demoStatusSchema = z.object({
+  active: z.boolean(),
+  mode: z.enum(["synthetic", "replay"]).nullable(),
+  phase: z.enum(["idle", "loading", "calibrating", "running", "error"]),
+  clip: z.string().nullable(),
+  positionS: z.number(),
+  durationS: z.number(),
+  message: z.string().nullable(),
+});
+export type DemoStatus = z.infer<typeof demoStatusSchema>;
 
 // Complete frame sent over WebSocket
 export const streamFrameSchema = z.object({

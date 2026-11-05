@@ -81,6 +81,24 @@ export function getLivePositionCaveat(
   };
 }
 
+/**
+ * May an ILLUSTRATIVE human figure be drawn on the target? This is a visual
+ * aid, not a measurement: the procedural skeleton is animated from the dot's
+ * speed alone and is always captioned "not measured pose" by the scene. It
+ * follows exactly the live-position gate (so it can never outlive the dot),
+ * and is withheld for mechanical (fan/machine) targets. The AI poseFrame path
+ * stays behind canPresentVolumetricTarget.
+ */
+export function canPresentIllustrativeBody(
+  input: TargetPresentationInput,
+): boolean {
+  if (!canPresentLiveTargetPosition(input) || !input.radialTarget) {
+    return false;
+  }
+
+  return input.radialTarget.label !== "mechanical";
+}
+
 /** Volumetric (human-mesh) rendering is deliberately disabled — the system cannot honestly claim body shape from CSI. */
 export function canPresentVolumetricTarget(
   input: TargetPresentationInput,
