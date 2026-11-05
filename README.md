@@ -238,6 +238,7 @@ All packets travel over UDP to the host on `:5005`. A 4-byte little-endian magic
 | `PHANTOM_MECHANICAL_REJECT_MAX` | — | Max `humanProb` at which the micro-Doppler classifier may suppress a presence claim |
 | `PHANTOM_STATIC_NODE_SOURCES` | — | JSON mapping to pin node IDs (1–4) to fixed source IPs |
 | `PHANTOM_ROOM_GEOMETRY_ID` / `PHANTOM_WALL_CELL` / `PHANTOM_WALL_THICKNESS_M` | — | Room/wall geometry context for display |
+| `PHANTOM_DEMO_DATASET_DIR` | `data/datasets/room1` | Folder with the `empty` and `still` recordings used by **Demo: Replay** (the dashboard's demo buttons; refused while live nodes stream) |
 | `PHANTOM_AUDIT_DIR` | — | Audit log output directory |
 | `PHANTOM_FIRMWARE_BUILD_ID` / `PHANTOM_SELF_PING_STATUS` | — | Firmware build/status metadata surfaced in the UI |
 | `PHANTOM_OPERATOR_SEED_PATH` | `data/operator.json` | Operator credential store |
