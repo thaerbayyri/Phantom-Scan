@@ -14,14 +14,36 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { computeAgcNormalizedPerturbation } from "../server/lib/node-fusion";
 import { NodeBaselineTracker, RoomPresence, tierAtLeast } from "../server/lib/node-baseline";
+import { blockBootstrapAuc } from "./accuracy/auc-bootstrap";
 
-const WINDOW_MS = Number(process.env.PHANTOM_MOTION_WINDOW_MS ?? 800);
-const TICK_MS = 50;
-const [room, ...labels] = process.argv.slice(2);
-if (!room || labels.length === 0) {
-  console.error("usage: eval-presence-on-datasets.ts <room> <label> [<label> ...]");
+// Flags (PS-FIX-04): --nodes 1,2   restrict to these node ids (default 1,2,3,4; the others see no frames)
+//                    --window-ms N perturbation window (default env PHANTOM_MOTION_WINDOW_MS or 800;
+//                                  scripts/calibrate-threshold.ts defaults to 1500 -- numbers do not transfer)
+const rawArgs = process.argv.slice(2);
+const flagValue = (name: string): string | undefined => {
+  const i = rawArgs.indexOf(name);
+  return i >= 0 ? rawArgs[i + 1] : undefined;
+};
+const FLAGS_WITH_VALUE = new Set(["--nodes", "--window-ms"]);
+const positional = rawArgs.filter((a, i) => !a.startsWith("--") && !FLAGS_WITH_VALUE.has(rawArgs[i - 1]));
+const NODES = (flagValue("--nodes") ?? "1,2,3,4").split(",").map(Number);
+if (NODES.some((n) => !Number.isInteger(n) || n < 1 || n > 4)) {
+  console.error("--nodes must be a comma list of node ids 1-4, e.g. --nodes 1,2");
   process.exit(1);
 }
+const WINDOW_MS = Number(flagValue("--window-ms") ?? process.env.PHANTOM_MOTION_WINDOW_MS ?? 800);
+if (!Number.isFinite(WINDOW_MS) || WINDOW_MS <= 0) {
+  console.error("--window-ms must be a positive number");
+  process.exit(1);
+}
+const TICK_MS = 50;
+const BLOCK_TICKS = Math.ceil(10_000 / TICK_MS); // >= 10 s blocks for the bootstrap
+const [room, ...labels] = positional;
+if (!room || labels.length === 0) {
+  console.error("usage: eval-presence-on-datasets.ts <room> <label> [<label> ...] [--nodes 1,2] [--window-ms 800]");
+  process.exit(1);
+}
+console.log(`nodes ${NODES.join(",")}  window ${WINDOW_MS} ms  tick ${TICK_MS} ms`);
 
 interface Frame { t: number; amps: number[] }
 const dir = `data/datasets/${room}/`;
@@ -36,7 +58,7 @@ function loadRecordings(label: string): Frame[][][] {
       for (const line of readFileSync(dir + f, "utf8").split("\n")) {
         if (!line) continue;
         const o = JSON.parse(line);
-        if (o.type === "frame" && o.n >= 1 && o.n <= 4) byNode[o.n - 1].push({ t: o.t, amps: o.a });
+        if (o.type === "frame" && NODES.includes(o.n)) byNode[o.n - 1].push({ t: o.t, amps: o.a });
       }
     }
     byNode.forEach((a) => a.sort((x, y) => x.t - y.t));
@@ -83,22 +105,21 @@ for (const label of labels) {
   }
 }
 
-// Separation of the strongest-node z between each occupied recording and the LAST empty one.
+// Separation of the strongest-node z between each recording and the LAST empty one.
+// Rank-based AUC over ALL ticks (no subsampling) with a 95 % moving-block bootstrap CI (>= 10 s blocks, fixed seed).
+// Empty recordings are included on purpose: their AUC against the reference is the empty-vs-empty negative control
+// (a score that separates two empties is drifting, not detecting; the CI covers within-recording variability only).
 const quantile = (a: number[], q: number) => [...a].sort((x, y) => x - y)[Math.floor(q * (a.length - 1))] ?? 0;
-function auc(positive: number[], negative: number[]): number {
-  const step = (a: number[]) => a.filter((_, i) => i % Math.max(1, Math.floor(a.length / 1500)) === 0);
-  const pos = step(positive);
-  const neg = step(negative);
-  let wins = 0;
-  for (const p of pos) for (const n of neg) wins += p > n ? 1 : p === n ? 0.5 : 0;
-  return wins / (pos.length * neg.length);
+function aucText(positive: number[], negative: number[]): string {
+  const r = blockBootstrapAuc(positive, negative, { block: BLOCK_TICKS, nBoot: 300 });
+  return r.auc === null ? "n/a (empty class)" : `${r.auc.toFixed(2)} [${(r.lo as number).toFixed(2)}, ${(r.hi as number).toFixed(2)}]`;
 }
 const emptyRuns = results.filter((r) => r.label === "empty");
 const reference = emptyRuns[emptyRuns.length - 1];
 if (reference) {
-  console.log("\nstrongest-node z (after 20 s):  p50 / p90 / p99    AUC vs last empty");
+  console.log("\nstrongest-node z (after 20 s):  p50 / p90 / p99    AUC vs last empty [95% block-bootstrap CI]");
   for (const r of results) {
-    const a = r === reference ? "  -  " : auc(r.maxZs, reference.maxZs).toFixed(2);
+    const a = r === reference ? "  -  " : aucText(r.maxZs, reference.maxZs);
     console.log(`${r.label.padEnd(11)}#${r.idx}  ${[0.5, 0.9, 0.99].map((q) => quantile(r.maxZs, q).toFixed(1).padStart(5)).join(" / ")}        ${a}`);
   }
 }
