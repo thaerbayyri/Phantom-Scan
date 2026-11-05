@@ -4,8 +4,10 @@ import numpy as np
 import pytest
 import torch
 
-from phantom.activity_train import TrainingRefused
-from phantom.count_model import (
+pytest.importorskip("sklearn", reason="scikit-learn not installed: pip install -e '.[train]' (optional extra in pyproject.toml)")
+
+from phantom.activity_train import TrainingRefused  # noqa: E402
+from phantom.count_model import (  # noqa: E402
     NUM_SUBCARRIERS,
     WINDOW_FRAMES,
     CountNet,

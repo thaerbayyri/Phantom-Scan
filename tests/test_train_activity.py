@@ -4,8 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from phantom.activity_model import ActivityModel
-from phantom.activity_train import TrainingRefused, train_activity
+pytest.importorskip("sklearn", reason="scikit-learn not installed: pip install -e '.[train]' (optional extra in pyproject.toml)")
+
+from phantom.activity_model import ActivityModel  # noqa: E402
+from phantom.activity_train import TrainingRefused, train_activity  # noqa: E402
 from phantom.dataset import NodeStream, Recording, load_room_dataset
 
 FS = 40.0
