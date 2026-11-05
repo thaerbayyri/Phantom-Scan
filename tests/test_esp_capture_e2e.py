@@ -322,7 +322,14 @@ class TestServerIngestion:
     PASSWORD = os.environ.get("PHANTOM_TEST_PASSWORD", "thaer")
 
     def _server_available(self):
-        """Check if the dev server is running."""
+        """Check if the dev server is running.
+
+        Opt-in only (PS-EVAL-019/PS-FIX-01): these tests log in, ingest samples and create sessions on
+        whatever server answers on :5000 -- including an operator's live dashboard and its data/sessions.
+        Set PHANTOM_E2E_LIVE_SERVER=1 to run them against a throw-away dev server.
+        """
+        if os.environ.get("PHANTOM_E2E_LIVE_SERVER") != "1":
+            return False
         try:
             import urllib.request
             resp = urllib.request.urlopen(f"{self.SERVER_URL}/api/health", timeout=2)
@@ -353,7 +360,7 @@ class TestServerIngestion:
     def test_health_endpoint(self):
         """Server health endpoint should respond."""
         if not self._server_available():
-            pytest.skip("Dev server not running on port 5000")
+            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
 
         import urllib.request
         import json
@@ -365,7 +372,7 @@ class TestServerIngestion:
     def test_ingest_single_sample(self):
         """Server should accept a single CSI sample via REST."""
         if not self._server_available():
-            pytest.skip("Dev server not running on port 5000")
+            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
 
         import urllib.request
         import json
@@ -389,7 +396,7 @@ class TestServerIngestion:
     def test_ingest_batch_from_recording(self):
         """Server should accept a batch of real recorded CSI samples."""
         if not self._server_available():
-            pytest.skip("Dev server not running on port 5000")
+            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
 
         recordings = _load_all_recordings(max_per_file=10)
         if not recordings:
@@ -427,7 +434,7 @@ class TestServerIngestion:
     def test_queue_status(self):
         """Server should report queue status."""
         if not self._server_available():
-            pytest.skip("Dev server not running on port 5000")
+            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
 
         import urllib.request
         import json
@@ -440,7 +447,7 @@ class TestServerIngestion:
     def test_status_endpoint(self):
         """Server status endpoint should return processing state."""
         if not self._server_available():
-            pytest.skip("Dev server not running on port 5000")
+            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
 
         import urllib.request
         import json

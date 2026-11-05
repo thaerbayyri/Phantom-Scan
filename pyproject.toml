@@ -6,3 +6,11 @@ requires-python = ">=3.11"
 dependencies = [
     "pyserial>=3.5",
 ]
+
+[project.optional-dependencies]
+# Offline training/evaluation (phantom/activity_train.py, phantom/count_train.py, scripts/train/*, tests/test_train_activity.py,
+# tests/test_count_model.py). Without scikit-learn those modules fail at import. Verified with scikit-learn 1.9.1 on
+# Python 3.13 (PS-FIX-00); no other version was tested, so none is pinned.
+train = [
+    "scikit-learn",
+]
