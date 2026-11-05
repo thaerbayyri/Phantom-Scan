@@ -300,7 +300,10 @@ embed_model.eval()
 pose_model = PoseNet().to(device)
 pose_loaded = False
 try:
-    if os.path.exists(POSE_WEIGHTS):
+    if not POSE_ENABLED:
+        # PS-FIX-45: pose_v1 is a restricted-licence, unvalidated model; read it only when the operator opts in.
+        print("[AI] pose_v1 weights not loaded (set PHANTOM_AI_POSE=1 to load and run pose).")
+    elif os.path.exists(POSE_WEIGHTS):
         missing, unexpected = pose_model.load_state_dict(load_file(POSE_WEIGHTS), strict=False)
         if missing:    print(f"[WARN] pose missing keys: {missing}")
         if unexpected: print(f"[WARN] pose unexpected keys: {unexpected}")
