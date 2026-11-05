@@ -1,0 +1,24 @@
+{
+ "provenance": {
+  "command": "python -m scripts.presence_eval.twonode --write-prereg",
+  "commit": "744ce43e9772f40bcc0d372e40b077644a9a8939",
+  "branch": "feat/two-node-radar-live-detection",
+  "working_tree_dirty": true,
+  "eval_code_sha256_16": "dd8e6922a6beacf7",
+  "date_utc": "2026-11-02T19:49:04Z",
+  "python": "3.13.15",
+  "numpy": "2.4.4",
+  "inputs": []
+ },
+ "criteria": {
+  "C1": "lower 95% block-bootstrap CI bound of walking-vs-empty AUC >= 0.80 in protocol (b) AND in every applicable train session of protocol (c)",
+  "C2": "fan false-positive rate not above empty false-positive rate (pooled, at both alpha = 1% and 5%) in protocols (b) and (c)",
+  "C3": "no held-out empty recording flagged occupied in more than 5% of windows at the alpha = 1% threshold, in protocols (b) and (c)",
+  "C4": "(added in fix-2026-11, stricter; C1-C3 unchanged) empty-vs-empty negative control: for every pair of held-out empty recordings the symmetric AUC upper 95% bound is <= 0.65, in protocols (b) and (c)",
+  "C1_auc_lower_bound": 0.8,
+  "C3_max_flag_share": 0.05,
+  "C4_max_empty_pair_upper_bound": 0.65,
+  "verdict_rule": "a candidate (feature, rule) meets the criteria only if C1, C2, C3 and C4 all hold; if none does, the report says so and stops"
+ },
+ "status": "PROPOSAL for Thaer to confirm or change; frozen before the final numbers were computed"
+}

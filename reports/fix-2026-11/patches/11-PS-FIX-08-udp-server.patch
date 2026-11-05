@@ -1,0 +1,35 @@
+diff --git a/server/lib/udp-server.ts b/server/lib/udp-server.ts
+index ce49a00..7254e24 100644
+--- a/server/lib/udp-server.ts
++++ b/server/lib/udp-server.ts
+@@ -2,6 +2,7 @@ import dgram from "dgram";
+ import { signalServer } from "./websocket";
+ import { phaseTestLogger } from "./phase-test-logger";
+ import { reduceCsiFrame } from "./csi-subcarriers";
++import { phyGuard, shouldLogPhyMismatch } from "./phy-guard";
+ import type { CSISample } from "@shared/schema";
+ import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
+ 
+@@ -663,6 +664,22 @@ export function startUDPServer() {
+             return;
+         }
+ 
++        // PS-FIX-08, SHADOW MODE: count/log a change of this node's (subcarrier count, channel, frequency) tuple. Never drops.
++        const phyDiff = phyGuard.observe(parsed.nodeId, {
++            nSubcarriers: parsed.numSubcarriers,
++            channel: parsed.channel ?? 0,
++            freqMhz: parsed.freqMhz ?? 0,
++        });
++        if (phyDiff.length > 0) {
++            const phyStats = phyGuard.snapshot()[String(parsed.nodeId)];
++            if (shouldLogPhyMismatch(phyStats)) {
++                console.warn(
++                    `[PHY] node ${parsed.nodeId}: ${phyDiff.join(",")} differs from the first-seen tuple ` +
++                        `(${phyStats.mismatchedFrames} mismatched of ${phyStats.frames} frames; shadow mode, frames are NOT dropped)`,
++                );
++            }
++        }
++
+         // Forward only accepted raw packets to the local Python AI sidecar.
+         pyForwardSocket.send(msg, PY_SIDECAR_PORT, PY_SIDECAR_HOST, (err) => {
+             // The sidecar being down/not-yet-started is expected and not

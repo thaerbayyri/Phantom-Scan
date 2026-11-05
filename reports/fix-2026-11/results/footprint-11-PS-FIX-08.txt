@@ -1,0 +1,10 @@
+# footprint 11-PS-FIX-08
+changed (1):
+  M server/lib/udp-server.ts
+added (5):
+  A scripts/presence_eval/presence_head_norms.py
+  A server/lib/phy-guard.test.ts
+  A server/lib/phy-guard.ts
+  A tests/test_csi_header_offsets.py
+  A tests/test_presence_head_norms.py
+removed (0):

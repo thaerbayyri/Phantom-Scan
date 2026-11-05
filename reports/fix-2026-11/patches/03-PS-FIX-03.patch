@@ -1,0 +1,562 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\phantom\\dataset.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\phantom\\dataset.py"
+index 9a0619d..4827308 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\phantom\\dataset.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\phantom\\dataset.py"	
+@@ -21,7 +21,9 @@ from pathlib import Path
+ 
+ import numpy as np
+ 
+-SCHEMA_VERSION = 1
++SCHEMA_VERSION = 1  # the oldest layout; kept for callers that import it
++# Schema 2 only ADDS header fields (partStartedAtMs, geometryHash, capture, annotation, recorder), so it reads the same way.
++SUPPORTED_SCHEMAS = (1, 2)
+ _PART_RE = re.compile(r"\.part\d+$")
+ _PART_NUM_RE = re.compile(r"\.part(\d+)$")
+ _STAMP_RE = re.compile(r"__(\d{8})T\d{6}Z$")
+@@ -63,6 +65,7 @@ class Recording:
+     nodes: dict[int, NodeStream] = field(default_factory=dict)
+     files: tuple[str, ...] = ()
+     report: LoadReport | None = None  # None for recordings built by hand (tests)
++    header: dict = field(default_factory=dict)  # first header verbatim: capture/annotation/geometryHash for schema 2
+ 
+ 
+ def _recording_id(path: Path) -> str:
+@@ -151,7 +154,7 @@ def load_recording(paths: list[Path], *, strict: bool = False) -> Recording:
+                     continue
+                 kind = obj.get("type") if isinstance(obj, dict) else None
+                 if kind == "header":
+-                    if obj.get("schema") != SCHEMA_VERSION:
++                    if obj.get("schema") not in SUPPORTED_SCHEMAS:
+                         raise ValueError(f"{path}: unsupported dataset schema {obj.get('schema')!r}")
+                     header = header or obj
+                 elif kind == "frame":
+@@ -200,6 +203,7 @@ def load_recording(paths: list[Path], *, strict: bool = False) -> Recording:
+         nodes=nodes,
+         files=tuple(str(p) for p in sorted(paths, key=_part_key)),
+         report=report,
++        header=dict(header),
+     )
+ 
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\scripts\\record_dataset.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\record_dataset.py"
+index 926eedb..61fa265 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\scripts\\record_dataset.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\record_dataset.py"	
+@@ -7,9 +7,14 @@ Writes the same JSONL layout as server/lib/dataset-recorder.ts, so
+ scripts/train/train_*.py read it unchanged:
+ 
+     data/datasets/<room>/<room>__<subject>__<label>__<UTC stamp>.jsonl
+-    line 1  {"type":"header","schema":1,"roomId","subjectId","label","count",...}
++    line 1  {"type":"header","schema":2,"roomId","subjectId","label","count",...}
+     then    {"type":"frame","t":<ms>,"n":<node>,"rssi":<dBm>,"a":[51 amplitudes]}
+ 
++Schema 2 (identical field set to the dashboard recorder; see its header comment) only ADDS fields to
++schema 1: partStartedAtMs, geometryHash, capture{channel,bandwidthMHz,bssid,firmwareVersion,firmwareHash,
++source}, annotation{nodeMoved,roomNotEmpty,text}, recorder. Unknown values are null, never guessed. Both
++recorders write compact JSON (no spaces); older files from this script contain spaces and still parse.
++
+ It binds UDP :5005 itself, so the dashboard must be stopped first (the boards
+ send to one address; two listeners would split the packets). Keep the room in
+ the labelled condition for the WHOLE run: a mislabelled second poisons the file.
+@@ -18,7 +23,9 @@ the labelled condition for the WHOLE run: a mislabelled second poisons the file.
+ from __future__ import annotations
+ 
+ import argparse
++import hashlib
+ import json
++import os
+ import re
+ import socket
+ import sys
+@@ -33,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ from phantom.protocol import CsiFrameV1, parse_csi_frame  # noqa: E402
+ from phantom.subcarriers import lltf_amplitudes  # noqa: E402
+ 
+-SCHEMA_VERSION = 1
++SCHEMA_VERSION = 2
+ LABELS = ("empty", "empty_fan", "still", "walking", "active", "two_people", "three_people")
+ DEFAULT_COUNT = {"empty": 0, "empty_fan": 0, "still": 1, "walking": 1, "active": 1, "two_people": 2, "three_people": 3}
+ SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+@@ -55,9 +62,60 @@ def output_path(root: Path, room: str, subject: str, label: str, started_ms: int
+     return Path(root) / room / f"{name}.jsonl"
+ 
+ 
++def dumps(obj: Any) -> str:
++    """Compact JSON, the same byte layout as the dashboard recorder's JSON.stringify."""
++    return json.dumps(obj, separators=(",", ":"))
++
++
++def canonical_json(obj: Any) -> str:
++    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
++
++
++def geometry_hash(geometry: dict[str, Any] | None) -> str | None:
++    """First 16 hex of sha256(canonical {roomWidthM, roomDepthM, anchors}); equals the TS recorder's value."""
++    if not geometry:
++        return None
++    picked = {k: geometry[k] for k in ("roomWidthM", "roomDepthM", "anchors") if k in geometry}
++    return hashlib.sha256(canonical_json(picked).encode("utf-8")).hexdigest()[:16]
++
++
++def capture_from_env(env: Any) -> dict[str, Any]:
++    """Operator-supplied capture conditions; invalid values become None (same rules as the TS captureFromEnv)."""
++    def num(key: str) -> float | None:
++        try:
++            return float(env.get(key))
++        except (TypeError, ValueError):
++            return None
++
++    channel, bandwidth = num("PHANTOM_CAPTURE_CHANNEL"), num("PHANTOM_CAPTURE_BANDWIDTH_MHZ")
++    bssid = (env.get("PHANTOM_ROUTER_BSSID") or "").lower()
++    version = env.get("PHANTOM_FIRMWARE_VERSION") or ""
++    fw_hash = (env.get("PHANTOM_FIRMWARE_HASH") or "").lower()
++    capture = {
++        "channel": int(channel) if channel is not None and channel.is_integer() and 1 <= channel <= 196 else None,
++        "bandwidthMHz": int(bandwidth) if bandwidth in (20, 40, 80, 160) else None,
++        "bssid": bssid if re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", bssid) else None,
++        "firmwareVersion": version if re.fullmatch(r"[A-Za-z0-9._+-]{1,64}", version) else None,
++        "firmwareHash": fw_hash if re.fullmatch(r"[0-9a-f]{7,64}", fw_hash) else None,
++    }
++    capture["source"] = "operator_env" if any(v is not None for v in capture.values()) else "not_recorded"
++    return capture
++
++
+ def build_header(
+-    room: str, subject: str, label: str, count: int, started_ms: int, geometry: dict[str, Any], notes: str = ""
++    room: str,
++    subject: str,
++    label: str,
++    count: int,
++    started_ms: int,
++    geometry: dict[str, Any],
++    notes: str = "",
++    *,
++    capture: dict[str, Any] | None = None,
++    annotation: dict[str, Any] | None = None,
++    part_started_ms: int | None = None,
+ ) -> dict[str, Any]:
++    ann = annotation or {}
+     return {
+         "type": "header",
+         "schema": SCHEMA_VERSION,
+@@ -67,9 +125,18 @@ def build_header(
+         "count": count,
+         "notes": notes,
+         "startedAtMs": started_ms,
++        "partStartedAtMs": started_ms if part_started_ms is None else part_started_ms,
+         "part": 1,
+         "geometry": geometry,
++        "geometryHash": geometry_hash(geometry),
+         "firmwareFilterMac": None,
++        "capture": capture if capture is not None else capture_from_env({}),
++        "annotation": {
++            "nodeMoved": ann.get("nodeMoved") if isinstance(ann.get("nodeMoved"), bool) else None,
++            "roomNotEmpty": ann.get("roomNotEmpty") if isinstance(ann.get("roomNotEmpty"), bool) else None,
++            "text": str(ann.get("text") or "")[:500],
++        },
++        "recorder": "headless",
+     }
+ 
+ 
+@@ -89,8 +156,18 @@ def record(args: argparse.Namespace) -> int:
+     started_ms = int(time.time() * 1000)
+     out = output_path(Path(args.data_root), args.room, args.subject, args.label, started_ms)
+     count = DEFAULT_COUNT[args.label] if args.count is None else args.count
++    env = dict(os.environ)
++    for key, value in (
++        ("PHANTOM_CAPTURE_CHANNEL", args.channel), ("PHANTOM_CAPTURE_BANDWIDTH_MHZ", args.bandwidth_mhz),
++        ("PHANTOM_ROUTER_BSSID", args.bssid), ("PHANTOM_FIRMWARE_VERSION", args.firmware_version),
++        ("PHANTOM_FIRMWARE_HASH", args.firmware_hash),
++    ):
++        if value is not None:
++            env[key] = str(value)  # command-line flags override the environment
+     header = build_header(
+-        args.room, args.subject, args.label, count, started_ms, load_geometry(Path(args.room_config)), args.notes
++        args.room, args.subject, args.label, count, started_ms, load_geometry(Path(args.room_config)), args.notes,
++        capture=capture_from_env(env),
++        annotation={"nodeMoved": args.node_moved, "roomNotEmpty": args.room_not_empty, "text": args.annotation},
+     )
+ 
+     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+@@ -108,7 +185,7 @@ def record(args: argparse.Namespace) -> int:
+     lines = 0
+     print(f"[REC] {args.label} (count={count}) for {args.seconds:.0f}s -> {out}")
+     with out.open("w", encoding="utf-8") as handle:
+-        handle.write(json.dumps(header) + "\n")
++        handle.write(dumps(header) + "\n")
+         try:
+             while time.monotonic() < deadline:
+                 try:
+@@ -122,7 +199,7 @@ def record(args: argparse.Namespace) -> int:
+                     amps = lltf_amplitudes(frame.iq_bytes, frame.n_subcarriers)
+                 except ValueError:
+                     continue
+-                handle.write(json.dumps(frame_record(time.time() * 1000.0, frame.node_id, frame.rssi_dbm, amps)) + "\n")
++                handle.write(dumps(frame_record(time.time() * 1000.0, frame.node_id, frame.rssi_dbm, amps)) + "\n")
+                 per_node[frame.node_id] += 1
+                 lines += 1
+                 if lines % FLUSH_EVERY_LINES == 0:
+@@ -154,6 +231,16 @@ def main() -> int:
+     parser.add_argument("--notes", default="headless scripts/record_dataset.py")
+     parser.add_argument("--data-root", default="data/datasets")
+     parser.add_argument("--room-config", default="config/room.json")
++    parser.add_argument("--channel", type=int, default=None, help="Wi-Fi channel the AP uses (recorded as stated; not verified)")
++    parser.add_argument("--bandwidth-mhz", type=int, default=None, help="20/40/80/160 (recorded as stated)")
++    parser.add_argument("--bssid", default=None, help="router/AP MAC aa:bb:cc:dd:ee:ff")
++    parser.add_argument("--firmware-version", default=None)
++    parser.add_argument("--firmware-hash", default=None, help="git hash of the firmware flashed on the nodes")
++    parser.add_argument("--node-moved", action=argparse.BooleanOptionalAction, default=None,
++                        help="operator states a node was moved/obstructed during or just before this recording")
++    parser.add_argument("--room-not-empty", action=argparse.BooleanOptionalAction, default=None,
++                        help="operator states someone/something was in the room although the label says otherwise")
++    parser.add_argument("--annotation", default="", help="free text, max 500 chars")
+     args = parser.parse_args()
+     try:
+         return record(args)
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\server\\lib\\dataset-recorder.test.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.test.ts"
+index abf2820..4fe7913 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\server\\lib\\dataset-recorder.test.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.test.ts"	
+@@ -6,6 +6,9 @@ import path from "path";
+ import {
+   DATASET_LABELS,
+   DatasetRecorder,
++  canonicalJson,
++  captureFromEnv,
++  geometryHash,
+   parseDatasetStart,
+   type DatasetFrame,
+ } from "./dataset-recorder";
+@@ -58,7 +61,7 @@ test("recorder writes a header then frame rows under data/datasets/<room>/", ()
+   assert.equal(rows[0].type, "header");
+   assert.equal(rows[0].label, "walking");
+   assert.equal(rows[0].roomId, "lab-1");
+-  assert.equal(rows[0].schema, 1);
++  assert.equal(rows[0].schema, 2);
+   assert.deepEqual(rows[1], { type: "frame", t: 1000, n: 2, rssi: -48, a: [1.5, 2.5, 3.5] });
+   assert.equal((rows[2] as { n: number }).n, 3);
+ });
+@@ -143,3 +146,75 @@ test("a failed flush drops the pending buffer instead of growing without bound",
+   assert.ok((rec as unknown as { pending: string[] }).pending.length < 200, "pending buffer must not accumulate");
+   try { rec.stop(); } catch { /* expected: fd already closed */ }
+ });
++
++// ── PS-FIX-03: header schema 2 ─────────────────────────────────────────────
++
++const GEOMETRY = { roomWidthM: 4, roomDepthM: 6, anchors: { "1": { x: -2, z: -3 } } };
++// Same literal as tests/test_record_dataset.py: both recorders must hash the same geometry identically.
++const GEOMETRY_HASH = "5ad06de70373cbe1";
++
++test("canonicalJson ignores key order and geometryHash matches the Python recorder's value", () => {
++  assert.equal(canonicalJson({ b: 1, a: { d: [2, { z: 1, y: 2 }], c: null } }), '{"a":{"c":null,"d":[2,{"y":2,"z":1}]},"b":1}');
++  assert.equal(geometryHash(GEOMETRY), GEOMETRY_HASH);
++  assert.equal(geometryHash({ anchors: { "1": { z: -3, x: -2 } }, roomDepthM: 6, roomWidthM: 4 }), GEOMETRY_HASH);
++  assert.equal(geometryHash({ ...GEOMETRY, router: { x: 9, z: 9 } }), GEOMETRY_HASH, "router is not part of the hash");
++  assert.equal(geometryHash(undefined), null);
++});
++
++test("schema-2 header carries geometry hash, capture, annotation and recorder; unknowns are null, never guessed", () => {
++  const root = tempRoot();
++  const rec = new DatasetRecorder({ rootDir: root, now: () => 1_700_000_000_000 });
++  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), { geometry: GEOMETRY, capture: captureFromEnv({}) });
++  rec.record(FRAME);
++  const h = readJsonl(rec.stop().files[0])[0] as Record<string, any>;
++  assert.equal(h.schema, 2);
++  assert.equal(h.geometryHash, GEOMETRY_HASH);
++  assert.equal(h.recorder, "dashboard");
++  assert.deepEqual(h.annotation, { nodeMoved: null, roomNotEmpty: null, text: "" });
++  assert.deepEqual(h.capture, { channel: null, bandwidthMHz: null, bssid: null, firmwareVersion: null, firmwareHash: null, source: "not_recorded" });
++  assert.equal(h.startedAtMs, 1_700_000_000_000);
++  assert.equal(h.partStartedAtMs, 1_700_000_000_000);
++  assert.equal(h.type, "header");
++  assert.equal(h.roomId, "lab"); // schema-1 fields unchanged
++});
++
++test("every part header keeps the recording startedAtMs but has its own partStartedAtMs", () => {
++  const root = tempRoot();
++  let clock = 1_000;
++  const rec = new DatasetRecorder({ rootDir: root, maxFramesPerFile: 2, now: () => (clock += 1000) });
++  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
++  for (let i = 0; i < 5; i++) rec.record({ ...FRAME, tMs: i });
++  const headers = rec.stop().files.map((f) => readJsonl(f)[0] as Record<string, any>);
++  assert.equal(headers.length, 3);
++  assert.equal(new Set(headers.map((h) => h.startedAtMs)).size, 1, "startedAtMs names the recording and is shared");
++  const starts = headers.map((h) => h.partStartedAtMs as number);
++  assert.ok(starts[0] < starts[1] && starts[1] < starts[2], `partStartedAtMs must increase: ${starts}`);
++  assert.deepEqual(headers.map((h) => h.part), [1, 2, 3]);
++});
++
++test("captureFromEnv accepts valid operator values and nulls invalid ones", () => {
++  const ok = captureFromEnv({
++    PHANTOM_CAPTURE_CHANNEL: "6", PHANTOM_CAPTURE_BANDWIDTH_MHZ: "20", PHANTOM_ROUTER_BSSID: "AA:BB:CC:00:11:22",
++    PHANTOM_FIRMWARE_VERSION: "v0.8.13-esp32", PHANTOM_FIRMWARE_HASH: "428D3A5",
++  });
++  assert.deepEqual(ok, { channel: 6, bandwidthMHz: 20, bssid: "aa:bb:cc:00:11:22", firmwareVersion: "v0.8.13-esp32", firmwareHash: "428d3a5", source: "operator_env" });
++  const bad = captureFromEnv({
++    PHANTOM_CAPTURE_CHANNEL: "abc", PHANTOM_CAPTURE_BANDWIDTH_MHZ: "30", PHANTOM_ROUTER_BSSID: "not-a-mac",
++    PHANTOM_FIRMWARE_VERSION: "has space", PHANTOM_FIRMWARE_HASH: "zzz",
++  });
++  assert.deepEqual(bad, { channel: null, bandwidthMHz: null, bssid: null, firmwareVersion: null, firmwareHash: null, source: "not_recorded" });
++  assert.equal(captureFromEnv({ PHANTOM_CAPTURE_CHANNEL: "6.5" }).channel, null);
++});
++
++test("operator annotation (node moved / room not empty) is validated and written to every header", () => {
++  const req = parseDatasetStart({ roomId: "lab", label: "empty", annotation: { nodeMoved: true, roomNotEmpty: "yes", text: "N1 nudged" } });
++  assert.deepEqual(req.annotation, { nodeMoved: true, roomNotEmpty: null, text: "N1 nudged" });
++  assert.deepEqual(parseDatasetStart({ roomId: "lab", label: "empty", annotation: "oops" }).annotation, { nodeMoved: null, roomNotEmpty: null, text: "" });
++  assert.equal(parseDatasetStart({ roomId: "lab", label: "empty", annotation: { text: "x".repeat(900) } }).annotation.text.length, 500);
++  const root = tempRoot();
++  const rec = new DatasetRecorder({ rootDir: root, maxFramesPerFile: 1 });
++  rec.start(req, {});
++  rec.record(FRAME);
++  rec.record(FRAME);
++  for (const f of rec.stop().files) assert.deepEqual((readJsonl(f)[0] as Record<string, any>).annotation, req.annotation);
++});
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\server\\lib\\dataset-recorder.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.ts"
+index c245e81..846fbe9 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\server\\lib\\dataset-recorder.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.ts"	
+@@ -8,15 +8,23 @@
+ //   data/datasets/<roomId>/<roomId>__<subjectId>__<label>__<UTC stamp>.jsonl
+ //   (rotation parts: ...__<stamp>.part2.jsonl, .part3.jsonl, ...)
+ //
+-//   line 1   {"type":"header","schema":1,"roomId","subjectId","label","count",
+-//             "startedAtMs","part","geometry","notes","firmwareFilterMac"}
++//   line 1   {"type":"header","schema":2,"roomId","subjectId","label","count",
++//             "startedAtMs" (RECORDING start; same in every part, it names the files),
++//             "partStartedAtMs" (this file's start),"part","geometry","geometryHash",
++//             "notes","firmwareFilterMac","capture":{channel,bandwidthMHz,bssid,
++//             firmwareVersion,firmwareHash,source},"annotation":{nodeMoved,roomNotEmpty,text},
++//             "recorder":"dashboard"}
+ //   then     {"type":"frame","t":<host ms>,"n":<nodeId>,"rssi":<dBm>,"a":[…]}
+ //
++// Schema 2 only ADDS fields to schema 1 (readers that ignore unknown keys keep working). Anything not
++// supplied is null ("not recorded"), never guessed. Per-frame PHY (channel/noise/seq) is NOT recorded yet.
++//
+ // Every part file starts with its own header so each file is self-describing.
+ // Labels are ground truth supplied by the operator for the whole recording —
+ // train/eval tooling (scripts/train/) must split by recording/session, never
+ // by frame. Files are local-only (data/datasets/ is gitignored).
+ 
++import crypto from "crypto";
+ import fs from "fs";
+ import path from "path";
+ 
+@@ -45,7 +53,24 @@ const MAX_PEOPLE = 8;
+ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+ const DEFAULT_MAX_FRAMES_PER_FILE = 100_000;
+ const FLUSH_EVERY_LINES = 200;
+-const SCHEMA_VERSION = 1;
++const SCHEMA_VERSION = 2;
++
++/** Operator statement about conditions the amplitudes alone cannot reveal. null = not stated. */
++export interface DatasetAnnotation {
++  nodeMoved: boolean | null;
++  roomNotEmpty: boolean | null;
++  text: string;
++}
++
++export interface DatasetCapture {
++  channel: number | null;
++  bandwidthMHz: number | null;
++  bssid: string | null;
++  firmwareVersion: string | null;
++  firmwareHash: string | null;
++  /** "operator_env" when at least one value was supplied through PHANTOM_* variables, else "not_recorded". */
++  source: "operator_env" | "not_recorded";
++}
+ 
+ export interface DatasetStartRequest {
+   roomId: string;
+@@ -53,6 +78,55 @@ export interface DatasetStartRequest {
+   label: DatasetLabel;
+   count: number;
+   notes: string;
++  annotation: DatasetAnnotation;
++}
++
++/** Deterministic JSON (object keys sorted recursively, no whitespace) so hashes agree across languages. */
++export function canonicalJson(value: unknown): string {
++  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
++  if (value && typeof value === "object") {
++    const obj = value as Record<string, unknown>;
++    return `{${Object.keys(obj)
++      .sort()
++      .map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`)
++      .join(",")}}`;
++  }
++  return JSON.stringify(value);
++}
++
++/** First 16 hex chars of sha256(canonical {roomWidthM, roomDepthM, anchors}); null when no geometry. */
++export function geometryHash(geometry: unknown): string | null {
++  if (!geometry || typeof geometry !== "object") return null;
++  const g = geometry as Record<string, unknown>;
++  const picked: Record<string, unknown> = {};
++  for (const key of ["roomWidthM", "roomDepthM", "anchors"]) if (g[key] !== undefined) picked[key] = g[key];
++  return crypto.createHash("sha256").update(canonicalJson(picked)).digest("hex").slice(0, 16);
++}
++
++/**
++ * Capture conditions the operator knows but the amplitude stream does not carry. Invalid values become
++ * null (never a guess, never a crash). Variables: PHANTOM_CAPTURE_CHANNEL, PHANTOM_CAPTURE_BANDWIDTH_MHZ,
++ * PHANTOM_ROUTER_BSSID, PHANTOM_FIRMWARE_VERSION, PHANTOM_FIRMWARE_HASH.
++ */
++export function captureFromEnv(env: NodeJS.ProcessEnv): DatasetCapture {
++  const channel = Number(env.PHANTOM_CAPTURE_CHANNEL);
++  const bandwidth = Number(env.PHANTOM_CAPTURE_BANDWIDTH_MHZ);
++  const bssid = (env.PHANTOM_ROUTER_BSSID ?? "").toLowerCase();
++  const version = env.PHANTOM_FIRMWARE_VERSION ?? "";
++  const hash = (env.PHANTOM_FIRMWARE_HASH ?? "").toLowerCase();
++  const capture = {
++    channel: Number.isInteger(channel) && channel >= 1 && channel <= 196 ? channel : null,
++    bandwidthMHz: [20, 40, 80, 160].includes(bandwidth) ? bandwidth : null,
++    bssid: /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(bssid) ? bssid : null,
++    firmwareVersion: /^[A-Za-z0-9._+-]{1,64}$/.test(version) ? version : null,
++    firmwareHash: /^[0-9a-f]{7,64}$/.test(hash) ? hash : null,
++  };
++  const any = Object.values(capture).some((v) => v !== null);
++  return { ...capture, source: any ? "operator_env" : "not_recorded" };
++}
++
++function triState(value: unknown): boolean | null {
++  return typeof value === "boolean" ? value : null;
+ }
+ 
+ export interface DatasetFrame {
+@@ -99,12 +173,18 @@ export function parseDatasetStart(raw: unknown): DatasetStartRequest {
+     throw new Error(`invalid count: expected an integer 0-${MAX_PEOPLE}`);
+   }
+   const notes = typeof body.notes === "string" ? body.notes.slice(0, 500) : "";
++  const rawAnnotation = body.annotation && typeof body.annotation === "object" ? (body.annotation as Record<string, unknown>) : {};
+   return {
+     roomId: requireSafeId(body.roomId, "roomId"),
+     subjectId: requireSafeId(body.subjectId, "subjectId", "unknown"),
+     label: typedLabel,
+     count,
+     notes,
++    annotation: {
++      nodeMoved: triState(rawAnnotation.nodeMoved),
++      roomNotEmpty: triState(rawAnnotation.roomNotEmpty),
++      text: typeof rawAnnotation.text === "string" ? rawAnnotation.text.slice(0, 500) : "",
++    },
+   };
+ }
+ 
+@@ -117,6 +197,8 @@ export interface DatasetRecorderOptions {
+ export interface DatasetStartContext {
+   geometry?: unknown;
+   firmwareFilterMac?: string;
++  /** Defaults to captureFromEnv(process.env) when omitted. */
++  capture?: DatasetCapture;
+ }
+ 
+ function compactStamp(ms: number): string {
+@@ -253,9 +335,14 @@ export class DatasetRecorder {
+       count: request.count,
+       notes: request.notes,
+       startedAtMs: this.startedAtMs,
++      partStartedAtMs: this.now(),
+       part: this.part,
+       geometry: this.context.geometry ?? null,
++      geometryHash: geometryHash(this.context.geometry),
+       firmwareFilterMac: this.context.firmwareFilterMac ?? null,
++      capture: this.context.capture ?? captureFromEnv(process.env),
++      annotation: request.annotation,
++      recorder: "dashboard",
+     };
+     fs.writeSync(this.fd, `${JSON.stringify(header)}\n`);
+   }
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\tests\\test_dataset_loader.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_dataset_loader.py"
+index 10a6ec1..e2e9985 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\tests\\test_dataset_loader.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_dataset_loader.py"	
+@@ -128,3 +128,12 @@ def test_load_room_dataset_passes_strict_through(tmp_path: Path) -> None:
+     assert load_room_dataset(tmp_path, "room")[0].report.width_mismatch_frames == {1: 1}
+     with pytest.raises(ValueError):
+         load_room_dataset(tmp_path, "room", strict=True)
++
++
++def test_schema_2_headers_load_and_the_header_is_exposed(tmp_path: Path) -> None:
++    h2 = {**HEADER, "schema": 2, "partStartedAtMs": 5, "geometryHash": "abc", "annotation": {"nodeMoved": True, "roomNotEmpty": None, "text": ""},
++          "capture": {"channel": 6, "source": "operator_env"}, "recorder": "headless"}
++    rec = load_recording([write(tmp_path / name(), [h2, frame(1000)])])
++    assert rec.header["annotation"]["nodeMoved"] is True and rec.header["capture"]["channel"] == 6 and rec.report.clean
++    old = load_recording([write(tmp_path / name(2), [HEADER, frame(1000)])])
++    assert old.header["schema"] == 1                                   # schema 1 files keep loading unchanged
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\tests\\test_record_dataset.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_record_dataset.py"
+index be41f14..bec2830 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\03-PS-FIX-03\\tests\\test_record_dataset.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_record_dataset.py"	
+@@ -18,7 +18,7 @@ def test_header_has_the_fields_the_loader_requires() -> None:
+     header = build_header("room1", "s1", "empty", 0, 1792346161097, GEOMETRY, notes="headless")
+ 
+     assert header["type"] == "header"
+-    assert header["schema"] == 1
++    assert header["schema"] == 2
+     assert (header["roomId"], header["subjectId"], header["label"], header["count"]) == ("room1", "s1", "empty", 0)
+     assert header["part"] == 1
+     assert header["geometry"] == GEOMETRY
+@@ -48,3 +48,62 @@ def test_unsafe_ids_are_rejected(tmp_path: Path, bad: str) -> None:
+ def test_unknown_label_is_rejected(tmp_path: Path) -> None:
+     with pytest.raises(ValueError):
+         output_path(tmp_path, "room1", "s1", "dancing", 0)
++
++
++# ── PS-FIX-03: header schema 2 ─────────────────────────────────────────────
++
++from scripts.record_dataset import canonical_json, capture_from_env, dumps, geometry_hash  # noqa: E402
++
++# Same literal as server/lib/dataset-recorder.test.ts: both recorders must hash the same geometry identically.
++GEOMETRY_HASH = "5ad06de70373cbe1"
++
++
++def test_geometry_hash_matches_the_dashboard_recorder_and_ignores_key_order_and_router() -> None:
++    assert geometry_hash(GEOMETRY) == GEOMETRY_HASH
++    assert geometry_hash({"anchors": {"1": {"z": -3, "x": -2}}, "roomDepthM": 6, "roomWidthM": 4}) == GEOMETRY_HASH
++    assert geometry_hash({**GEOMETRY, "router": {"x": 9, "z": 9}}) == GEOMETRY_HASH
++    assert geometry_hash({}) is None and geometry_hash(None) is None
++    assert canonical_json({"b": 1, "a": {"d": [2, {"z": 1, "y": 2}], "c": None}}) == '{"a":{"c":null,"d":[2,{"y":2,"z":1}]},"b":1}'
++
++
++def test_schema2_header_fields_and_defaults_are_null_not_guesses() -> None:
++    h = build_header("room1", "s1", "empty", 0, 1792346161097, GEOMETRY)
++    assert h["schema"] == 2 and h["geometryHash"] == GEOMETRY_HASH and h["recorder"] == "headless"
++    assert h["startedAtMs"] == h["partStartedAtMs"] == 1792346161097
++    assert h["capture"] == {"channel": None, "bandwidthMHz": None, "bssid": None, "firmwareVersion": None, "firmwareHash": None, "source": "not_recorded"}
++    assert h["annotation"] == {"nodeMoved": None, "roomNotEmpty": None, "text": ""}
++    h2 = build_header("room1", "s1", "empty", 0, 1, GEOMETRY, part_started_ms=99)
++    assert (h2["startedAtMs"], h2["partStartedAtMs"]) == (1, 99)
++
++
++def test_capture_from_env_accepts_valid_values_and_nulls_invalid_ones() -> None:
++    ok = capture_from_env({
++        "PHANTOM_CAPTURE_CHANNEL": "6", "PHANTOM_CAPTURE_BANDWIDTH_MHZ": "20", "PHANTOM_ROUTER_BSSID": "AA:BB:CC:00:11:22",
++        "PHANTOM_FIRMWARE_VERSION": "v0.8.13-esp32", "PHANTOM_FIRMWARE_HASH": "428D3A5",
++    })
++    assert ok == {"channel": 6, "bandwidthMHz": 20, "bssid": "aa:bb:cc:00:11:22", "firmwareVersion": "v0.8.13-esp32", "firmwareHash": "428d3a5", "source": "operator_env"}
++    bad = capture_from_env({
++        "PHANTOM_CAPTURE_CHANNEL": "abc", "PHANTOM_CAPTURE_BANDWIDTH_MHZ": "30", "PHANTOM_ROUTER_BSSID": "not-a-mac",
++        "PHANTOM_FIRMWARE_VERSION": "has space", "PHANTOM_FIRMWARE_HASH": "zzz",
++    })
++    assert bad["source"] == "not_recorded" and all(v is None for k, v in bad.items() if k != "source")
++    for weird in ("nan", "inf", "6.5", ""):
++        assert capture_from_env({"PHANTOM_CAPTURE_CHANNEL": weird})["channel"] is None, weird
++
++
++def test_annotation_is_validated_and_capped() -> None:
++    h = build_header("room1", "s1", "empty", 0, 1, GEOMETRY, annotation={"nodeMoved": True, "roomNotEmpty": "yes", "text": "x" * 900})
++    assert h["annotation"]["nodeMoved"] is True and h["annotation"]["roomNotEmpty"] is None and len(h["annotation"]["text"]) == 500
++
++
++def test_dumps_is_compact_and_roundtrips_through_the_loader(tmp_path: Path) -> None:
++    from phantom.dataset import load_recording
++
++    header = build_header("room1", "s1", "empty", 0, 1792346161097, GEOMETRY, annotation={"nodeMoved": True})
++    path = output_path(tmp_path, "room1", "s1", "empty", 1792346161097)
++    path.parent.mkdir(parents=True)
++    path.write_text(dumps(header) + "\n" + dumps(frame_record(1792346161104, 1, -40, [1.5, 2.5])) + "\n", encoding="utf-8")
++    text = path.read_text(encoding="utf-8")
++    assert '": ' not in text and '", "' not in text, "no spaces after separators"
++    rec = load_recording([path])
++    assert rec.header["annotation"]["nodeMoved"] is True and rec.header["geometryHash"] == GEOMETRY_HASH and rec.report.clean

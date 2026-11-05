@@ -1,0 +1,14 @@
+# footprint 08-WAVE2
+changed (5):
+  M data/sessions/_index.json
+  M scripts/record_dataset.py
+  M server/lib/dataset-recorder.test.ts
+  M server/lib/dataset-recorder.ts
+  M tests/test_record_dataset.py
+added (5):
+  A scripts/presence_eval/epoch_eval.py
+  A scripts/presence_eval/epochs.py
+  A scripts/presence_eval/movement.py
+  A tests/test_presence_eval_epochs.py
+  A tests/test_presence_eval_movement.py
+removed (0):

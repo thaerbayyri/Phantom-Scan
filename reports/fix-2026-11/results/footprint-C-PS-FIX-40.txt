@@ -1,0 +1,7 @@
+Item C / PS-FIX-40 footprint (2026-11-04)
+changed (untracked Wave 2 file, backup in .tmp/fix-backups/C-PS-FIX-40):
+  M scripts/presence_eval/periodicity.py (GRID_HZ, GRIDS_HZ)
+added:
+  A scripts/presence_eval/alias_check.py
+  A tests/test_presence_eval_alias_check.py
+results regenerated: reports/fix-2026-11/results/periodicity.{json,md} (previous copies in .tmp/fix-backups/C-PS-FIX-40/results), alias-check.md, alias_check.json

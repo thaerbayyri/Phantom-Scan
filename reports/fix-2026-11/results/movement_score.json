@@ -1,0 +1,5843 @@
+{
+ "provenance": {
+  "command": "python -m scripts.presence_eval.movement",
+  "commit": "744ce43e9772f40bcc0d372e40b077644a9a8939",
+  "branch": "feat/two-node-radar-live-detection",
+  "working_tree_dirty": true,
+  "eval_code_sha256_16": "84a2798f6c117a92",
+  "date_utc": "2026-11-03T19:02:59Z",
+  "python": "3.13.15",
+  "numpy": "2.4.4",
+  "inputs": [
+   "room1__s10__still__20261027T212107Z.jsonl",
+   "room1__s1__empty__20261018T175601Z.jsonl",
+   "room1__s1__empty__20261018T180250Z.jsonl",
+   "room1__s1__empty_fan__20261018T203921Z.jsonl",
+   "room1__s1__still__20261027T193610Z.jsonl",
+   "room1__s1__two_people__20261018T173055Z.jsonl",
+   "room1__s1__walking__20261017T204650Z.jsonl",
+   "room1__s2__still__20261025T195835Z.jsonl",
+   "room1__s3__two_people__20261025T201209Z.jsonl",
+   "room1__s5__empty_fan__20261027T193823Z.jsonl",
+   "room1__s6__empty__20261027T194207Z.jsonl",
+   "room1__s7__walking__20261027T194537Z.jsonl",
+   "room1__s8__empty__20261027T195356Z.jsonl",
+   "room1__s9__empty__20261027T204759Z.jsonl"
+  ]
+ },
+ "caveat": "movement score: relative to this node's own recent past; fades under sustained motion and is zero for a motionless person; NOT presence, and never evidence that a room is empty",
+ "definition": {
+  "quantile": 25.0,
+  "L_seconds": [
+   45,
+   90
+  ],
+  "features": [
+   "perturb",
+   "perturb_agc",
+   "decor"
+  ],
+  "node_sets": [
+   [
+    1,
+    2
+   ],
+   [
+    1,
+    2,
+    3,
+    4
+   ]
+  ],
+  "min_previous_fraction": 0.8
+ },
+ "not_a_detection_candidate": true,
+ "variants": {
+  "N1+N2/perturb/L45": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 253,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7045609603446235,
+       "lo": 0.6362175999278276,
+       "hi": 0.7523098002289219,
+       "n_pos": 701,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5512351778656126,
+       "lo": 0.4934195899209486,
+       "hi": 0.6160708992094861,
+       "n_pos": 160,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7045609603446235,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5512351778656126,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": false,
+      "worst_symmetric_upper_bound": 0.6967071280991735,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s1_empty_1018_1756@E02",
+        "b": "s1_empty_1018_1802@E02",
+        "auc": 0.6320838252656434,
+        "lo": 0.5510146103896104,
+        "hi": 0.6967071280991735,
+        "symmetric_upper_bound": 0.6967071280991735,
+        "ok": false
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 2
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 79,
+     "auc": {
+      "walking": {
+       "auc": 0.6449429753101893,
+       "lo": 0.5347380624138364,
+       "hi": 0.7594341396164933,
+       "n_pos": 101,
+       "n_neg": 79,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5372334359676132,
+       "lo": 0.41001824609419546,
+       "hi": 0.65014539856312,
+       "n_pos": 111,
+       "n_neg": 79,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": {
+       "auc": 0.6449429753101893,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5372334359676132,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2574,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5441884611733434,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.4984697583807299,
+        "lo": 0.45581153882665654,
+        "hi": 0.5284300164684128,
+        "symmetric_upper_bound": 0.5441884611733434,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 5,
+    "n_empty_windows": 2906,
+    "auc": {
+     "walking": {
+      "auc": 0.5701314453537577,
+      "lo": 0.46639378752052774,
+      "hi": 0.6783173938522551,
+      "n_pos": 101,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.6783783024565642,
+      "lo": 0.6110427004348097,
+      "hi": 0.7463469317527424,
+      "n_pos": 343,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7081273481492635,
+      "lo": 0.6606201814606378,
+      "hi": 0.7512540068397582,
+      "n_pos": 841,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.5328141547072731,
+      "lo": 0.48331143987627073,
+      "hi": 0.5934864055281984,
+      "n_pos": 271,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.5701314453537577,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 5,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.6783783024565642,
+      "lo": 0.6007492393749726,
+      "hi": 0.7486395279286487,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "two_people": {
+      "auc": 0.7081273481492635,
+      "lo": 0.5368263049164986,
+      "hi": 0.7531361276508451,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "empty_fan": {
+      "auc": 0.5328141547072731,
+      "lo": 0.4039224779162005,
+      "hi": 0.6058463416549001,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.7905638665132336,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s1_empty_1018_1802@E02",
+       "auc": 0.6320838252656434,
+       "lo": 0.5510146103896104,
+       "hi": 0.6967071280991735,
+       "symmetric_upper_bound": 0.6967071280991735,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.7050797303961861,
+       "lo": 0.6214326812428078,
+       "hi": 0.7905638665132336,
+       "symmetric_upper_bound": 0.7905638665132336,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.636879188864066,
+       "lo": 0.5702133405347015,
+       "hi": 0.6852653254118283,
+       "symmetric_upper_bound": 0.6852653254118283,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6330176373844496,
+       "lo": 0.5497192763568309,
+       "hi": 0.6855462768672376,
+       "symmetric_upper_bound": 0.6855462768672376,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.5775316455696202,
+       "lo": 0.5063165276179517,
+       "hi": 0.6682591340621403,
+       "symmetric_upper_bound": 0.6682591340621403,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.4990816721086097,
+       "lo": 0.4474056565775906,
+       "hi": 0.5465609694535143,
+       "symmetric_upper_bound": 0.5525943434224094,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.49951617705438667,
+       "lo": 0.4413473228463676,
+       "hi": 0.5615897305478363,
+       "symmetric_upper_bound": 0.5615897305478363,
+       "ok": true
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.4118291019597521,
+       "lo": 0.32132486659807136,
+       "hi": 0.4851466224785239,
+       "symmetric_upper_bound": 0.6786751334019286,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.41393510585373944,
+       "lo": 0.31758125587308605,
+       "hi": 0.47526325244596757,
+       "symmetric_upper_bound": 0.682418744126914,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4984697583807299,
+       "lo": 0.45581153882665654,
+       "hi": 0.5284300164684128,
+       "symmetric_upper_bound": 0.5441884611733434,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 5
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.03209268471419992,
+     0.04968602049277249,
+     0.026147417276223717
+    ],
+    "s1_empty_1018_1756@E02": [
+     0.021003756688387845,
+     0.020055483328315346,
+     0.022633760793269175
+    ],
+    "s1_empty_1018_1802@E02": [
+     0.010928704015308321,
+     0.016832302307740188,
+     0.010904175526528656
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.01839807527416041,
+     0.015905452138723464,
+     0.01951295697087438
+    ],
+    "s2_still_1025_1958@E03": [
+     0.02897922986588467,
+     0.018972616992566006,
+     0.037460324597414274
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.019394762087485307,
+     0.015274853277167683,
+     0.056926862178462136
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.009825436824619838,
+     0.01252551217327521,
+     0.010554663905525952
+    ],
+    "s6_empty_1027_1942@E05": [
+     0.0103800626140991,
+     0.011523677859308773,
+     0.005943704197158117
+    ],
+    "s7_walking_1027_1945@E05": [
+     0.005077646681496982,
+     0.015372334682526113,
+     0.04067342477423959
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.01453791126591051,
+     0.012657508776396681,
+     0.012138542313200218
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.010272829935024208,
+     0.013117715179450096,
+     0.01587933583537037
+    ],
+    "s10_still_1027_2121@E08": [
+     0.037885400514293885,
+     0.017170617875627237,
+     0.023127315989187644
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 24,
+    "s1_empty_1018_1756@E02": 24,
+    "s1_empty_1018_1802@E02": 24,
+    "s1_empty_fan_1018_2039@E02": 24,
+    "s2_still_1025_1958@E03": 24,
+    "s3_two_people_1025_2012@E04": 24,
+    "s1_still_1027_1936@E05": 24,
+    "s5_empty_fan_1027_1938@E05": 24,
+    "s6_empty_1027_1942@E05": 24,
+    "s7_walking_1027_1945@E05": 24,
+    "s8_empty_1027_1953@E07": 24,
+    "s9_empty_1027_2047@E07": 24,
+    "s10_still_1027_2121@E08": 24
+   }
+  },
+  "N1+N2/perturb/L90": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 152,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7605923967970147,
+       "lo": 0.7037432947212937,
+       "hi": 0.8096242614475628,
+       "n_pos": 677,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5975715944272446,
+       "lo": 0.5185867356811146,
+       "hi": 0.6501112616099071,
+       "n_pos": 136,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7605923967970147,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5975715944272446,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 0
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2526,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5400798576539109,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.48866650218960095,
+        "lo": 0.45992014234608913,
+        "hi": 0.5282843738710558,
+        "symmetric_upper_bound": 0.5400798576539109,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 3,
+    "n_empty_windows": 2678,
+    "auc": {
+     "walking": {
+      "auc": 0.6818181818181818,
+      "lo": 0.5375574668050397,
+      "hi": 0.793525891584144,
+      "n_pos": 77,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.670283920456703,
+      "lo": 0.5872379780002784,
+      "hi": 0.752276901558208,
+      "n_pos": 295,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7406893966719625,
+      "lo": 0.6890293334036524,
+      "hi": 0.7928421131690945,
+      "n_pos": 793,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.5643576459241051,
+      "lo": 0.5047939614262702,
+      "hi": 0.6251832737770305,
+      "n_pos": 223,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.6818181818181818,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 3,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.670283920456703,
+      "lo": 0.5313347040970576,
+      "hi": 0.7387698508188008,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "two_people": {
+      "auc": 0.7406893966719625,
+      "lo": 0.5810530774843429,
+      "hi": 0.7902315891398043,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "empty_fan": {
+      "auc": 0.5643576459241051,
+      "lo": 0.4445531996395393,
+      "hi": 0.6188157278497168,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": true,
+     "worst_symmetric_upper_bound": 0.5668736477307034,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.5008396648887994,
+       "lo": 0.44528686977961157,
+       "hi": 0.5668736477307034,
+       "symmetric_upper_bound": 0.5668736477307034,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4922386611690517,
+       "lo": 0.43999135944700457,
+       "hi": 0.5496551358234295,
+       "symmetric_upper_bound": 0.5600086405529954,
+       "ok": true
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.48866650218960095,
+       "lo": 0.45992014234608913,
+       "hi": 0.5282843738710558,
+       "symmetric_upper_bound": 0.5400798576539109,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 3
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.03531177922759392,
+     0.0738307381360286,
+     0.03432593688654223
+    ],
+    "s1_empty_1018_1756@E02": null,
+    "s1_empty_1018_1802@E02": [
+     0.013109725094031105,
+     0.01885306546961535,
+     0.009302364047050718
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.02276324123211171,
+     0.01810620754215299,
+     0.025714383122136697
+    ],
+    "s2_still_1025_1958@E03": [
+     0.005945554769488749,
+     0.019905435852701728,
+     0.0510875378633399
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.016536641110845046,
+     0.022954206590159718,
+     0.0555865743230351
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.009869266684165504,
+     0.021731265518826745,
+     0.012354803871798437
+    ],
+    "s6_empty_1027_1942@E05": null,
+    "s7_walking_1027_1945@E05": [
+     0.009343616287363798,
+     0.02516741983423046,
+     0.049952078600131136
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.014463168694895154,
+     0.013094900674681192,
+     0.012453584289493086
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.012120987519728621,
+     0.014764526853628723,
+     0.014517057808040294
+    ],
+    "s10_still_1027_2121@E08": [
+     0.01513379774019269,
+     0.02431170545869428,
+     0.035887035190251104
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 48,
+    "s1_empty_1018_1756@E02": 48,
+    "s1_empty_1018_1802@E02": 48,
+    "s1_empty_fan_1018_2039@E02": 48,
+    "s2_still_1025_1958@E03": 48,
+    "s3_two_people_1025_2012@E04": 48,
+    "s1_still_1027_1936@E05": 48,
+    "s5_empty_fan_1027_1938@E05": 48,
+    "s6_empty_1027_1942@E05": 48,
+    "s7_walking_1027_1945@E05": 48,
+    "s8_empty_1027_1953@E07": 48,
+    "s9_empty_1027_2047@E07": 48,
+    "s10_still_1027_2121@E08": 48
+   }
+  },
+  "N1+N2/perturb_agc/L45": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 253,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.6905662717856478,
+       "lo": 0.6213762947342306,
+       "hi": 0.7360920029545596,
+       "n_pos": 701,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5633399209486166,
+       "lo": 0.5022159090909091,
+       "hi": 0.6251117835968379,
+       "n_pos": 160,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.6905662717856478,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5633399209486166,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": false,
+      "worst_symmetric_upper_bound": 0.6715263429752065,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s1_empty_1018_1756@E02",
+        "b": "s1_empty_1018_1802@E02",
+        "auc": 0.6007231404958677,
+        "lo": 0.5161784238488784,
+        "hi": 0.6715263429752065,
+        "symmetric_upper_bound": 0.6715263429752065,
+        "ok": false
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 2
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 79,
+     "auc": {
+      "walking": {
+       "auc": 0.6104775034465472,
+       "lo": 0.504493044241133,
+       "hi": 0.7298376989597694,
+       "n_pos": 101,
+       "n_neg": 79,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5332421028623561,
+       "lo": 0.4034268445660851,
+       "hi": 0.6426844566085071,
+       "n_pos": 111,
+       "n_neg": 79,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": {
+       "auc": 0.6104775034465472,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5332421028623561,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2574,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5403607676178998,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.5096798358937107,
+        "lo": 0.4675655073426833,
+        "hi": 0.5403607676178998,
+        "symmetric_upper_bound": 0.5403607676178998,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 5,
+    "n_empty_windows": 2906,
+    "auc": {
+     "walking": {
+      "auc": 0.5880970065347898,
+      "lo": 0.4895195498558803,
+      "hi": 0.6876413940430519,
+      "n_pos": 101,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.6644762319439623,
+      "lo": 0.5930621575146625,
+      "hi": 0.7370591206692095,
+      "n_pos": 343,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.6832921021986574,
+      "lo": 0.6354193996103024,
+      "hi": 0.7274676179424585,
+      "n_pos": 841,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.5437674438685199,
+      "lo": 0.4965669387423399,
+      "hi": 0.60185174838672,
+      "n_pos": 271,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.5880970065347898,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 5,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.6644762319439623,
+      "lo": 0.5861874363994164,
+      "hi": 0.737304770312936,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "two_people": {
+      "auc": 0.6832921021986574,
+      "lo": 0.5409664656585276,
+      "hi": 0.7286696868297483,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "empty_fan": {
+      "auc": 0.5437674438685199,
+      "lo": 0.44683990511423244,
+      "hi": 0.5993783233208612,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.7156008548413612,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s1_empty_1018_1802@E02",
+       "auc": 0.6007231404958677,
+       "lo": 0.5161784238488784,
+       "hi": 0.6715263429752065,
+       "symmetric_upper_bound": 0.6715263429752065,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.610882788097978,
+       "lo": 0.5139404898898571,
+       "hi": 0.7156008548413612,
+       "symmetric_upper_bound": 0.7156008548413612,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.5832003535217146,
+       "lo": 0.5124295718459234,
+       "hi": 0.6496641236834998,
+       "symmetric_upper_bound": 0.6496641236834998,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5909658027561958,
+       "lo": 0.4982653263766801,
+       "hi": 0.6583898088810752,
+       "symmetric_upper_bound": 0.6583898088810752,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.5068325661680092,
+       "lo": 0.4266595943613349,
+       "hi": 0.6012784090909089,
+       "symmetric_upper_bound": 0.6012784090909089,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.4728636793263447,
+       "lo": 0.4173329019161368,
+       "hi": 0.5216040664203472,
+       "symmetric_upper_bound": 0.5826670980838632,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4827064311234617,
+       "lo": 0.4213672960500198,
+       "hi": 0.5428310465462486,
+       "symmetric_upper_bound": 0.5786327039499801,
+       "ok": true
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.46995764638319254,
+       "lo": 0.376656158024455,
+       "hi": 0.5487727620779592,
+       "symmetric_upper_bound": 0.623343841975545,
+       "ok": true
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.47161572052401746,
+       "lo": 0.37101459289149297,
+       "hi": 0.539279199602012,
+       "symmetric_upper_bound": 0.628985407108507,
+       "ok": true
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5096798358937107,
+       "lo": 0.4675655073426833,
+       "hi": 0.5403607676178998,
+       "symmetric_upper_bound": 0.5403607676178998,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 5
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.03485397141390013,
+     0.05335413525530279,
+     0.0244627952457305
+    ],
+    "s1_empty_1018_1756@E02": [
+     0.015406952962648532,
+     0.020130047527851927,
+     0.02393182087694637
+    ],
+    "s1_empty_1018_1802@E02": [
+     0.012861233907664943,
+     0.020528838110070446,
+     0.010146884115606464
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.020559018733720805,
+     0.016545988258496944,
+     0.0252647592367283
+    ],
+    "s2_still_1025_1958@E03": [
+     0.030873868788435704,
+     0.02114118986954608,
+     0.03837540278182361
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.022178642470166043,
+     0.018516154351225153,
+     0.06008904253048225
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.013028747307184188,
+     0.020753120490167767,
+     0.011953800494582917
+    ],
+    "s6_empty_1027_1942@E05": [
+     0.01883972024278164,
+     0.018443508732960644,
+     0.006183128603288856
+    ],
+    "s7_walking_1027_1945@E05": [
+     0.005549603781367617,
+     0.019408891071842974,
+     0.043299930420042376
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.017419121226275397,
+     0.015039827940023065,
+     0.015190149339420395
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.011919188832925573,
+     0.015039594653274244,
+     0.018726017321992375
+    ],
+    "s10_still_1027_2121@E08": [
+     0.039781593185954756,
+     0.019489121195223086,
+     0.028595501796291597
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 24,
+    "s1_empty_1018_1756@E02": 24,
+    "s1_empty_1018_1802@E02": 24,
+    "s1_empty_fan_1018_2039@E02": 24,
+    "s2_still_1025_1958@E03": 24,
+    "s3_two_people_1025_2012@E04": 24,
+    "s1_still_1027_1936@E05": 24,
+    "s5_empty_fan_1027_1938@E05": 24,
+    "s6_empty_1027_1942@E05": 24,
+    "s7_walking_1027_1945@E05": 24,
+    "s8_empty_1027_1953@E07": 24,
+    "s9_empty_1027_2047@E07": 24,
+    "s10_still_1027_2121@E08": 24
+   }
+  },
+  "N1+N2/perturb_agc/L90": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 152,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7466376428515898,
+       "lo": 0.687853727746249,
+       "hi": 0.7998624931975433,
+       "n_pos": 677,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5961203560371517,
+       "lo": 0.5136597813467493,
+       "hi": 0.6501330301857585,
+       "n_pos": 136,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7466376428515898,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5961203560371517,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 0
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2526,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5390590718647292,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.4975471623300526,
+        "lo": 0.467506619467623,
+        "hi": 0.5390590718647292,
+        "symmetric_upper_bound": 0.5390590718647292,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 3,
+    "n_empty_windows": 2678,
+    "auc": {
+     "walking": {
+      "auc": 0.6959787785030503,
+      "lo": 0.5464351182797785,
+      "hi": 0.7949973570119201,
+      "n_pos": 77,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.6513208693560841,
+      "lo": 0.5672993696282326,
+      "hi": 0.7345390564676396,
+      "n_pos": 295,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7262666140529483,
+      "lo": 0.6742444037493867,
+      "hi": 0.7772089285731103,
+      "n_pos": 793,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.5797680485738302,
+      "lo": 0.5211818939908974,
+      "hi": 0.6359570340626328,
+      "n_pos": 223,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.6959787785030503,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 3,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.6513208693560841,
+      "lo": 0.517844187764195,
+      "hi": 0.7233259166665518,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "two_people": {
+      "auc": 0.7262666140529483,
+      "lo": 0.5762036533311015,
+      "hi": 0.7755705218838628,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "empty_fan": {
+      "auc": 0.5797680485738302,
+      "lo": 0.48819957342497866,
+      "hi": 0.6323883512282926,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": true,
+     "worst_symmetric_upper_bound": 0.5737684128761196,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.48998062795612357,
+       "lo": 0.42623158712388043,
+       "hi": 0.5646859590419643,
+       "symmetric_upper_bound": 0.5737684128761196,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4891917293233083,
+       "lo": 0.4337334010429299,
+       "hi": 0.5530340468105748,
+       "symmetric_upper_bound": 0.5662665989570701,
+       "ok": true
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4975471623300526,
+       "lo": 0.467506619467623,
+       "hi": 0.5390590718647292,
+       "symmetric_upper_bound": 0.5390590718647292,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 3
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.035949032148342906,
+     0.07358411434215555,
+     0.03233484824425553
+    ],
+    "s1_empty_1018_1756@E02": null,
+    "s1_empty_1018_1802@E02": [
+     0.014719088537014008,
+     0.02013534962256841,
+     0.010039639613759352
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.024516969105319135,
+     0.019696399757221886,
+     0.028261695149584334
+    ],
+    "s2_still_1025_1958@E03": [
+     0.0036343952748645394,
+     0.022784432798067238,
+     0.05442278278802744
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.014866094617591252,
+     0.025959783243672582,
+     0.0633882336160563
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.009473926700033775,
+     0.026018742876245136,
+     0.016444012279734257
+    ],
+    "s6_empty_1027_1942@E05": null,
+    "s7_walking_1027_1945@E05": [
+     0.01367536990418447,
+     0.029956561886910742,
+     0.05739543750902694
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.01685095143167173,
+     0.015209686771349859,
+     0.015538848318283047
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.014398706440350822,
+     0.01589207092219344,
+     0.0174191540811484
+    ],
+    "s10_still_1027_2121@E08": [
+     0.014662113389873416,
+     0.028135213177763768,
+     0.03852797781632263
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 48,
+    "s1_empty_1018_1756@E02": 48,
+    "s1_empty_1018_1802@E02": 48,
+    "s1_empty_fan_1018_2039@E02": 48,
+    "s2_still_1025_1958@E03": 48,
+    "s3_two_people_1025_2012@E04": 48,
+    "s1_still_1027_1936@E05": 48,
+    "s5_empty_fan_1027_1938@E05": 48,
+    "s6_empty_1027_1942@E05": 48,
+    "s7_walking_1027_1945@E05": 48,
+    "s8_empty_1027_1953@E07": 48,
+    "s9_empty_1027_2047@E07": 48,
+    "s10_still_1027_2121@E08": 48
+   }
+  },
+  "N1+N2/decor/L45": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 253,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7195311046331327,
+       "lo": 0.6601709584839275,
+       "hi": 0.779985819241851,
+       "n_pos": 701,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.38569664031620554,
+       "lo": 0.2897758152173913,
+       "hi": 0.5024647974308301,
+       "n_pos": 160,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7195311046331327,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.38569664031620554,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": false,
+      "worst_symmetric_upper_bound": 0.7334821428571429,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s1_empty_1018_1756@E02",
+        "b": "s1_empty_1018_1802@E02",
+        "auc": 0.6331168831168831,
+        "lo": 0.494773834120425,
+        "hi": 0.7334821428571429,
+        "symmetric_upper_bound": 0.7334821428571429,
+        "ok": false
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 2
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 79,
+     "auc": {
+      "walking": {
+       "auc": 0.777791703220955,
+       "lo": 0.6960709362075448,
+       "hi": 0.8630185486903119,
+       "n_pos": 101,
+       "n_neg": 79,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.49811837153609306,
+       "lo": 0.3401185996122705,
+       "hi": 0.5990449310069562,
+       "n_pos": 111,
+       "n_neg": 79,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": {
+       "auc": 0.777791703220955,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.49811837153609306,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2574,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.574173767551861,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.5400752016245532,
+        "lo": 0.5014381227247587,
+        "hi": 0.574173767551861,
+        "symmetric_upper_bound": 0.574173767551861,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 5,
+    "n_empty_windows": 2906,
+    "auc": {
+     "walking": {
+      "auc": 0.46823233596587466,
+      "lo": 0.3664222366834068,
+      "hi": 0.5747396986773694,
+      "n_pos": 101,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.6779408843470531,
+      "lo": 0.6072211108413477,
+      "hi": 0.7511902588190915,
+      "n_pos": 343,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7362396714166353,
+      "lo": 0.6960875465333523,
+      "hi": 0.7769612237749934,
+      "n_pos": 841,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.37334513400192504,
+      "lo": 0.30996405198050603,
+      "hi": 0.4366099658931895,
+      "n_pos": 271,
+      "n_neg": 2906,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.46823233596587466,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 5,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.6779408843470531,
+      "lo": 0.5163467557679934,
+      "hi": 0.788344410800678,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "two_people": {
+      "auc": 0.7362396714166353,
+      "lo": 0.6968133870520278,
+      "hi": 0.7998618834073443,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "empty_fan": {
+      "auc": 0.37334513400192504,
+      "lo": 0.19887177323084873,
+      "hi": 0.5414983910481653,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.9976204175571264,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s1_empty_1018_1802@E02",
+       "auc": 0.6331168831168831,
+       "lo": 0.494773834120425,
+       "hi": 0.7334821428571429,
+       "symmetric_upper_bound": 0.7334821428571429,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.9643268124280783,
+       "lo": 0.9152268617458491,
+       "hi": 0.9976204175571264,
+       "symmetric_upper_bound": 0.9976204175571264,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.6327240812117939,
+       "lo": 0.5723778938452851,
+       "hi": 0.6872152186188102,
+       "symmetric_upper_bound": 0.6872152186188102,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6900130437248341,
+       "lo": 0.6166066466284806,
+       "hi": 0.7577411671298134,
+       "symmetric_upper_bound": 0.7577411671298134,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.9328970080552359,
+       "lo": 0.898602920023015,
+       "hi": 0.9653067462600691,
+       "symmetric_upper_bound": 0.9653067462600691,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.5516116385976972,
+       "lo": 0.519637045669359,
+       "hi": 0.5920463272254683,
+       "symmetric_upper_bound": 0.5920463272254683,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6059076022231044,
+       "lo": 0.5461269352917825,
+       "hi": 0.6700206555180627,
+       "symmetric_upper_bound": 0.6700206555180627,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.21776817975162116,
+       "lo": 0.1871198344141083,
+       "hi": 0.2529524897705247,
+       "symmetric_upper_bound": 0.8128801655858917,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.2381847327400365,
+       "lo": 0.19069772262450943,
+       "hi": 0.2825617710463766,
+       "symmetric_upper_bound": 0.8093022773754905,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5400752016245532,
+       "lo": 0.5014381227247587,
+       "hi": 0.574173767551861,
+       "symmetric_upper_bound": 0.574173767551861,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 5
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.19354016312203842,
+     0.2541186112319094,
+     0.11034238731880375
+    ],
+    "s1_empty_1018_1756@E02": [
+     0.05889478988540567,
+     0.10142817918466594,
+     0.10163678216146987
+    ],
+    "s1_empty_1018_1802@E02": [
+     0.0650978559246187,
+     0.06943724608275836,
+     0.07147745844687292
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.03022180805317612,
+     0.07273137990490389,
+     0.058625315121836885
+    ],
+    "s2_still_1025_1958@E03": [
+     0.10994622020391895,
+     0.05380995377356755,
+     0.1485744085864244
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.1173992556467296,
+     0.10279217769233226,
+     0.3455239056216033
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.008771885367938603,
+     0.013149506268559985,
+     0.010296655852442715
+    ],
+    "s6_empty_1027_1942@E05": [
+     0.014259188254572175,
+     0.012415456145839499,
+     0.007453594245542955
+    ],
+    "s7_walking_1027_1945@E05": [
+     0.019910375287256254,
+     0.02316123476781043,
+     0.1564191111483717
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.061761287125150055,
+     0.06515552446630346,
+     0.04207470506587202
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.02167335995237965,
+     0.07047313052109883,
+     0.05323600064320508
+    ],
+    "s10_still_1027_2121@E08": [
+     0.31428972206427797,
+     0.2301935770861901,
+     0.07524326274938464
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 24,
+    "s1_empty_1018_1756@E02": 24,
+    "s1_empty_1018_1802@E02": 24,
+    "s1_empty_fan_1018_2039@E02": 24,
+    "s2_still_1025_1958@E03": 24,
+    "s3_two_people_1025_2012@E04": 24,
+    "s1_still_1027_1936@E05": 24,
+    "s5_empty_fan_1027_1938@E05": 24,
+    "s6_empty_1027_1942@E05": 24,
+    "s7_walking_1027_1945@E05": 24,
+    "s8_empty_1027_1953@E07": 24,
+    "s9_empty_1027_2047@E07": 24,
+    "s10_still_1027_2121@E08": 24
+   }
+  },
+  "N1+N2/decor/L90": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 152,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7574049599626836,
+       "lo": 0.696668739796315,
+       "hi": 0.8235471896136204,
+       "n_pos": 677,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.4761513157894737,
+       "lo": 0.33130079334365325,
+       "hi": 0.6096434791021672,
+       "n_pos": 136,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7574049599626836,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.4761513157894737,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 0
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2526,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5731254846199259,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.5318780784379378,
+        "lo": 0.4945463186508181,
+        "hi": 0.5731254846199259,
+        "symmetric_upper_bound": 0.5731254846199259,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 3,
+    "n_empty_windows": 2678,
+    "auc": {
+     "walking": {
+      "auc": 0.5483254609468202,
+      "lo": 0.4363610903659448,
+      "hi": 0.6664790306780598,
+      "n_pos": 77,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.6243237427374337,
+      "lo": 0.5313216921304793,
+      "hi": 0.7177589524183238,
+      "n_pos": 295,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.742903975883077,
+      "lo": 0.6919387527346734,
+      "hi": 0.7840028201392506,
+      "n_pos": 793,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.4079696045171251,
+      "lo": 0.32984993151304265,
+      "hi": 0.4848211385244993,
+      "n_pos": 223,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.5483254609468202,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 3,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.6243237427374337,
+      "lo": 0.45177110517842434,
+      "hi": 0.732283799105603,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "two_people": {
+      "auc": 0.742903975883077,
+      "lo": 0.6632769412289791,
+      "hi": 0.7941885901436189,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "empty_fan": {
+      "auc": 0.4079696045171251,
+      "lo": 0.20435886440352133,
+      "hi": 0.5434665556258481,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": true,
+     "worst_symmetric_upper_bound": 0.6404673478049964,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.5471501710777901,
+       "lo": 0.5024108917429808,
+       "hi": 0.5873449607527423,
+       "symmetric_upper_bound": 0.5873449607527423,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5843742420567548,
+       "lo": 0.5176994906621393,
+       "hi": 0.6404673478049964,
+       "symmetric_upper_bound": 0.6404673478049964,
+       "ok": true
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5318780784379378,
+       "lo": 0.4945463186508181,
+       "hi": 0.5731254846199259,
+       "symmetric_upper_bound": 0.5731254846199259,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 3
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.27984940362830757,
+     0.24291958512380352,
+     0.12608437720420207
+    ],
+    "s1_empty_1018_1756@E02": null,
+    "s1_empty_1018_1802@E02": [
+     0.06864930029535099,
+     0.06257560894783401,
+     0.06434215134823151
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.022546819396899787,
+     0.12982642626761767,
+     0.07655426729392303
+    ],
+    "s2_still_1025_1958@E03": [
+     0.03208398073575683,
+     0.03380005650594005,
+     0.20131604578926726
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.056232126992083686,
+     0.12251908313690002,
+     0.3481746543155928
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.0065586197870000085,
+     0.01708137843865143,
+     0.017439672224944414
+    ],
+    "s6_empty_1027_1942@E05": null,
+    "s7_walking_1027_1945@E05": [
+     0.031328824176136166,
+     0.05222828485749208,
+     0.18508518303460328
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.055964933713867404,
+     0.06860574497599825,
+     0.04491512785150795
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.026518285616484227,
+     0.07885730882599978,
+     0.04022308519969847
+    ],
+    "s10_still_1027_2121@E08": [
+     0.36713725219043414,
+     0.23261172727453938,
+     0.021625743745054715
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 48,
+    "s1_empty_1018_1756@E02": 48,
+    "s1_empty_1018_1802@E02": 48,
+    "s1_empty_fan_1018_2039@E02": 48,
+    "s2_still_1025_1958@E03": 48,
+    "s3_two_people_1025_2012@E04": 48,
+    "s1_still_1027_1936@E05": 48,
+    "s5_empty_fan_1027_1938@E05": 48,
+    "s6_empty_1027_1942@E05": 48,
+    "s7_walking_1027_1945@E05": 48,
+    "s8_empty_1027_1953@E07": 48,
+    "s9_empty_1027_2047@E07": 48,
+    "s10_still_1027_2121@E08": 48
+   }
+  },
+  "N1+N2+N3+N4/perturb/L45": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 253,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7040422208815188,
+       "lo": 0.6456566846909836,
+       "hi": 0.7560741853816964,
+       "n_pos": 701,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5771739130434783,
+       "lo": 0.5168453557312253,
+       "hi": 0.6436641551383399,
+       "n_pos": 160,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7040422208815188,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5771739130434783,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.6354431080283353,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s1_empty_1018_1756@E02",
+        "b": "s1_empty_1018_1802@E02",
+        "auc": 0.5715023612750886,
+        "lo": 0.48793167060212517,
+        "hi": 0.6354431080283353,
+        "symmetric_upper_bound": 0.6354431080283353,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 2
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 78,
+     "auc": {
+      "walking": {
+       "auc": 0.6805128205128205,
+       "lo": 0.5519102564102564,
+       "hi": 0.8363685897435896,
+       "n_pos": 100,
+       "n_neg": 78,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5604563632086568,
+       "lo": 0.42604975299929426,
+       "hi": 0.6746971300870382,
+       "n_pos": 109,
+       "n_neg": 78,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": {
+       "auc": 0.6805128205128205,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5604563632086568,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2574,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5562379272913383,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.5192595818096268,
+        "lo": 0.47957403459604925,
+        "hi": 0.5562379272913383,
+        "symmetric_upper_bound": 0.5562379272913383,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 5,
+    "n_empty_windows": 2905,
+    "auc": {
+     "walking": {
+      "auc": 0.6029913941480206,
+      "lo": 0.4399278829604131,
+      "hi": 0.7813381239242684,
+      "n_pos": 100,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.781209636547021,
+      "lo": 0.727653236854122,
+      "hi": 0.8441010020925016,
+      "n_pos": 343,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7533335652786106,
+      "lo": 0.7119569359483117,
+      "hi": 0.7952061208994292,
+      "n_pos": 841,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.5934518744121468,
+      "lo": 0.5306398402958622,
+      "hi": 0.6511350127008299,
+      "n_pos": 269,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.6029913941480206,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 5,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.781209636547021,
+      "lo": 0.7049539719210827,
+      "hi": 0.8646067635902761,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "two_people": {
+      "auc": 0.7533335652786106,
+      "lo": 0.6006280370124388,
+      "hi": 0.7983056646598977,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "empty_fan": {
+      "auc": 0.5934518744121468,
+      "lo": 0.4099787332189316,
+      "hi": 0.7214210106265464,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.8170038295038294,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s1_empty_1018_1802@E02",
+       "auc": 0.5715023612750886,
+       "lo": 0.48793167060212517,
+       "hi": 0.6354431080283353,
+       "symmetric_upper_bound": 0.6354431080283353,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.7397602397602397,
+       "lo": 0.64750666000666,
+       "hi": 0.8170038295038294,
+       "symmetric_upper_bound": 0.8170038295038294,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.6594837109959983,
+       "lo": 0.5873266147840818,
+       "hi": 0.7167444087103823,
+       "symmetric_upper_bound": 0.7167444087103823,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6727726422049566,
+       "lo": 0.5863423694209721,
+       "hi": 0.7309944422389837,
+       "symmetric_upper_bound": 0.7309944422389837,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.6625145687645687,
+       "lo": 0.5778882575757576,
+       "hi": 0.746989729020979,
+       "symmetric_upper_bound": 0.746989729020979,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.5746557612991923,
+       "lo": 0.5143506857922323,
+       "hi": 0.6269834002835538,
+       "symmetric_upper_bound": 0.6269834002835538,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5917030567685589,
+       "lo": 0.5225021089718143,
+       "hi": 0.6558697647876142,
+       "symmetric_upper_bound": 0.6558697647876142,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.3767388880810431,
+       "lo": 0.27972801851582574,
+       "hi": 0.4688545150501672,
+       "symmetric_upper_bound": 0.7202719814841743,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.3992833949165827,
+       "lo": 0.3022848785130445,
+       "hi": 0.49126427611689605,
+       "symmetric_upper_bound": 0.6977151214869555,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5192595818096268,
+       "lo": 0.47957403459604925,
+       "hi": 0.5562379272913383,
+       "symmetric_upper_bound": 0.5562379272913383,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 5
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.035256928673161735,
+     0.059031783509587085,
+     0.04272742389069531
+    ],
+    "s1_empty_1018_1756@E02": [
+     0.030504308534387237,
+     0.02141076572744171,
+     0.02618445251960841
+    ],
+    "s1_empty_1018_1802@E02": [
+     0.018584550137103945,
+     0.028060034149923335,
+     0.024868637605232835
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.023468896565785644,
+     0.03857371697200443,
+     0.028584994900408014
+    ],
+    "s2_still_1025_1958@E03": [
+     0.04756076895770964,
+     0.04426519689288315,
+     0.06082039721065649
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.032647998203998246,
+     0.024352417496848577,
+     0.056926862178462136
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.014481641186022312,
+     0.01663967689281129,
+     0.012668434796491511
+    ],
+    "s6_empty_1027_1942@E05": [
+     0.013867509117311667,
+     0.01453392711975493,
+     0.012762231742394645
+    ],
+    "s7_walking_1027_1945@E05": [
+     0.014171416877214717,
+     0.023263121342065776,
+     0.06963353262286912
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.0216998179626577,
+     0.016415455431673442,
+     0.016939473448083525
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.01345650392937646,
+     0.01890968436068513,
+     0.022137849036658372
+    ],
+    "s10_still_1027_2121@E08": [
+     0.04765235786311352,
+     0.025141551739876505,
+     0.02713683219406289
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 24,
+    "s1_empty_1018_1756@E02": 24,
+    "s1_empty_1018_1802@E02": 24,
+    "s1_empty_fan_1018_2039@E02": 24,
+    "s2_still_1025_1958@E03": 24,
+    "s3_two_people_1025_2012@E04": 24,
+    "s1_still_1027_1936@E05": 25,
+    "s5_empty_fan_1027_1938@E05": 26,
+    "s6_empty_1027_1942@E05": 25,
+    "s7_walking_1027_1945@E05": 25,
+    "s8_empty_1027_1953@E07": 24,
+    "s9_empty_1027_2047@E07": 24,
+    "s10_still_1027_2121@E08": 24
+   }
+  },
+  "N1+N2+N3+N4/perturb/L90": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 152,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7527598538443598,
+       "lo": 0.6951561649692918,
+       "hi": 0.8081539590297753,
+       "n_pos": 677,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.6740518575851393,
+       "lo": 0.5767717202012383,
+       "hi": 0.7571703270123838,
+       "n_pos": 136,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7527598538443598,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.6740518575851393,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 0
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2526,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5790885951308914,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.5322999180551762,
+        "lo": 0.4980889178437057,
+        "hi": 0.5790885951308914,
+        "symmetric_upper_bound": 0.5790885951308914,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 3,
+    "n_empty_windows": 2678,
+    "auc": {
+     "walking": {
+      "auc": 0.7318550764513974,
+      "lo": 0.5403898972131599,
+      "hi": 0.9046255306395187,
+      "n_pos": 76,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.8248490525436387,
+      "lo": 0.7690123859191655,
+      "hi": 0.8790840305818913,
+      "n_pos": 295,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7841173750526216,
+      "lo": 0.7377987892566303,
+      "hi": 0.8299131120229567,
+      "n_pos": 793,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.6669679878615432,
+      "lo": 0.5907896671048496,
+      "hi": 0.7486109374524785,
+      "n_pos": 221,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.7318550764513974,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 3,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.8248490525436387,
+      "lo": 0.7083070835298447,
+      "hi": 0.8800095245797125,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "two_people": {
+      "auc": 0.7841173750526216,
+      "lo": 0.5976834423575886,
+      "hi": 0.8335046943614929,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "empty_fan": {
+      "auc": 0.6669679878615432,
+      "lo": 0.42109328944748375,
+      "hi": 0.8032285830363095,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.6964490358961921,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.6022001106973935,
+       "lo": 0.5393878308342558,
+       "hi": 0.6648035750226426,
+       "symmetric_upper_bound": 0.6648035750226426,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6324581615328644,
+       "lo": 0.5623863085132186,
+       "hi": 0.6964490358961921,
+       "symmetric_upper_bound": 0.6964490358961921,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5322999180551762,
+       "lo": 0.4980889178437057,
+       "hi": 0.5790885951308914,
+       "symmetric_upper_bound": 0.5790885951308914,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 3
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.040623029732632404,
+     0.08162136951428488,
+     0.060190885731130406
+    ],
+    "s1_empty_1018_1756@E02": null,
+    "s1_empty_1018_1802@E02": [
+     0.01917449830690135,
+     0.03233118553809955,
+     0.024920785864778777
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.027047102910753795,
+     0.05795724979239414,
+     0.03564157769476789
+    ],
+    "s2_still_1025_1958@E03": [
+     0.04793100097694669,
+     0.03054063730575278,
+     0.08235934097082973
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.02508774870530603,
+     0.03182140061025723,
+     0.0555865743230351
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.014336848594581592,
+     0.024631486106123146,
+     0.017477361641914574
+    ],
+    "s6_empty_1027_1942@E05": null,
+    "s7_walking_1027_1945@E05": [
+     0.015255246440407329,
+     0.08595666184233505,
+     0.10420480939816965
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.022803683295947598,
+     0.015953520851652192,
+     0.017184225876576864
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.015018911870234325,
+     0.019687283393807153,
+     0.0200806452488062
+    ],
+    "s10_still_1027_2121@E08": [
+     0.04799817903826367,
+     0.035027963327259964,
+     0.036861413814906714
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 48,
+    "s1_empty_1018_1756@E02": 48,
+    "s1_empty_1018_1802@E02": 48,
+    "s1_empty_fan_1018_2039@E02": 48,
+    "s2_still_1025_1958@E03": 48,
+    "s3_two_people_1025_2012@E04": 48,
+    "s1_still_1027_1936@E05": 49,
+    "s5_empty_fan_1027_1938@E05": 50,
+    "s6_empty_1027_1942@E05": 49,
+    "s7_walking_1027_1945@E05": 49,
+    "s8_empty_1027_1953@E07": 48,
+    "s9_empty_1027_2047@E07": 48,
+    "s10_still_1027_2121@E08": 48
+   }
+  },
+  "N1+N2+N3+N4/perturb_agc/L45": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 253,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.6696306236714349,
+       "lo": 0.6112515717241884,
+       "hi": 0.7218451337163735,
+       "n_pos": 701,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5434041501976284,
+       "lo": 0.486855854743083,
+       "hi": 0.6153927865612648,
+       "n_pos": 160,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.6696306236714349,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5434041501976284,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.6395937868949232,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s1_empty_1018_1756@E02",
+        "b": "s1_empty_1018_1802@E02",
+        "auc": 0.5738636363636364,
+        "lo": 0.49141270661157027,
+        "hi": 0.6395937868949232,
+        "symmetric_upper_bound": 0.6395937868949232,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 2
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 78,
+     "auc": {
+      "walking": {
+       "auc": 0.6957692307692308,
+       "lo": 0.5719326923076923,
+       "hi": 0.8384487179487178,
+       "n_pos": 100,
+       "n_neg": 78,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5511644318983768,
+       "lo": 0.4143877911079746,
+       "hi": 0.6656757233592093,
+       "n_pos": 109,
+       "n_neg": 78,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": {
+       "auc": 0.6957692307692308,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.5511644318983768,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2574,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5475557666273185,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.4968291082292535,
+        "lo": 0.4524442333726814,
+        "hi": 0.5336160187302399,
+        "symmetric_upper_bound": 0.5475557666273185,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 5,
+    "n_empty_windows": 2905,
+    "auc": {
+     "walking": {
+      "auc": 0.6643235800344234,
+      "lo": 0.5115807228915663,
+      "hi": 0.8104993115318416,
+      "n_pos": 100,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.7319801488335683,
+      "lo": 0.6685071481260318,
+      "hi": 0.8079750907001598,
+      "n_pos": 343,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7358967379625517,
+      "lo": 0.6913518759938685,
+      "hi": 0.7811795133651643,
+      "n_pos": 841,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.5966421181273154,
+      "lo": 0.5339901400610407,
+      "hi": 0.6546476719410834,
+      "n_pos": 269,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.6643235800344234,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 5,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.7319801488335683,
+      "lo": 0.6301796276245027,
+      "hi": 0.8527997084410508,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "two_people": {
+      "auc": 0.7358967379625517,
+      "lo": 0.61008672595287,
+      "hi": 0.7750802644560351,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "empty_fan": {
+      "auc": 0.5966421181273154,
+      "lo": 0.44677372770717083,
+      "hi": 0.6871166864214913,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.7795621045621045,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s1_empty_1018_1802@E02",
+       "auc": 0.5738636363636364,
+       "lo": 0.49141270661157027,
+       "hi": 0.6395937868949232,
+       "symmetric_upper_bound": 0.6395937868949232,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.696969696969697,
+       "lo": 0.6009365634365634,
+       "hi": 0.7795621045621045,
+       "symmetric_upper_bound": 0.7795621045621045,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.6757543024083666,
+       "lo": 0.6009247722976456,
+       "hi": 0.73343941030614,
+       "symmetric_upper_bound": 0.73343941030614,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6769126070436114,
+       "lo": 0.5862565927522259,
+       "hi": 0.7356880564849997,
+       "symmetric_upper_bound": 0.7356880564849997,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.6193910256410257,
+       "lo": 0.5354804050116551,
+       "hi": 0.7058202214452214,
+       "symmetric_upper_bound": 0.7058202214452214,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.5943675889328063,
+       "lo": 0.5351099308300395,
+       "hi": 0.6474273393194707,
+       "symmetric_upper_bound": 0.6474273393194707,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5946432115919016,
+       "lo": 0.5214035827709409,
+       "hi": 0.6607107855299722,
+       "symmetric_upper_bound": 0.6607107855299722,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.4674700693131695,
+       "lo": 0.3640016843584897,
+       "hi": 0.5587676009403325,
+       "symmetric_upper_bound": 0.6359983156415103,
+       "ok": true
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4616784234688165,
+       "lo": 0.35259069533087,
+       "hi": 0.5413265591759041,
+       "symmetric_upper_bound": 0.64740930466913,
+       "ok": true
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4968291082292535,
+       "lo": 0.4524442333726814,
+       "hi": 0.5336160187302399,
+       "symmetric_upper_bound": 0.5475557666273185,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 5
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.03811578736892756,
+     0.05866177748955672,
+     0.0405857587594915
+    ],
+    "s1_empty_1018_1756@E02": [
+     0.03428157823615672,
+     0.02313220249471338,
+     0.03413945322647999
+    ],
+    "s1_empty_1018_1802@E02": [
+     0.021061829451706232,
+     0.03136419274625368,
+     0.025673817854643982
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.025996320179461477,
+     0.041907381498670904,
+     0.02555287473149051
+    ],
+    "s2_still_1025_1958@E03": [
+     0.048896067843230466,
+     0.047614240233344,
+     0.0622448775335922
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.03264501040164926,
+     0.02570058840417297,
+     0.0642108028263129
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.019122660834035472,
+     0.021972511843103077,
+     0.01726511995295564
+    ],
+    "s6_empty_1027_1942@E05": [
+     0.02046277125953147,
+     0.018443508732960644,
+     0.017826458346943932
+    ],
+    "s7_walking_1027_1945@E05": [
+     0.020688771649517795,
+     0.027859749409826398,
+     0.07553236139868466
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.021986014349080832,
+     0.017190983983650474,
+     0.018731798179444453
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.014960126130929133,
+     0.021429954093764136,
+     0.02356910627550759
+    ],
+    "s10_still_1027_2121@E08": [
+     0.04687512616146844,
+     0.02433818188665382,
+     0.030144733459284416
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 24,
+    "s1_empty_1018_1756@E02": 24,
+    "s1_empty_1018_1802@E02": 24,
+    "s1_empty_fan_1018_2039@E02": 24,
+    "s2_still_1025_1958@E03": 24,
+    "s3_two_people_1025_2012@E04": 24,
+    "s1_still_1027_1936@E05": 25,
+    "s5_empty_fan_1027_1938@E05": 26,
+    "s6_empty_1027_1942@E05": 25,
+    "s7_walking_1027_1945@E05": 25,
+    "s8_empty_1027_1953@E07": 24,
+    "s9_empty_1027_2047@E07": 24,
+    "s10_still_1027_2121@E08": 24
+   }
+  },
+  "N1+N2+N3+N4/perturb_agc/L90": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 152,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7406611987872191,
+       "lo": 0.6814263779833631,
+       "hi": 0.800665911917904,
+       "n_pos": 677,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.6269349845201239,
+       "lo": 0.5324375967492261,
+       "hi": 0.7175019349845201,
+       "n_pos": 136,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7406611987872191,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.6269349845201239,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 0
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2526,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.5411530705077936,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.4951042373404059,
+        "lo": 0.4597422097346926,
+        "hi": 0.5411530705077936,
+        "symmetric_upper_bound": 0.5411530705077936,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 3,
+    "n_empty_windows": 2678,
+    "auc": {
+     "walking": {
+      "auc": 0.7715056405015526,
+      "lo": 0.5986808940293228,
+      "hi": 0.9179636217129828,
+      "n_pos": 76,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.7485500183541981,
+      "lo": 0.6776850609485956,
+      "hi": 0.8204011025176896,
+      "n_pos": 295,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7848302972141413,
+      "lo": 0.7380188462904033,
+      "hi": 0.8288208907854104,
+      "n_pos": 793,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.6768152771535454,
+      "lo": 0.6106119833467942,
+      "hi": 0.7512975679155444,
+      "n_pos": 221,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.7715056405015526,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 3,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.7485500183541981,
+      "lo": 0.646513532703533,
+      "hi": 0.8394173735124583,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "two_people": {
+      "auc": 0.7848302972141413,
+      "lo": 0.6083783877361199,
+      "hi": 0.8315695284840886,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "empty_fan": {
+      "auc": 0.6768152771535454,
+      "lo": 0.49038665364997025,
+      "hi": 0.7784701794072593,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.6857067062818336,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.6202890711482338,
+       "lo": 0.5562939487521384,
+       "hi": 0.680042706551273,
+       "symmetric_upper_bound": 0.680042706551273,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6243178510793111,
+       "lo": 0.5512077825612418,
+       "hi": 0.6857067062818336,
+       "symmetric_upper_bound": 0.6857067062818336,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.4951042373404059,
+       "lo": 0.4597422097346926,
+       "hi": 0.5411530705077936,
+       "symmetric_upper_bound": 0.5411530705077936,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 3
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.04045959285988212,
+     0.08372575197980239,
+     0.061576365372957714
+    ],
+    "s1_empty_1018_1756@E02": null,
+    "s1_empty_1018_1802@E02": [
+     0.023345604165966705,
+     0.03598247848634975,
+     0.029249826160784184
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.027985329116365247,
+     0.05809319286569917,
+     0.036885911369201774
+    ],
+    "s2_still_1025_1958@E03": [
+     0.04870266581147249,
+     0.033957678584963895,
+     0.08079599193736683
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.026109541907223643,
+     0.038215751841599505,
+     0.06376284705490451
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.020207199036186674,
+     0.031866180750688256,
+     0.0210912441810938
+    ],
+    "s6_empty_1027_1942@E05": null,
+    "s7_walking_1027_1945@E05": [
+     0.02125045086016112,
+     0.10167896568326594,
+     0.11428670231470192
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.022845585047572628,
+     0.017122215173494132,
+     0.01930846501654336
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.017256556580910562,
+     0.02261438229462215,
+     0.02097282089912314
+    ],
+    "s10_still_1027_2121@E08": [
+     0.026087424458070302,
+     0.03359174394684278,
+     0.03930540129544815
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 48,
+    "s1_empty_1018_1756@E02": 48,
+    "s1_empty_1018_1802@E02": 48,
+    "s1_empty_fan_1018_2039@E02": 48,
+    "s2_still_1025_1958@E03": 48,
+    "s3_two_people_1025_2012@E04": 48,
+    "s1_still_1027_1936@E05": 49,
+    "s5_empty_fan_1027_1938@E05": 50,
+    "s6_empty_1027_1942@E05": 49,
+    "s7_walking_1027_1945@E05": 49,
+    "s8_empty_1027_1953@E07": 48,
+    "s9_empty_1027_2047@E07": 48,
+    "s10_still_1027_2121@E08": 48
+   }
+  },
+  "N1+N2+N3+N4/decor/L45": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 253,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7989320733226954,
+       "lo": 0.747786758611357,
+       "hi": 0.8436204913364871,
+       "n_pos": 701,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5241106719367589,
+       "lo": 0.3967644515810277,
+       "hi": 0.6426648962450593,
+       "n_pos": 160,
+       "n_neg": 253,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.7989320733226954,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5241106719367589,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 2,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": false,
+      "worst_symmetric_upper_bound": 0.661037116292798,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s1_empty_1018_1756@E02",
+        "b": "s1_empty_1018_1802@E02",
+        "auc": 0.5605814639905549,
+        "lo": 0.43093085891381344,
+        "hi": 0.661037116292798,
+        "symmetric_upper_bound": 0.661037116292798,
+        "ok": false
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 2
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 78,
+     "auc": {
+      "walking": {
+       "auc": 0.7612820512820513,
+       "lo": 0.6281698717948718,
+       "hi": 0.8711666666666666,
+       "n_pos": 100,
+       "n_neg": 78,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.3512114796518466,
+       "lo": 0.2280875088214538,
+       "hi": 0.466252058339214,
+       "n_pos": 109,
+       "n_neg": 78,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": {
+       "auc": 0.7612820512820513,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": {
+       "auc": 0.3512114796518466,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2574,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": true,
+      "worst_symmetric_upper_bound": 0.6457976655302499,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.6100917525858297,
+        "lo": 0.5701704006075564,
+        "hi": 0.6457976655302499,
+        "symmetric_upper_bound": 0.6457976655302499,
+        "ok": true
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 5,
+    "n_empty_windows": 2905,
+    "auc": {
+     "walking": {
+      "auc": 0.5458037865748709,
+      "lo": 0.388728743545611,
+      "hi": 0.7099032702237521,
+      "n_pos": 100,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.665160600753702,
+      "lo": 0.6006653603167355,
+      "hi": 0.730439575879528,
+      "n_pos": 343,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.750296855845328,
+      "lo": 0.7068352874722945,
+      "hi": 0.7950948383307307,
+      "n_pos": 841,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.3710280314033617,
+      "lo": 0.27545825361989645,
+      "hi": 0.4432037443454114,
+      "n_pos": 269,
+      "n_neg": 2905,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.5458037865748709,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 5,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.665160600753702,
+      "lo": 0.541487748772003,
+      "hi": 0.7810089659514191,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "two_people": {
+      "auc": 0.750296855845328,
+      "lo": 0.632459563176727,
+      "hi": 0.839787115023329,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     },
+     "empty_fan": {
+      "auc": 0.3710280314033617,
+      "lo": 0.1325618732031187,
+      "hi": 0.6024941848459818,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 5
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.8809440559440558,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s1_empty_1018_1802@E02",
+       "auc": 0.5605814639905549,
+       "lo": 0.43093085891381344,
+       "hi": 0.661037116292798,
+       "symmetric_upper_bound": 0.661037116292798,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.8048618048618048,
+       "lo": 0.7148018648018648,
+       "hi": 0.8809440559440558,
+       "symmetric_upper_bound": 0.8809440559440558,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.46203324086121816,
+       "lo": 0.39247155254952987,
+       "hi": 0.5305779404905113,
+       "symmetric_upper_bound": 0.6075284474504701,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1756@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5905121079793569,
+       "lo": 0.4966157205240175,
+       "hi": 0.6825355866840583,
+       "symmetric_upper_bound": 0.6825355866840583,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s6_empty_1027_1942@E05",
+       "auc": 0.7889714452214452,
+       "lo": 0.6915337266899767,
+       "hi": 0.8617861305361305,
+       "symmetric_upper_bound": 0.8617861305361305,
+       "ok": false
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.41477809761127343,
+       "lo": 0.3669509365870425,
+       "hi": 0.4652819024961333,
+       "symmetric_upper_bound": 0.6330490634129575,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.5392020643112346,
+       "lo": 0.48072802947598253,
+       "hi": 0.6123709805478363,
+       "symmetric_upper_bound": 0.6123709805478363,
+       "ok": true
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.1993117153797683,
+       "lo": 0.15893088677233289,
+       "hi": 0.26351606805293,
+       "symmetric_upper_bound": 0.8410691132276671,
+       "ok": false
+      },
+      {
+       "a": "s6_empty_1027_1942@E05",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.27267383271750084,
+       "lo": 0.21171201433210168,
+       "hi": 0.3601136490874482,
+       "symmetric_upper_bound": 0.7882879856678984,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6100917525858297,
+       "lo": 0.5701704006075564,
+       "hi": 0.6457976655302499,
+       "symmetric_upper_bound": 0.6457976655302499,
+       "ok": true
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 5
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.21410357336083152,
+     0.26531468779915224,
+     0.1836416089216722
+    ],
+    "s1_empty_1018_1756@E02": [
+     0.07241197693377915,
+     0.10649948239416707,
+     0.1060379631620314
+    ],
+    "s1_empty_1018_1802@E02": [
+     0.06748761535341696,
+     0.09312138142527537,
+     0.07873198309453615
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.09289649619944407,
+     0.12457871537877124,
+     0.08404808005921327
+    ],
+    "s2_still_1025_1958@E03": [
+     0.1552884594710296,
+     0.0776708246654752,
+     0.17870704505819618
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.14245380887679115,
+     0.10831513159448941,
+     0.35988313547800777
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.01381907702751281,
+     0.021214481047737405,
+     0.05095770784845671
+    ],
+    "s6_empty_1027_1942@E05": [
+     0.04289523834029253,
+     0.03284070538711882,
+     0.035203649322126926
+    ],
+    "s7_walking_1027_1945@E05": [
+     0.04596308219808731,
+     0.0978450154548047,
+     0.3387772604895636
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.10844209902523783,
+     0.0895959747773698,
+     0.10939416987180883
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.06867477315726678,
+     0.09289292552902018,
+     0.0877155061070191
+    ],
+    "s10_still_1027_2121@E08": [
+     0.31428972206427797,
+     0.2301935770861901,
+     0.087195273037726
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 24,
+    "s1_empty_1018_1756@E02": 24,
+    "s1_empty_1018_1802@E02": 24,
+    "s1_empty_fan_1018_2039@E02": 24,
+    "s2_still_1025_1958@E03": 24,
+    "s3_two_people_1025_2012@E04": 24,
+    "s1_still_1027_1936@E05": 25,
+    "s5_empty_fan_1027_1938@E05": 26,
+    "s6_empty_1027_1942@E05": 25,
+    "s7_walking_1027_1945@E05": 25,
+    "s8_empty_1027_1953@E07": 24,
+    "s9_empty_1027_2047@E07": 24,
+    "s10_still_1027_2121@E08": 24
+   }
+  },
+  "N1+N2+N3+N4/decor/L90": {
+   "within_epoch": {
+    "E02": {
+     "n_empty_segments": 1,
+     "n_empty_windows": 152,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.8235442742750525,
+       "lo": 0.7763228348752235,
+       "hi": 0.8812871705667418,
+       "n_pos": 677,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      },
+      "empty_fan": {
+       "auc": 0.5803502321981424,
+       "lo": 0.4121492840557276,
+       "hi": 0.7433750967492249,
+       "n_pos": 136,
+       "n_neg": 152,
+       "block": 7,
+       "n_boot": 300,
+       "seed": 20261102
+      }
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": {
+       "auc": 0.8235442742750525,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      },
+      "empty_fan": {
+       "auc": 0.5803502321981424,
+       "lo": null,
+       "hi": null,
+       "n_pos_recordings": 1,
+       "n_neg_recordings": 1,
+       "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+      }
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 1,
+      "empty": 1
+     }
+    },
+    "E03": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E04": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 1,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    },
+    "E05": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 1,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 1,
+      "empty": 0
+     }
+    },
+    "E07": {
+     "n_empty_segments": 2,
+     "n_empty_windows": 2526,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": false,
+      "worst_symmetric_upper_bound": 0.6543588258099762,
+      "threshold": 0.65,
+      "pairs": [
+       {
+        "a": "s8_empty_1027_1953@E07",
+        "b": "s9_empty_1027_2047@E07",
+        "auc": 0.617608444722489,
+        "lo": 0.582546193090201,
+        "hi": 0.6543588258099762,
+        "symmetric_upper_bound": 0.6543588258099762,
+        "ok": false
+       }
+      ]
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 0,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 2
+     }
+    },
+    "E08": {
+     "n_empty_segments": 0,
+     "n_empty_windows": 0,
+     "auc": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "auc_session_blocked": {
+      "walking": "insufficient data",
+      "still": "insufficient data",
+      "two_people": "insufficient data",
+      "empty_fan": "insufficient data"
+     },
+     "empty_vs_empty_control": {
+      "passes": null,
+      "reason": "insufficient data: needs >= 2 empty recordings",
+      "pairs": []
+     },
+     "n_segments_per_class": {
+      "walking": 0,
+      "still": 1,
+      "two_people": 0,
+      "empty_fan": 0,
+      "empty": 0
+     }
+    }
+   },
+   "across_epochs": {
+    "n_empty_segments": 3,
+    "n_empty_windows": 2678,
+    "auc": {
+     "walking": {
+      "auc": 0.6696523328485515,
+      "lo": 0.4931931970048347,
+      "hi": 0.8378291930348649,
+      "n_pos": 76,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "still": {
+      "auc": 0.63910203668308,
+      "lo": 0.559586207769522,
+      "hi": 0.7259632473006671,
+      "n_pos": 295,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "two_people": {
+      "auc": 0.7718008677496428,
+      "lo": 0.7242235670217465,
+      "hi": 0.8204411123469265,
+      "n_pos": 793,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     },
+     "empty_fan": {
+      "auc": 0.4339177274862378,
+      "lo": 0.31706666351265045,
+      "hi": 0.5305450140072113,
+      "n_pos": 221,
+      "n_neg": 2678,
+      "block": 7,
+      "n_boot": 300,
+      "seed": 20261102
+     }
+    },
+    "auc_session_blocked": {
+     "walking": {
+      "auc": 0.6696523328485515,
+      "lo": null,
+      "hi": null,
+      "n_pos_recordings": 1,
+      "n_neg_recordings": 3,
+      "reason": "insufficient data: session-blocked CI needs >= 2 recordings in each class"
+     },
+     "still": {
+      "auc": 0.63910203668308,
+      "lo": 0.511385516707149,
+      "hi": 0.7344284950595413,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "two_people": {
+      "auc": 0.7718008677496428,
+      "lo": 0.5672201736370426,
+      "hi": 0.8562161773918842,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     },
+     "empty_fan": {
+      "auc": 0.4339177274862378,
+      "lo": 0.13508950189505217,
+      "hi": 0.630456098128838,
+      "n_pos_recordings": 2,
+      "n_neg_recordings": 3
+     }
+    },
+    "empty_vs_empty_control": {
+     "passes": false,
+     "worst_symmetric_upper_bound": 0.6703443336162986,
+     "threshold": 0.65,
+     "pairs": [
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s8_empty_1027_1953@E07",
+       "auc": 0.45841300191204587,
+       "lo": 0.3973005717268793,
+       "hi": 0.5175502541008352,
+       "symmetric_upper_bound": 0.6026994282731206,
+       "ok": true
+      },
+      {
+       "a": "s1_empty_1018_1802@E02",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.6009731991268494,
+       "lo": 0.5265734901770556,
+       "hi": 0.6703443336162986,
+       "symmetric_upper_bound": 0.6703443336162986,
+       "ok": false
+      },
+      {
+       "a": "s8_empty_1027_1953@E07",
+       "b": "s9_empty_1027_2047@E07",
+       "auc": 0.617608444722489,
+       "lo": 0.582546193090201,
+       "hi": 0.6543588258099762,
+       "symmetric_upper_bound": 0.6543588258099762,
+       "ok": false
+      }
+     ]
+    },
+    "n_segments_per_class": {
+     "walking": 1,
+     "still": 2,
+     "two_people": 2,
+     "empty_fan": 2,
+     "empty": 3
+    }
+   },
+   "median_score_by_third": {
+    "s1_two_people_1018_1730@E02": [
+     0.2864994387307205,
+     0.27270651797746015,
+     0.31497451308247104
+    ],
+    "s1_empty_1018_1756@E02": null,
+    "s1_empty_1018_1802@E02": [
+     0.07513635219690151,
+     0.10227029826986792,
+     0.09488363443384873
+    ],
+    "s1_empty_fan_1018_2039@E02": [
+     0.06839491943057747,
+     0.5552455070775247,
+     0.11620616558705538
+    ],
+    "s2_still_1025_1958@E03": [
+     0.18612206870672127,
+     0.05887192797317033,
+     0.20956720211376761
+    ],
+    "s3_two_people_1025_2012@E04": [
+     0.07279688603293183,
+     0.1282048984249211,
+     0.3481746543155928
+    ],
+    "s1_still_1027_1936@E05": null,
+    "s5_empty_fan_1027_1938@E05": [
+     0.012670694757376144,
+     0.03479892188744754,
+     0.05284396089402385
+    ],
+    "s6_empty_1027_1942@E05": null,
+    "s7_walking_1027_1945@E05": [
+     0.04913737674814386,
+     0.18423000008080573,
+     0.40961303308194935
+    ],
+    "s8_empty_1027_1953@E07": [
+     0.11127218056512392,
+     0.09173655169102335,
+     0.1104357752986993
+    ],
+    "s9_empty_1027_2047@E07": [
+     0.06508365586708784,
+     0.09084542825206043,
+     0.08220124687147946
+    ],
+    "s10_still_1027_2121@E08": [
+     0.36713725219043414,
+     0.23261172727453938,
+     0.09172485421917129
+    ]
+   },
+   "warmup_windows_without_score": {
+    "s1_two_people_1018_1730@E02": 48,
+    "s1_empty_1018_1756@E02": 48,
+    "s1_empty_1018_1802@E02": 48,
+    "s1_empty_fan_1018_2039@E02": 48,
+    "s2_still_1025_1958@E03": 48,
+    "s3_two_people_1025_2012@E04": 48,
+    "s1_still_1027_1936@E05": 49,
+    "s5_empty_fan_1027_1938@E05": 50,
+    "s6_empty_1027_1942@E05": 49,
+    "s7_walking_1027_1945@E05": 49,
+    "s8_empty_1027_1953@E07": 48,
+    "s9_empty_1027_2047@E07": 48,
+    "s10_still_1027_2121@E08": 48
+   }
+  }
+ },
+ "segments": {
+  "N1+N2": [
+   {
+    "segment": "s1_two_people_1018_1730@E02",
+    "epoch": "E02",
+    "label": "two_people",
+    "windows": 725,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 725,
+    "kept": true
+   },
+   {
+    "segment": "s1_empty_1018_1756@E02",
+    "epoch": "E02",
+    "label": "empty",
+    "windows": 101,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 101,
+    "kept": true
+   },
+   {
+    "segment": "s1_empty_1018_1802@E02",
+    "epoch": "E02",
+    "label": "empty",
+    "windows": 200,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 200,
+    "kept": true
+   },
+   {
+    "segment": "s1_empty_fan_1018_2039@E02",
+    "epoch": "E02",
+    "label": "empty_fan",
+    "windows": 184,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 184,
+    "kept": true
+   },
+   {
+    "segment": "s2_still_1025_1958@E03",
+    "epoch": "E03",
+    "label": "still",
+    "windows": 149,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 149,
+    "kept": true
+   },
+   {
+    "segment": "s3_two_people_1025_2012@E04",
+    "epoch": "E04",
+    "label": "two_people",
+    "windows": 164,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 164,
+    "kept": true
+   },
+   {
+    "segment": "s1_still_1027_1936@E05",
+    "epoch": "E05",
+    "label": "still",
+    "windows": 63,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 63,
+    "kept": true
+   },
+   {
+    "segment": "s5_empty_fan_1027_1938@E05",
+    "epoch": "E05",
+    "label": "empty_fan",
+    "windows": 135,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 135,
+    "kept": true
+   },
+   {
+    "segment": "s6_empty_1027_1942@E05",
+    "epoch": "E05",
+    "label": "empty",
+    "windows": 103,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 103,
+    "kept": true
+   },
+   {
+    "segment": "s7_walking_1027_1945@E05",
+    "epoch": "E05",
+    "label": "walking",
+    "windows": 125,
+    "transitional_dropped": 4,
+    "joint_N1N2_windows": 125,
+    "kept": true
+   },
+   {
+    "segment": "s7_walking_1027_1945@E06",
+    "epoch": "E06",
+    "label": "walking",
+    "windows": 0,
+    "transitional_dropped": 13,
+    "joint_N1N2_windows": 0,
+    "kept": false
+   },
+   {
+    "segment": "s8_empty_1027_1953@E07",
+    "epoch": "E07",
+    "label": "empty",
+    "windows": 2140,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 2140,
+    "kept": true
+   },
+   {
+    "segment": "s9_empty_1027_2047@E07",
+    "epoch": "E07",
+    "label": "empty",
+    "windows": 482,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 482,
+    "kept": true
+   },
+   {
+    "segment": "s10_still_1027_2121@E08",
+    "epoch": "E08",
+    "label": "still",
+    "windows": 242,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 242,
+    "kept": true
+   }
+  ],
+  "N1+N2+N3+N4": [
+   {
+    "segment": "s1_two_people_1018_1730@E02",
+    "epoch": "E02",
+    "label": "two_people",
+    "windows": 725,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 725,
+    "kept": true
+   },
+   {
+    "segment": "s1_empty_1018_1756@E02",
+    "epoch": "E02",
+    "label": "empty",
+    "windows": 101,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 101,
+    "kept": true
+   },
+   {
+    "segment": "s1_empty_1018_1802@E02",
+    "epoch": "E02",
+    "label": "empty",
+    "windows": 200,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 200,
+    "kept": true
+   },
+   {
+    "segment": "s1_empty_fan_1018_2039@E02",
+    "epoch": "E02",
+    "label": "empty_fan",
+    "windows": 184,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 184,
+    "kept": true
+   },
+   {
+    "segment": "s2_still_1025_1958@E03",
+    "epoch": "E03",
+    "label": "still",
+    "windows": 149,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 149,
+    "kept": true
+   },
+   {
+    "segment": "s3_two_people_1025_2012@E04",
+    "epoch": "E04",
+    "label": "two_people",
+    "windows": 164,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 164,
+    "kept": true
+   },
+   {
+    "segment": "s1_still_1027_1936@E05",
+    "epoch": "E05",
+    "label": "still",
+    "windows": 63,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 62,
+    "kept": true
+   },
+   {
+    "segment": "s5_empty_fan_1027_1938@E05",
+    "epoch": "E05",
+    "label": "empty_fan",
+    "windows": 135,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 133,
+    "kept": true
+   },
+   {
+    "segment": "s6_empty_1027_1942@E05",
+    "epoch": "E05",
+    "label": "empty",
+    "windows": 103,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 102,
+    "kept": true
+   },
+   {
+    "segment": "s7_walking_1027_1945@E05",
+    "epoch": "E05",
+    "label": "walking",
+    "windows": 125,
+    "transitional_dropped": 4,
+    "joint_N1N2_windows": 124,
+    "kept": true
+   },
+   {
+    "segment": "s7_walking_1027_1945@E06",
+    "epoch": "E06",
+    "label": "walking",
+    "windows": 0,
+    "transitional_dropped": 13,
+    "joint_N1N2_windows": 0,
+    "kept": false
+   },
+   {
+    "segment": "s8_empty_1027_1953@E07",
+    "epoch": "E07",
+    "label": "empty",
+    "windows": 2140,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 2140,
+    "kept": true
+   },
+   {
+    "segment": "s9_empty_1027_2047@E07",
+    "epoch": "E07",
+    "label": "empty",
+    "windows": 482,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 482,
+    "kept": true
+   },
+   {
+    "segment": "s10_still_1027_2121@E08",
+    "epoch": "E08",
+    "label": "still",
+    "windows": 242,
+    "transitional_dropped": 0,
+    "joint_N1N2_windows": 242,
+    "kept": true
+   }
+  ]
+ },
+ "excluded_low_coverage": {
+  "N1+N2": [
+   "s1_walking_1017_2046"
+  ],
+  "N1+N2+N3+N4": [
+   "s1_walking_1017_2046"
+  ]
+ }
+}

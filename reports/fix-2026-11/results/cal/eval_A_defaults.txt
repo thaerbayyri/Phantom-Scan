@@ -1,0 +1,15 @@
+$ calibrate-threshold.ts --evaluate --empty s8_empty,s9_empty --fan s5_fan --occupied s7_walking   (defaults: 60 min soak, 5 min fan)
+=== Calibration evaluation (offline; nothing is written, no setting is changed) ===
+
+REFUSED — no recommended value is printed:
+  [no-negative-control] fan (negative control) 3.3 min < required 5 min
+  [pooled-epochs] node 1: median RSSI -36.0 -> -47.0 dBm between consecutive runs; node 1: frame rate 61.4 -> 41.0 fps between consecutive runs
+  [drift] empty-vs-empty control separates the two halves: motion.fused (symmetric upper bound 0.73), motion.n1 (symmetric upper bound 0.84), motion.n2 (symmetric upper bound 0.68), motion.n3 (symmetric upper bound 0.69), motion.n4 (symmetric upper bound 0.90)
+
+metric | calib blocks | held-out blocks | held-out p50 / p90 / p95 / p99 | drift AUC (sym. upper bound) | candidate | held-out FA/h | fan FA/h | occupied miss rate
+motion.fused | 196 | 196 | 0.485 / 0.565 / 0.582 / 0.615 | 0.36 (0.73) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n1 | 196 | 196 | 0.455 / 0.525 / 0.552 / 0.591 | 0.23 (0.84) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n2 | 196 | 196 | 0.428 / 0.555 / 0.570 / 0.613 | 0.43 (0.68) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n3 | 196 | 196 | 0.779 / 0.910 / 0.928 / 0.952 | 0.57 (0.69) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n4 | 196 | 196 | 0.950 / 1.000 / 1.000 / 1.000 | 0.18 (0.90) | refused | n/a | n/a | [TO BE MEASURED]
+exit=3

@@ -1,0 +1,160 @@
+# Documentation claim audit (PS-FIX-05)
+
+Method: regex sweep over tracked + untracked-non-ignored md/ts/tsx/py/c/h/json/txt outside reports/, run after the edits. Classification by path. Every "living doc/code" hit was read.
+
+**Decisions.** Dated records (ADRs, research notes, session/audit reports) are NOT edited: rewriting history would falsify it. Living docs got either a corrected statement (frame rate/cap, geometry) or a "[TO BE MEASURED]" status note (capability figures). Remaining living hits are: my own corrective wording that quotes the old figure, literature citations, already-labelled targets/protocols, firmware source comments (listed below), and UI/range comments. Edits: patches/05-PS-FIX-05.patch.
+
+**Left on purpose (firmware source, not docs):** `firmware/esp32-csi-node/main/csi_collector.c:312` and `csi_filter_pure.h:12` still say "50 Hz send gate" in comments (the gate is 10 ms). `client/src/components/dashboard/distance-meter.tsx:19` mentions an "8 m range" UI scale (not a capability claim).
+
+## ruview_headline
+
+### dated session/audit report (left unchanged): 2 hit(s) in 2 file(s)
+
+- `PhantomScan_FixAll_RuViewAudit_Session_Report.md:172` RuView's validated 82.3%/82.69% figures; (b) architecturally inapplicable to Phantom Scan's
+- `PhantomScan_RuView_Port_Full_Report.md:36` - Models trained on real ESP32 data are weak by its own metrics: people-count CNN 62.3 % (trained only for 0 vs ≥1; confidence uncorrelated with correctness), p
+
+### dated/upstream record (left unchanged): 9 hit(s) in 6 file(s)
+
+- `docs/adr/ADR-028-esp32-capability-audit.md:282` | 54,000 fps throughput | Benchmark claim, not measured at audit time | Requires Criterion benchmarks on target hardware |
+- `docs/adr/ADR-029-ruvsense-multistatic-sensing-mode.md:40` - Torso keypoint jitter < 30mm RMS (hips, shoulders, spine)
+- `docs/adr/ADR-030-ruvsense-persistent-field-model.md:17` ADR-029 establishes RuvSense as a sensing-first multistatic mesh achieving 20 Hz DensePose with <30mm jitter. That treats WiFi as a **momentary pose estimator**
+- `docs/adr/ADR-030-ruvsense-persistent-field-model.md:53` **Tier 0 (ADR-029):** Two people, 20 Hz, 10 min stable tracks, zero ID swaps, <30mm torso jitter.
+- `docs/adr/ADR-050-quality-engineering-security-hardening.md:23` | 5 | 54K fps claim has no supporting benchmark | No criterion benchmarks | YES — no benchmarks exist |
+- `docs/research/ruview-multistatic-fidelity-sota-2026.md:77` > **Phantom Scan scope caveat:** this describes RuView's own ADR-029 ("RuvSense Multistatic Sensing Mode") architecture, whose status in RuView's repo is `Propo
+- `docs/research/ruvsense-multistatic-fidelity-architecture.md:715` **Target:** Jitter < 30mm at torso keypoints (hips, shoulders, spine), < 50mm at limbs.
+- `docs/research/ruvsense-multistatic-fidelity-architecture.md:802` 1. Torso keypoint jitter < 30mm (directly validates DensePose quality)
+- `docs/research/ruvsense-multistatic-fidelity-architecture.md:1487` | **Pose** (§1-15) | Multistatic DensePose at 20 Hz, <30mm jitter, zero ID swaps | 10 weeks |
+
+### living doc/code: 9 hit(s) in 4 file(s)
+
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:190` | Spatial jitter | < 30 mm RMS after Kalman fusion (target, [TO BE MEASURED]; pose is not supported by the two-node rig) |
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:432` | **Validation** | Trajectory RMS jitter < 30 mm; velocity estimation within ± 0.1 m/s (targets, [TO BE MEASURED]) |
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:569` | **Spatial jitter** (3D pose) | < 30 mm RMS | 4-node mesh, Kalman fused | Target — [TO BE MEASURED] |
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:601` | Keypoint spatial jitter | < 30 mm RMS | 🔄 Under validation |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:39` | Through-Wall Pose Reconstruction | Multistatic CSI fusion → DensePose skeleton mapping | < 30 mm spatial jitter |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:114` | Spatial jitter | < 30 mm RMS after Kalman fusion |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:785` | Spatial jitter (3D pose) | < 30 mm RMS | 4-node mesh, Kalman fused |
+- `firmware/esp32-csi-node/README.md:87` > **Tip:** A single node provides presence and vital signs along its line of sight. Multiple nodes (3-6) create a multistatic mesh; upstream RuView claims this 
+- `scripts/ai_inference.py:188` #   * pose_v1: ~2.5% PCK@20, never rendered by the dashboard.
+
+## frame_rate_cap_claim
+
+### dated session/audit report (left unchanged): 14 hit(s) in 10 file(s)
+
+- `Phantom-Scan-Final-Project-Report-4Node.md:645` | Two-node live ingest rate and RSSI envelope | MEASURED (two-node rig) | ~40 pkt/s aggregate, RSSI −23 to −38 dBm, yield 41–43 pps/node, pre-2026-10-18 firmwar
+- `PhantomScan_Component_Inventory_Report.md:48` | `0xC5110001` | CSI | ~41–43 pps/node | 32-byte header (ADR-018); legacy 20-byte accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
+- `PhantomScan_FixAll_RuViewAudit_Session_Report.md:17` | 6. README sampling-rate discrepancy | Done | Confirmed — `README.md:192` matches firmware `CSI_MIN_SEND_INTERVAL_US` (50 Hz cap). | None |
+- `PhantomScan_FixAll_Session_Report.md:18` | 6 | README sampling-rate discrepancy | **Done** | ~20 Hz corrected to measured ~41-43 pps (50 Hz cap noted) in README + firmware README (5 spots) + system_arc
+- `PhantomScan_FollowUp_Session_Report.md:21` `computeMUSICSpectrum` (`server/lib/signal-processing.ts`) → called at `server/lib/websocket.ts:830` inside `processFrame()`, gated only on `this.config.isarEna
+- `PhantomScan_NodeMode_Staleness_Investigation.md:103` measured ~41-43 pps, consistent with *two* nodes; varied h1/h2 magnitudes with the genuine
+- `PhantomScan_Research_Gap_Analysis.md:53` - **Measured (real hardware log, not a code constant):** `TEST_AND_CLEANUP_REPORT.md:58` — *"steady ~200 packets / 5 s (~40 pkt/s aggregate)... firmware serial 
+- `PhantomScan_Research_Gap_Analysis.md:54` - **Documented (prose) — diverges from measurement:** `README.md:192`'s wire-protocol table states **~20 Hz/node**, roughly half the measured ~41-43 Hz — this a
+- `PhantomScan_Research_Gap_Analysis.md:55` - **Conclusion:** the "~41-43 packets/s" figure referenced in the research-input prompt is **confirmed, not an assumption** — it comes from a real logged hardwa
+- `PhantomScan_Research_Gap_Analysis.md:94` - **What's missing:** Measured ~41-43 pps/node (§2.4) comfortably clears the ≥10 Hz the research cites as needed for respiration. Heart-rate accuracy is unverif
+- `PhantomScan_Research_Gap_Analysis.md:115` | 6 | README wire-protocol table claims ~20Hz/node CSI rate; measured is ~41-43 pps/node | bug (doc) | N | `README.md:192` vs `TEST_AND_CLEANUP_REPORT.md:58` | 
+- `PhantomScan_RuView_Port_Full_Report.md:28` - CSI must come from one transmitter, and that filter must run **before** the 50 Hz rate gate (ADR-345/060).
+- `SESSION_CHATLOG_2026-08-07.md:59` 6. Corrected the stale "~20 Hz" CSI sampling-rate claim to the measured ~41–43 pps across
+- `TEST_AND_CLEANUP_REPORT.md:58` (~40 pkt/s aggregate), RSSI −23…−38 dBm; firmware serial `medium tick: yield=41-43pps` per board.
+
+### dated/upstream record (left unchanged): 7 hit(s) in 5 file(s)
+
+- `docs/CNN-LSTM Deep Learning for Wi-Fi CSI Human.md:50` - Commodity through-wall HAR: ~90–97.5% in-domain; ESP32-S3 through-wall CNN feasibility demonstrated on a small released dataset. Sampling-rate sensitivity: Wi
+- `docs/CNN-LSTM Deep Learning for Wi-Fi CSI Human.md:91` - **Sampling rate:** ~41–43 packets/s supports gross motion and respiration but is marginal for reliable heart-rate extraction (literature favors ≥10 Hz clean d
+- `docs/adr/ADR-018-esp32-dev-implementation.md:103` 1. **50 Hz rate limiter** (`csi_collector.c`): `sendto()` is skipped if less than 20 ms have elapsed since the last successful send. Excess CSI callbacks are dr
+- `docs/adr/ADR-029-ruvsense-multistatic-sensing-mode.md:369` | CSI callback rate exhausts lwIP pbufs | **Resolved** | Guru meditation crash | 50 Hz rate limiter + 100 ms ENOMEM backoff (Issue #127, PR #132) |
+- `docs/adr/ADR-039-esp32-edge-intelligence.md:211` 5. **sendto ENOMEM crash (Issue #127)** — CSI callbacks in promiscuous mode fire 100-500+ times/sec, exhausting the lwIP pbuf pool and causing a guru meditation
+- `docs/compass_artifact_wf-0e193497-a8dd-5b89-a41a-1e0afc5278ef_text_markdown.md:50` - Commodity through-wall HAR: ~90–97.5% in-domain; ESP32-S3 through-wall CNN feasibility demonstrated on a small released dataset. Sampling-rate sensitivity: Wi
+- `docs/compass_artifact_wf-0e193497-a8dd-5b89-a41a-1e0afc5278ef_text_markdown.md:91` - **Sampling rate:** ~41–43 packets/s supports gross motion and respiration but is marginal for reliable heart-rate extraction (literature favors ≥10 Hz clean d
+
+### living doc/code: 10 hit(s) in 7 file(s)
+
+- `README.md:218` | `0xC5110001` | CSI frame | 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings (45-60 on weaker links; bursty; host receive time — see 
+- `docs/system_architecture_methodology.md:102` - **Sample Rate**: 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings (10 ms firmware send gate; the earlier ~41-43 pps / 50 Hz-cap figu
+- `firmware/esp32-csi-node/README.md:15` > | **CSI streaming** | Per-subcarrier I/Q capture over UDP | 64-67 frames/s per node measured 2026-10-27 (10 ms send gate; the older ~41-43 pps figure is pre-2
+- `firmware/esp32-csi-node/README.md:115` - **Rate:** 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings, 45-60 on weaker links (10 ms send gate since 2026-10-18; the older ~41-4
+- `firmware/esp32-csi-node/main/csi_collector.c:312` /* Source-MAC filter FIRST — before serialization, the 50 Hz send gate and
+- `firmware/esp32-csi-node/main/csi_filter_pure.h:12` * The filter MUST run before the 50 Hz send rate gate: otherwise frames from
+- `generated_reports/Appendix.md:215` | Firmware send rate | 10 ms send gate since 2026-10-18; 64-67 frames/s measured 2026-10-27 (this run: ~41-43 pkt/s, pre-fix firmware) | same |
+- `generated_reports/Appendix.md:252` - RSSI envelope -23 to -38 dBm; firmware-reported yield 41-43 pkt/s per node (this two-node session, before the 2026-10-18 firmware change; preflight minimum: 2
+- `scripts/build_academic_reports.py:1330` "yield of 41-43 packets/s per node (pre-2026-10-18 firmware) - comfortably above the 20 packets/s per-node preflight "
+- `scripts/build_academic_reports.py:1351` ["Two-node live ingest rate and RSSI envelope", "MEASURED", "~40 pkt/s aggregate, RSSI -23..-38 dBm, yield 41-43 pps/node (pre-2026-10-18 firmware) [19]"],
+
+## capability_figure
+
+### dated session/audit report (left unchanged): 16 hit(s) in 7 file(s)
+
+- `PHANTOM_SCAN_BEHAVIORAL_TEST_REPORT.md`
+- `PHANTOM_SCAN_BEHAVIOR_AUDIT_REPORT.md`
+- `PHANTOM_SCAN_REMEDIATION_REPORT.md`
+- `Phantom-Scan-Final-Project-Report-4Node.md`
+- `PhantomScan_Cleanup_Candidates.md`
+- `PhantomScan_Repository_File_Map.md`
+- `RUN_LOG.md`
+
+### dated/upstream record (left unchanged): 76 hit(s) in 23 file(s)
+
+- `docs/CNN-LSTM Deep Learning for Wi-Fi CSI Human.md`
+- `docs/adr/ADR-001-wifi-mat-disaster-detection.md`
+- `docs/adr/ADR-004-hnsw-vector-search-fingerprinting.md`
+- `docs/adr/ADR-013-feature-level-sensing-commodity-gear.md`
+- `docs/adr/ADR-022-windows-wifi-enhanced-fidelity-ruvector.md`
+- `docs/adr/ADR-024-contrastive-csi-embedding-model.md`
+- `docs/adr/ADR-025-macos-corewlan-wifi-sensing.md`
+- `docs/adr/ADR-027-cross-environment-domain-generalization.md`
+- `docs/adr/ADR-030-ruvsense-persistent-field-model.md`
+- `docs/adr/ADR-037-multi-person-pose-detection.md`
+- `docs/adr/ADR-041-wasm-module-collection.md`
+- `docs/adr/ADR-042-coherent-human-channel-imaging.md`
+- `docs/compass_artifact_wf-0e193497-a8dd-5b89-a41a-1e0afc5278ef_text_markdown.md`
+- `docs/research/03-attention-mechanisms-rf-sensing.md`
+- `docs/research/08-temporal-graph-evolution-ruvector.md`
+- `docs/research/09-resolution-spatial-granularity.md`
+- `docs/research/11-quantum-level-sensors.md`
+- `docs/research/21-sota-neural-decoding-landscape.md`
+- `docs/research/22-brain-observatory-application-domains.md`
+- `docs/research/remote-vital-sign-sensing-modalities.md`
+- `docs/research/ruview-multistatic-fidelity-sota-2026.md`
+- `docs/research/ruvsense-multistatic-fidelity-architecture.md`
+- `docs/research/wifi-sensing-ruvector-sota-2026.md`
+
+### living doc/code: 39 hit(s) in 13 file(s)
+
+- `.agents/AGENTS.md:7` - **Through-Wall Human Tracking** (design goal; through-wall performance is [TO BE MEASURED]): Uses Exponential Moving Average (EMA) background subtraction and 
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:3` **Multi-Node, Through-Wall Wi-Fi CSI Human Presence, Movement & Localization Sensing**
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:5` > **Status note (2026-11):** through-wall operation, localization accuracy, range, detection rates, pose and vital-sign error are design goals, [TO BE MEASURED]
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:20` system that detects human presence and coarse (1-dimensional) movement through walls,
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:36` 3. **Target location on a radar-style display, through walls** — currently limited to
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:95` | 3 | Target location on radar (through-wall) | **1-D only**, 2-node | N≥3-node geometry + multilateration for coarse 2-D room-zone position (§4.4) |
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:109` through walls). The findings, summarized:
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:140` accuracy threshold (>90% cross-subject) below which the project pivots back to
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:165` CNN+LSTM crowd counting) reaches 86.4% accuracy **up to 5 people**, and that is
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:177` ### 4.4 Target location on radar, through walls (2-D)
+- `JODDB_PHASE2_TECHNICAL_PROPOSAL.md:265` | Access to a single room with an interior wall (drywall preferred as the baseline through-wall material) | 1 room | Through-wall validation; drywall is the fav
+- `README.md:6` <p align="center"><strong>Through-wall human presence sensing from $7 ESP32-S3 radios — no cameras, no wearables.</strong><br/><sub>Through-wall performance, ra
+- `client/src/components/dashboard/distance-meter.tsx:19` * red close over an 8 m range), a wall-reflection tick, and the compass
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:11` > **Status note (2026-11):** through-wall operation, airborne sensing, localization accuracy, range, detection rates, pose and vital-sign error in this draft ar
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:59` | **Through-Wall** | [TO BE MEASURED] (design goal; not validated) | ❌ Line-of-sight only |
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:455` Phantom Scan is designed for deployment on small rotary-wing UAV platforms (Class 1, < 5 kg MTOW) to enable **airborne through-wall sensing** in tactical, searc
+- `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:573` | **Through-wall range** | Up to 8 m | Yagi antenna, single drywall | Target — [TO BE MEASURED] |
+- `docs/RF_VALIDATION_PROTOCOL_DUAL_TARGET.md:3` > **Document:** VTP-PS-002 — Multi-Target Through-Wall Validation
+- `docs/RF_VALIDATION_PROTOCOL_DUAL_TARGET.md:13` Verify that the ESP32-S3 CSI collection pipeline (`csi_collector.c` → `edge_processing.c` → `stream_sender.c` → Node.js `signal-processing.ts` → `vitals.ts`) ca
+- `docs/RF_VALIDATION_PROTOCOL_DUAL_TARGET.md:144` **Problem:** Target A at 3m produces much stronger CSI perturbations than Target B at 6m through a wall. The question is whether Target B's breathing signature 
+- `docs/RF_VALIDATION_PROTOCOL_DUAL_TARGET.md:235` ### 5.2 Signal Lost Through Wall
+- `docs/RF_VALIDATION_PROTOCOL_DUAL_TARGET.md:239` │  SNR_B < 5 dB through wall?        │
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:39` | Through-Wall Pose Reconstruction | Multistatic CSI fusion → DensePose skeleton mapping | < 30 mm spatial jitter |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:43` | Occupancy Counting | Spatial variance clustering across subcarrier groups | ≥ 95% accuracy (1–4 persons) |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:123` Standard PCB antennas on ESP32-S3 modules provide omnidirectional coverage but suffer from insufficient gain for through-wall (NLOS) operation. PHANTOM SCAN spe
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:786` | Respiration rate accuracy | ± 1 BRM | Stationary subject, 1 m range |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:787` | Cardiac rate accuracy | ± 2 BPM | Stationary subject, 1 m range |
+- `docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md:789` | Maximum through-wall range | 8 m | Yagi antenna, single drywall |
+- `docs/WIFI_DENSEPOSE_INTEGRATION.md:17` *   **Non-Line-of-Sight (NLOS):** 2.4GHz and 5GHz Wi-Fi waves easily penetrate drywall, wooden doors, and concrete blocks, which is the basis of the through-wal
+- `docs/presentations/JODDB-Sponsorship-Pitch-Script.md:61` **Slide:** Title — "Phantom Scan: Through-Wall Human Presence Sensing from Two $7 Radios" + your name/team. **(Presenter note: through-wall performance is not y
+- `docs/presentations/JODDB-Sponsorship-Pitch-Script.md:76` > There's a real gap in how we sense human presence. Cameras work, but they capture faces, biometric data, and raise privacy and legal exposure the moment you p
+- `firmware/esp32-csi-node/main/edge_dsp_pure.h:144` * missed-detection rate from ~20% to 30%+ purely from raw CV chance-dipping
+- `firmware/esp32-csi-node/managed_components/lvgl__lvgl/src/draw/sw/lv_draw_sw_transform.c:318` *`fract` will be in range of 0x00..0xFF and `next` (+/-1) indicates the direction*/
+- `scripts/build_academic_reports.py:39` 1: "F. Adib and D. Katabi, \"See through walls with WiFi!,\" in Proc. ACM SIGCOMM, Hong Kong, China, 2013, pp. 75-86.",
+- `scripts/build_academic_reports.py:391` "contactless sensing tasks ranging from through-wall motion detection [1] to activity "
+- `scripts/build_academic_reports.py:528` add_heading(doc, "2.2.1 Wi-Vi: Through-Wall Motion Sensing", 3)
+- `scripts/build_academic_reports.py:602` ["Wi-Vi [1]", "Custom multi-antenna radio", "Interference nulling of static clutter", "Through-wall motion / coarse gestures", "Research hardware, low deployabi
+- `scripts/build_academic_reports.py:1357` ["Through-wall detection matrix (drywall, block, concrete)", "[TO BE MEASURED]", "Defined in the detection report; no defensible number yet [22]"],
+- `scripts/rf_validation/__init__.py:3` Brief: Test infrastructure for validating dual-target through-wall (NLOS)

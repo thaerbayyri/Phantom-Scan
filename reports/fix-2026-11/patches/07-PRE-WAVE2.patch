@@ -1,0 +1,450 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\07-PRE-WAVE2\\tests\\test_count_model.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_count_model.py"
+index 1825d0f..2af1bc6 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\07-PRE-WAVE2\\tests\\test_count_model.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_count_model.py"	
+@@ -4,8 +4,10 @@ import numpy as np
+ import pytest
+ import torch
+ 
+-from phantom.activity_train import TrainingRefused
+-from phantom.count_model import (
++pytest.importorskip("sklearn", reason="scikit-learn not installed: pip install -e '.[train]' (optional extra in pyproject.toml)")
++
++from phantom.activity_train import TrainingRefused  # noqa: E402
++from phantom.count_model import (  # noqa: E402
+     NUM_SUBCARRIERS,
+     WINDOW_FRAMES,
+     CountNet,
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\07-PRE-WAVE2\\tests\\test_esp_capture_e2e.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_esp_capture_e2e.py"
+index 7ab00fb..1ecca9f 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\07-PRE-WAVE2\\tests\\test_esp_capture_e2e.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_esp_capture_e2e.py"	
+@@ -316,8 +316,11 @@ class TestADR018FrameIntegrity:
+ #  Test 5: Server REST API ingestion (live server required)
+ # ═══════════════════════════════════════════════════════════════════
+ 
++from e2e_guard import DEFAULT_URL, e2e_server_url  # noqa: E402  (tests/e2e_guard.py; opt-in + never :5000)
++
++
+ class TestServerIngestion:
+-    SERVER_URL = "http://localhost:5000"
++    SERVER_URL = e2e_server_url(os.environ)[0] or DEFAULT_URL
+     USERNAME = os.environ.get("PHANTOM_TEST_USERNAME", "thaer")
+     PASSWORD = os.environ.get("PHANTOM_TEST_PASSWORD", "thaer")
+ 
+@@ -328,7 +331,7 @@ class TestServerIngestion:
+         whatever server answers on :5000 -- including an operator's live dashboard and its data/sessions.
+         Set PHANTOM_E2E_LIVE_SERVER=1 to run them against a throw-away dev server.
+         """
+-        if os.environ.get("PHANTOM_E2E_LIVE_SERVER") != "1":
++        if e2e_server_url(os.environ)[0] is None:  # opt-in, local, and never the operator dashboard on :5000
+             return False
+         try:
+             import urllib.request
+@@ -360,7 +363,7 @@ class TestServerIngestion:
+     def test_health_endpoint(self):
+         """Server health endpoint should respond."""
+         if not self._server_available():
+-            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on its own port (default 5099, never 5000); see tests/e2e_guard.py")
+ 
+         import urllib.request
+         import json
+@@ -372,7 +375,7 @@ class TestServerIngestion:
+     def test_ingest_single_sample(self):
+         """Server should accept a single CSI sample via REST."""
+         if not self._server_available():
+-            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on its own port (default 5099, never 5000); see tests/e2e_guard.py")
+ 
+         import urllib.request
+         import json
+@@ -396,7 +399,7 @@ class TestServerIngestion:
+     def test_ingest_batch_from_recording(self):
+         """Server should accept a batch of real recorded CSI samples."""
+         if not self._server_available():
+-            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on its own port (default 5099, never 5000); see tests/e2e_guard.py")
+ 
+         recordings = _load_all_recordings(max_per_file=10)
+         if not recordings:
+@@ -434,7 +437,7 @@ class TestServerIngestion:
+     def test_queue_status(self):
+         """Server should report queue status."""
+         if not self._server_available():
+-            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on its own port (default 5099, never 5000); see tests/e2e_guard.py")
+ 
+         import urllib.request
+         import json
+@@ -447,7 +450,7 @@ class TestServerIngestion:
+     def test_status_endpoint(self):
+         """Server status endpoint should return processing state."""
+         if not self._server_available():
+-            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on its own port (default 5099, never 5000); see tests/e2e_guard.py")
+ 
+         import urllib.request
+         import json
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\07-PRE-WAVE2\\tests\\test_train_activity.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_train_activity.py"
+index d7482ed..72d98d8 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\07-PRE-WAVE2\\tests\\test_train_activity.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_train_activity.py"	
+@@ -4,8 +4,10 @@ from pathlib import Path
+ import numpy as np
+ import pytest
+ 
+-from phantom.activity_model import ActivityModel
+-from phantom.activity_train import TrainingRefused, train_activity
++pytest.importorskip("sklearn", reason="scikit-learn not installed: pip install -e '.[train]' (optional extra in pyproject.toml)")
++
++from phantom.activity_model import ActivityModel  # noqa: E402
++from phantom.activity_train import TrainingRefused, train_activity  # noqa: E402
+ from phantom.dataset import NodeStream, Recording, load_room_dataset
+ 
+ FS = 40.0
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\restore_session_pollution.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\restore_session_pollution.py"
+new file mode 100644
+index 0000000..f342d97
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\restore_session_pollution.py"	
+@@ -0,0 +1,135 @@
++#!/usr/bin/env python3
++"""Restore data/sessions after test pollution (PS-FIX-23). DRY-RUN unless --apply.
++
++    python scripts/restore_session_pollution.py                 # show the plan, change nothing
++    python scripts/restore_session_pollution.py --apply         # do it (the dashboard must be STOPPED)
++
++What it does with --apply, in order:
++  1. refuses if anything listens on the dashboard port (default 5000): the server rewrites _index.json from memory;
++  2. refuses unless removing the named entries reproduces the expected sha256 of _index.json byte-for-byte
++     (default: the baseline recorded in reports/fix-2026-11/results/baseline-manifest.txt), so a wrong target can
++     never be written;
++  3. copies _index.json to .tmp/fix-backups/23-sessions/ ;
++  4. writes the restored index (json.dumps(entries, indent=2), no trailing newline: the dashboard's format);
++  5. MOVES (never deletes) the polluted session files into a quarantine folder (default .tmp/quarantine-sessions-<date>).
++Nothing is removed from disk; moving the files back and restoring the backup undoes everything.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import shutil
++import socket
++import sys
++from datetime import datetime, timezone
++from pathlib import Path
++
++REPO = Path(__file__).resolve().parents[1]
++DEFAULT_IDS = ("000000205 - 2026-11-02", "000000206 - 2026-11-02")
++MANIFEST = REPO / "reports" / "fix-2026-11" / "results" / "baseline-manifest.txt"
++
++
++def baseline_index_hash(manifest: Path = MANIFEST) -> str | None:
++    """sha256 recorded for data/sessions/_index.json in the baseline manifest (sha256sum format)."""
++    if not manifest.is_file():
++        return None
++    for line in manifest.read_text(encoding="utf-8").splitlines():
++        if line.rstrip().endswith("data/sessions/_index.json"):
++            return line.split()[0]
++    return None
++
++
++def index_text(entries: list[dict]) -> str:
++    return json.dumps(entries, indent=2)  # the dashboard's own format: no trailing newline
++
++
++def sha256_text(text: str) -> str:
++    return hashlib.sha256(text.encode("utf-8")).hexdigest()
++
++
++def port_is_open(port: int, host: str = "127.0.0.1") -> bool:
++    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
++        s.settimeout(0.5)
++        return s.connect_ex((host, port)) == 0
++
++
++def plan(sessions_dir: Path, ids: tuple[str, ...], expected_sha: str | None) -> dict:
++    index_path = sessions_dir / "_index.json"
++    raw = index_path.read_text(encoding="utf-8")
++    entries = json.loads(raw)
++    removed = [e for e in entries if e.get("id") in ids]
++    kept = [e for e in entries if e.get("id") not in ids]
++    files: list[Path] = []
++    for e in removed:
++        date = str(e["id"]).rsplit(" - ", 1)[-1]  # e.g. 2026-11-02
++        candidates = [sessions_dir / f"{e['id']}.json", *sorted(sessions_dir.glob(f"{e.get('name', '')}_{date}T*"))]
++        files += [p for p in candidates if p.is_file() and p not in files]
++    new_text = index_text(kept)
++    return {
++        "index_path": index_path, "removed_ids": [e["id"] for e in removed], "files": files, "new_text": new_text,
++        "new_sha256": sha256_text(new_text), "expected_sha256": expected_sha, "current_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
++        "matches_expected": expected_sha is not None and sha256_text(new_text) == expected_sha, "nothing_to_do": not removed and not files,
++    }
++
++
++def apply(p: dict, backup_dir: Path, quarantine: Path) -> list[str]:
++    done: list[str] = []
++    for f in p["files"]:  # fail BEFORE touching anything if a destination is taken
++        if (quarantine / f.name).exists():
++            raise FileExistsError(f"refusing to overwrite {quarantine / f.name}")
++    backup_dir.mkdir(parents=True, exist_ok=True)
++    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
++    backup = backup_dir / f"_index.json.{stamp}"
++    shutil.copy2(p["index_path"], backup)
++    done.append(f"backed up _index.json -> {backup}")
++    with open(p["index_path"], "w", encoding="utf-8", newline="") as fh:
++        fh.write(p["new_text"])
++    done.append(f"restored {p['index_path']} (sha256 {p['new_sha256'][:16]}…)")
++    quarantine.mkdir(parents=True, exist_ok=True)
++    for f in p["files"]:
++        target = quarantine / f.name
++        if target.exists():
++            raise FileExistsError(f"refusing to overwrite {target}")
++        shutil.move(str(f), str(target))
++        done.append(f"moved {f.name} -> {quarantine}")
++    return done
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    ap.add_argument("--sessions-dir", type=Path, default=REPO / "data" / "sessions")
++    ap.add_argument("--ids", nargs="+", default=list(DEFAULT_IDS), help="session ids (index entries) to remove")
++    ap.add_argument("--expect-sha256", default=None, help="expected sha256 of the restored _index.json (default: baseline manifest)")
++    ap.add_argument("--port", type=int, default=5000, help="dashboard port that must be closed for --apply")
++    ap.add_argument("--backup-dir", type=Path, default=REPO / ".tmp" / "fix-backups" / "23-sessions")
++    ap.add_argument("--quarantine", type=Path, default=REPO / ".tmp" / f"quarantine-sessions-{datetime.now(timezone.utc):%Y-%m-%d}")
++    ap.add_argument("--apply", action="store_true")
++    args = ap.parse_args(argv)
++
++    expected = args.expect_sha256 or baseline_index_hash()
++    p = plan(args.sessions_dir, tuple(args.ids), expected)
++    print(f"index entries to remove : {p['removed_ids'] or 'none'}")
++    print(f"files to move           : {[f.name for f in p['files']] or 'none'}")
++    print(f"restored index sha256   : {p['new_sha256']}")
++    print(f"expected (baseline)     : {expected or 'UNKNOWN'}  -> {'MATCH' if p['matches_expected'] else 'NO MATCH'}")
++    if p["nothing_to_do"]:
++        print("nothing to do (already clean).")
++        return 0
++    if not args.apply:
++        print("dry run: nothing changed. Stop the dashboard, then re-run with --apply.")
++        return 0
++    if port_is_open(args.port):
++        print(f"REFUSED: something is listening on :{args.port}. Stop the dashboard first (it would rewrite _index.json).")
++        return 2
++    if not p["matches_expected"]:
++        print("REFUSED: the restored index would not reproduce the expected sha256; nothing was changed.")
++        return 3
++    for line in apply(p, args.backup_dir, args.quarantine):
++        print(line)
++    print("done. Restart the dashboard.")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\e2e_guard.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\e2e_guard.py"
+new file mode 100644
+index 0000000..f660358
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\e2e_guard.py"	
+@@ -0,0 +1,40 @@
++"""Decide whether the live-server e2e tests may run, and against which URL.
++
++Those tests log in, ingest samples and create sessions on whatever server answers. Running them against an operator's
++dashboard pollutes its data/sessions (PS-FIX-23), so they require:
++  * explicit opt-in:  PHANTOM_E2E_LIVE_SERVER=1
++  * a throw-away LOCAL server on its own port (default http://127.0.0.1:5099; override PHANTOM_E2E_SERVER_URL)
++  * never the operator dashboard port 5000, and never a non-local host.
++
++Start such a server with e.g.  PORT=5099 npm run dev  -- but note the session store writes to ``data/sessions`` relative
++to the server's working directory, so start it from a scratch copy/working directory if you do not want files there.
++"""
++from __future__ import annotations
++
++from typing import Mapping
++from urllib.parse import urlparse
++
++OPERATOR_PORT = 5000
++DEFAULT_URL = "http://127.0.0.1:5099"
++LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
++
++
++def e2e_server_url(env: Mapping[str, str]) -> tuple[str | None, str]:
++    """(url, reason): url is None when the tests must not run; reason says why (or 'ok')."""
++    if env.get("PHANTOM_E2E_LIVE_SERVER") != "1":
++        return None, "opt-in required: set PHANTOM_E2E_LIVE_SERVER=1"
++    raw = env.get("PHANTOM_E2E_SERVER_URL") or DEFAULT_URL
++    try:
++        parsed = urlparse(raw)
++        port = parsed.port
++    except ValueError:
++        return None, f"invalid PHANTOM_E2E_SERVER_URL {raw!r}"
++    if parsed.scheme != "http" or not parsed.hostname:
++        return None, f"PHANTOM_E2E_SERVER_URL must be an http URL, got {raw!r}"
++    if parsed.hostname not in LOCAL_HOSTS:
++        return None, f"refusing non-local host {parsed.hostname!r}: use a throw-away local server"
++    if port is None:
++        return None, "PHANTOM_E2E_SERVER_URL must include an explicit port (not :5000)"
++    if port == OPERATOR_PORT:
++        return None, f"refusing port {OPERATOR_PORT}: that is the operator dashboard; start a throw-away server on another port"
++    return f"{parsed.scheme}://{parsed.hostname}:{port}", "ok"
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_e2e_guard.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_e2e_guard.py"
+new file mode 100644
+index 0000000..e0df9f7
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_e2e_guard.py"	
+@@ -0,0 +1,41 @@
++"""PS-FIX-23 follow-up: the live-server e2e tests must never target the operator dashboard (:5000) or a non-local host."""
++from __future__ import annotations
++
++import pytest
++
++from e2e_guard import DEFAULT_URL, e2e_server_url
++
++OPT_IN = {"PHANTOM_E2E_LIVE_SERVER": "1"}
++
++
++def test_without_opt_in_nothing_runs_even_if_a_url_is_given() -> None:
++    assert e2e_server_url({})[0] is None
++    assert e2e_server_url({"PHANTOM_E2E_SERVER_URL": "http://127.0.0.1:5099"})[0] is None
++    assert e2e_server_url({"PHANTOM_E2E_LIVE_SERVER": "true"})[0] is None  # only the exact value "1" opts in
++
++
++def test_opt_in_defaults_to_a_separate_local_port_not_5000() -> None:
++    url, reason = e2e_server_url(OPT_IN)
++    assert url == DEFAULT_URL == "http://127.0.0.1:5099" and reason == "ok"
++
++
++@pytest.mark.parametrize("url", ["http://localhost:5000", "http://127.0.0.1:5000", "http://localhost:5000/", "http://[::1]:5000"])
++def test_the_operator_dashboard_port_is_always_refused(url: str) -> None:
++    got, reason = e2e_server_url({**OPT_IN, "PHANTOM_E2E_SERVER_URL": url})
++    assert got is None and "5000" in reason and "dashboard" in reason
++
++
++@pytest.mark.parametrize("url", ["http://192.168.1.20:5099", "http://example.com:5099", "http://10.0.0.77:5099"])
++def test_non_local_hosts_are_refused(url: str) -> None:
++    got, reason = e2e_server_url({**OPT_IN, "PHANTOM_E2E_SERVER_URL": url})
++    assert got is None and "non-local" in reason
++
++
++@pytest.mark.parametrize("url", ["https://localhost:5099", "ftp://localhost:5099", "localhost:5099", "http://localhost", "http://localhost:notaport", "http://localhost:99999"])
++def test_malformed_or_portless_urls_are_refused(url: str) -> None:
++    assert e2e_server_url({**OPT_IN, "PHANTOM_E2E_SERVER_URL": url})[0] is None
++
++
++def test_other_local_ports_are_accepted_and_normalised() -> None:
++    assert e2e_server_url({**OPT_IN, "PHANTOM_E2E_SERVER_URL": "http://localhost:5123/"})[0] == "http://localhost:5123"
++    assert e2e_server_url({**OPT_IN, "PHANTOM_E2E_SERVER_URL": "http://127.0.0.1:6000/api"})[0] == "http://127.0.0.1:6000"
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_restore_session_pollution.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_restore_session_pollution.py"
+new file mode 100644
+index 0000000..a3bbfec
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_restore_session_pollution.py"	
+@@ -0,0 +1,105 @@
++"""PS-FIX-23: the session-restore tool is dry-run by default, refuses unsafe targets, backs up, and never deletes."""
++from __future__ import annotations
++
++import json
++import socket
++from pathlib import Path
++
++import pytest
++
++from scripts import restore_session_pollution as rsp
++
++POLLUTED = ["000000205 - 2026-11-02", "000000206 - 2026-11-02"]
++
++
++def entry(sid: str, name: str) -> dict:
++    return {"id": sid, "name": name, "startTime": 1, "endTime": 2, "durationS": 1.0, "totalFrames": 3}
++
++
++def build(tmp_path: Path) -> tuple[Path, str, bytes]:
++    """A sessions dir with 2 clean entries, 1 unrelated same-day entry, and the 2 polluted ones + 5 files."""
++    d = tmp_path / "sessions"
++    d.mkdir()
++    clean = [entry("000000204 - 2026-10-27", "scan"), entry("000000203 - 2026-10-27", "scan"), entry("000000199 - 2026-11-02", "keep-me")]
++    polluted = [entry(POLLUTED[1], "test20"), entry(POLLUTED[0], "test20")]
++    (d / "_index.json").write_text(rsp.index_text(polluted + clean), encoding="utf-8", newline="")
++    for sid in [c["id"] for c in clean] + POLLUTED:
++        (d / f"{sid}.json").write_text("{}", encoding="utf-8")
++    for ext in ("json", "csv", "pdf"):
++        (d / f"test20_2026-11-02T19-13-03-672Z.{ext}").write_text("x", encoding="utf-8")
++    (d / "scan_2026-10-27T10-00-00-000Z.csv").write_text("keep", encoding="utf-8")
++    return d, rsp.sha256_text(rsp.index_text(clean)), (d / "_index.json").read_bytes()
++
++
++def run(d: Path, tmp_path: Path, *extra: str) -> int:
++    return rsp.main(["--sessions-dir", str(d), "--backup-dir", str(tmp_path / "bk"), "--quarantine", str(tmp_path / "q"), "--port", "1", *extra])
++
++
++def test_dry_run_changes_nothing_and_reports_the_plan(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
++    d, sha, before = build(tmp_path)
++    assert run(d, tmp_path, "--expect-sha256", sha) == 0
++    out = capsys.readouterr().out
++    assert "dry run" in out and "MATCH" in out and "NO MATCH" not in out
++    assert (d / "_index.json").read_bytes() == before and not (tmp_path / "q").exists() and not (tmp_path / "bk").exists()
++
++
++def test_plan_selects_exactly_the_five_polluted_files_and_two_entries(tmp_path: Path) -> None:
++    d, sha, _ = build(tmp_path)
++    p = rsp.plan(d, tuple(POLLUTED), sha)
++    assert sorted(p["removed_ids"]) == sorted(POLLUTED) and p["matches_expected"] is True
++    assert sorted(f.name for f in p["files"]) == sorted([f"{POLLUTED[0]}.json", f"{POLLUTED[1]}.json", *(f"test20_2026-11-02T19-13-03-672Z.{e}" for e in ("json", "csv", "pdf"))])
++    assert "keep-me" in p["new_text"] and "000000199 - 2026-11-02" in p["new_text"]  # an unrelated same-day session is kept
++
++
++def test_apply_restores_the_index_byte_for_byte_backs_up_and_moves_never_deletes(tmp_path: Path) -> None:
++    d, sha, before = build(tmp_path)
++    assert run(d, tmp_path, "--expect-sha256", sha, "--apply") == 0
++    restored = (d / "_index.json").read_bytes()
++    assert rsp.hashlib.sha256(restored).hexdigest() == sha
++    backups = list((tmp_path / "bk").glob("_index.json.*"))
++    assert len(backups) == 1 and backups[0].read_bytes() == before            # the polluted index is preserved
++    moved = sorted(p.name for p in (tmp_path / "q").iterdir())
++    assert len(moved) == 5 and all(not (d / n).exists() for n in moved)         # moved out of sessions, still on disk
++    assert (d / "000000204 - 2026-10-27.json").exists() and (d / "scan_2026-10-27T10-00-00-000Z.csv").exists()
++    assert run(d, tmp_path, "--expect-sha256", sha, "--apply") == 0             # idempotent: nothing left to do
++
++
++def test_apply_refuses_when_the_expected_hash_would_not_be_reproduced(tmp_path: Path) -> None:
++    d, _, before = build(tmp_path)
++    assert run(d, tmp_path, "--expect-sha256", "0" * 64, "--apply") == 3
++    assert (d / "_index.json").read_bytes() == before and not (tmp_path / "q").exists() and not (tmp_path / "bk").exists()
++
++
++def test_apply_refuses_while_the_dashboard_port_is_open(tmp_path: Path) -> None:
++    d, sha, before = build(tmp_path)
++    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
++        srv.bind(("127.0.0.1", 0))
++        srv.listen(1)
++        port = srv.getsockname()[1]
++        code = rsp.main(["--sessions-dir", str(d), "--backup-dir", str(tmp_path / "bk"), "--quarantine", str(tmp_path / "q"), "--port", str(port), "--expect-sha256", sha, "--apply"])
++    assert code == 2 and (d / "_index.json").read_bytes() == before and not (tmp_path / "q").exists()
++
++
++def test_apply_without_any_expected_hash_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
++    d, _, before = build(tmp_path)
++    monkeypatch.setattr(rsp, "baseline_index_hash", lambda *a, **k: None)
++    assert run(d, tmp_path, "--apply") == 3 and (d / "_index.json").read_bytes() == before
++
++
++def test_quarantine_never_overwrites_an_existing_file(tmp_path: Path) -> None:
++    d, sha, before = build(tmp_path)
++    (tmp_path / "q").mkdir()
++    (tmp_path / "q" / f"{POLLUTED[0]}.json").write_text("precious", encoding="utf-8")
++    with pytest.raises(FileExistsError):
++        run(d, tmp_path, "--expect-sha256", sha, "--apply")
++    assert (tmp_path / "q" / f"{POLLUTED[0]}.json").read_text(encoding="utf-8") == "precious"
++    # all-or-nothing: the index was not rewritten, no backup was made, and no file was moved
++    assert (d / "_index.json").read_bytes() == before and not (tmp_path / "bk").exists()
++    assert all((d / f"{sid}.json").exists() for sid in POLLUTED) and len(list((tmp_path / "q").iterdir())) == 1
++
++
++def test_baseline_hash_is_read_from_the_manifest_format(tmp_path: Path) -> None:
++    m = tmp_path / "manifest.txt"
++    m.write_text("# header\nabc123 *README.md\n9f8e7d6c5b4a *data/sessions/_index.json\n", encoding="utf-8")
++    assert rsp.baseline_index_hash(m) == "9f8e7d6c5b4a" and rsp.baseline_index_hash(tmp_path / "missing") is None
++    assert json.loads(rsp.index_text([entry("a", "b")]))[0]["id"] == "a"

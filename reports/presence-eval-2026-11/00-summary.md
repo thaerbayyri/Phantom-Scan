@@ -1,0 +1,17 @@
+# 00 — Summary: offline two-node presence + motion evaluation (2026-11-02)
+
+**Asked.** Using the recorded `room1` data, is there a presence/motion score on two nodes (N1, N2) that separates empty / fan from walking / still, and is it stable enough across sessions to be calibrated? Deliver tests and honest reports; change nothing in the existing code.
+
+**Measured** (all numbers have provenance in `results/*.json`; commit `744ce43`, dirty tree).
+* **Data:** 25 files = 14 recordings, 5 sessions over 17–27 Oct; node 1's link changed by 11 dB between s7 and s8 on 27 Oct and changed back later, with no annotation; recorded frame rates are 64–67 /s per node, not the documented 41–43 (the firmware gate was changed on 18 Oct) (01).
+* **Reproduction:** 18 of 20 exploratory numbers reproduce independently (2 do not, both "empty s9 vs empty s8"; that number depends on which ~7 minutes of s8 is used) (02).
+* **Drift:** two recordings labelled *empty* differ more from each other than walking differs from empty — on every node and feature tried (136 empty-vs-empty segment pairs; 32–89 % separable; same evening 13–86 %). The cause is not established; the leading hypothesis (per-link gain/fading changing over minutes) is supported but untested (03).
+* **Two-node evaluation:** 15 candidates (3 features × 5 fusion rules), 3 protocols, thresholds fitted on training empties only. **No candidate met the pre-registered criteria** (C1 walking AUC lower CI ≥ 0.80: best 0.59 leave-one-recording-out, 0.61 cross-session; C3 empties ≤ 5 % false flags: failed by all). The repo's own two-node logic shows the same trade-off: calibrate on a nearby empty and it detects walking 37 % of the time but marks an empty recording occupied 54 %; calibrate on a distant empty and ghosts disappear but walking is detected 1 % (04).
+
+**The answer, in plain words.** On these recordings, no score tried can separate a person walking or standing from an empty room *and* stay calibrated from one session to the next. Scores that work against an empty recording made minutes earlier fail against another empty recording made later. This is a statement about this data, not a proof that detection is impossible on this hardware.
+
+**Main limitation.** One room, one rig, one subject (one walking recording of 212 s), unverified emptiness labels, and an unexplained node-1 change in the middle of the evening. No accuracy, detection-rate or range figure is claimed; none of the pre-registered criteria was met.
+
+**Recommended next step.** Run the controlled campaign in `07-next-recording-protocol.md` — nodes untouched and photographed, operator-timed phases, a ≥ 60 min unattended empty with an independent entry record, two repeats, a second day, a second subject — before any threshold is recalibrated. Until then, do not present "no motion" as "empty", and treat two-node detection claims as unvalidated (05, PS-EVAL-013).
+
+**State.** TypeScript suite 407/407 green; Python 190/190 green on collectable files, but the full suite cannot run here because `scikit-learn` is missing (PS-EVAL-001). F1/F2 tests green. No tracked file changed (diff hash identical). Files: `01-data-inventory.md`, `02-reproduction.md`, `03-drift.md`, `04-two-node-eval.md`, `05-display-spec.md`, `06-test-report.md`, `07-next-recording-protocol.md`, `08-issues-and-merge-gate.md`, `results/`, code in `scripts/presence_eval/`, tests in `tests/test_presence_eval_*.py`.

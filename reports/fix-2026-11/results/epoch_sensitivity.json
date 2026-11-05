@@ -1,0 +1,1146 @@
+{
+ "provenance": {
+  "command": "python -m scripts.presence_eval.epoch_sensitivity",
+  "commit": "744ce43e9772f40bcc0d372e40b077644a9a8939",
+  "branch": "feat/two-node-radar-live-detection",
+  "working_tree_dirty": true,
+  "eval_code_sha256_16": "757ffce8e70e9e29",
+  "date_utc": "2026-11-03T19:11:09Z",
+  "python": "3.13.15",
+  "numpy": "2.4.4",
+  "inputs": [
+   "room1__s10__still__20261027T212107Z.jsonl",
+   "room1__s1__empty__20261018T175601Z.jsonl",
+   "room1__s1__empty__20261018T180250Z.jsonl",
+   "room1__s1__empty_fan__20261018T203921Z.jsonl",
+   "room1__s1__still__20261027T193610Z.jsonl",
+   "room1__s1__two_people__20261018T173055Z.jsonl",
+   "room1__s1__walking__20261017T204650Z.jsonl",
+   "room1__s2__still__20261025T195835Z.jsonl",
+   "room1__s3__two_people__20261025T201209Z.jsonl",
+   "room1__s5__empty_fan__20261027T193823Z.jsonl",
+   "room1__s6__empty__20261027T194207Z.jsonl",
+   "room1__s7__walking__20261027T194537Z.jsonl",
+   "room1__s8__empty__20261027T195356Z.jsonl",
+   "room1__s9__empty__20261027T204759Z.jsonl"
+  ]
+ },
+ "rule_status": "POST HOC (chosen after inspecting these recordings; not pre-registered)",
+ "grid": {
+  "step_db": [
+   4.0,
+   6.0,
+   8.0
+  ],
+  "hold_s": [
+   10,
+   30,
+   60
+  ],
+  "node_set": [
+   1,
+   2
+  ],
+  "min_empty_boundary_hold_s_fixed": 60.0
+ },
+ "configs": {
+  "4dB/10s": {
+   "step_db": 4.0,
+   "hold_s": 10,
+   "in_recording_events": 22,
+   "boundaries_total": 11,
+   "boundaries_from_in_recording_events": 4,
+   "ambiguous_events": 18,
+   "s7_node1_step_is_boundary": true,
+   "s7_onset_offset_s": 193.0,
+   "epochs_with_two_or_more_empty_segments": [
+    "E06",
+    "E11"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "two_people": 1
+    },
+    "E06": {
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E07": {
+     "still": 1
+    },
+    "E08": {
+     "two_people": 1
+    },
+    "E09": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E11": {
+     "empty": 2
+    },
+    "E12": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s1__walking__20261017T2",
+     "label": "walking",
+     "node": 2,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-17 20:47:31",
+     "offset_s": 41.0,
+     "delta_db": -4.0,
+     "fps_before": 11.0,
+     "fps_after": 12.5,
+     "held_s": 204.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:34:14",
+     "offset_s": 199.0,
+     "delta_db": 9.0,
+     "fps_before": 65.0,
+     "fps_after": 65.5,
+     "held_s": 337.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:35:42",
+     "offset_s": 287.0,
+     "delta_db": 5.5,
+     "fps_before": 63.5,
+     "fps_after": 66.0,
+     "held_s": 57.0,
+     "persistent": false,
+     "reversal": true,
+     "why_not_a_boundary": "reversal of the previous step (end of an excursion)"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:38:34",
+     "offset_s": 459.0,
+     "delta_db": 6.5,
+     "fps_before": 66.0,
+     "fps_after": 65.0,
+     "held_s": 53.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-25 19:59:22",
+     "offset_s": 47.0,
+     "delta_db": null,
+     "fps_before": 54.0,
+     "fps_after": 16.0,
+     "held_s": null,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:05",
+     "offset_s": 90.0,
+     "delta_db": 9.0,
+     "fps_before": 56.0,
+     "fps_after": 58.5,
+     "held_s": 138.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:42",
+     "offset_s": 127.0,
+     "delta_db": 5.0,
+     "fps_before": 61.0,
+     "fps_after": 66.0,
+     "held_s": 12.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s3__two_people__2026102",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:13:04",
+     "offset_s": 55.0,
+     "delta_db": 5.0,
+     "fps_before": 36.5,
+     "fps_after": 57.5,
+     "held_s": 63.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s3__two_people__2026102",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-25 20:14:58",
+     "offset_s": 169.0,
+     "delta_db": null,
+     "fps_before": 57.0,
+     "fps_after": 38.5,
+     "held_s": null,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s1__still__20261027T193",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 19:36:43",
+     "offset_s": 33.0,
+     "delta_db": -6.5,
+     "fps_before": 66.0,
+     "fps_after": 66.0,
+     "held_s": 62.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s5__empty_fan__20261027",
+     "label": "empty_fan",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 19:40:41",
+     "offset_s": 138.0,
+     "delta_db": -7.0,
+     "fps_before": 65.0,
+     "fps_after": 59.5,
+     "held_s": 16.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "empty/fan recording but held only 16 s (< 60 s): excursion"
+    },
+    {
+     "recording": "s7__walking__20261027T1",
+     "label": "walking",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-27 19:48:51",
+     "offset_s": 194.0,
+     "delta_db": null,
+     "fps_before": 63.0,
+     "fps_after": 42.0,
+     "held_s": null,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:22:34",
+     "offset_s": 86.0,
+     "delta_db": 5.0,
+     "fps_before": 66.0,
+     "fps_after": 66.0,
+     "held_s": 115.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:25:32",
+     "offset_s": 264.0,
+     "delta_db": -7.5,
+     "fps_before": 67.0,
+     "fps_after": 57.0,
+     "held_s": 13.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:25:51",
+     "offset_s": 283.0,
+     "delta_db": 6.25,
+     "fps_before": 65.5,
+     "fps_after": 66.5,
+     "held_s": 80.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:26:36",
+     "offset_s": 328.0,
+     "delta_db": -4.0,
+     "fps_before": 66.0,
+     "fps_after": 67.0,
+     "held_s": 25.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:27:01",
+     "offset_s": 353.0,
+     "delta_db": 5.0,
+     "fps_before": 67.0,
+     "fps_after": 67.0,
+     "held_s": 10.0,
+     "persistent": null,
+     "reversal": true,
+     "why_not_a_boundary": "reversal of the previous step (end of an excursion)"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 2,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:25:40",
+     "offset_s": 272.0,
+     "delta_db": 4.0,
+     "fps_before": 65.5,
+     "fps_after": 63.5,
+     "held_s": 13.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    }
+   ]
+  },
+  "4dB/30s": {
+   "step_db": 4.0,
+   "hold_s": 30,
+   "in_recording_events": 5,
+   "boundaries_total": 8,
+   "boundaries_from_in_recording_events": 1,
+   "ambiguous_events": 4,
+   "s7_node1_step_is_boundary": false,
+   "s7_onset_offset_s": null,
+   "epochs_with_two_or_more_empty_segments": [
+    "E04",
+    "E08"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1
+    },
+    "E03": {
+     "two_people": 1
+    },
+    "E04": {
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E05": {
+     "still": 1
+    },
+    "E06": {
+     "two_people": 1
+    },
+    "E07": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E08": {
+     "empty": 2
+    },
+    "E09": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:34:08",
+     "offset_s": 193.0,
+     "delta_db": 9.0,
+     "fps_before": 65.0,
+     "fps_after": 65.0,
+     "held_s": 343.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:35:41",
+     "offset_s": 286.0,
+     "delta_db": 6.0,
+     "fps_before": 63.5,
+     "fps_after": 66.0,
+     "held_s": 58.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:39:41",
+     "offset_s": 526.0,
+     "delta_db": -7.0,
+     "fps_before": 66.0,
+     "fps_after": 66.0,
+     "held_s": 277.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:02",
+     "offset_s": 87.0,
+     "delta_db": 9.0,
+     "fps_before": 55.5,
+     "fps_after": 59.0,
+     "held_s": 141.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    }
+   ]
+  },
+  "4dB/60s": {
+   "step_db": 4.0,
+   "hold_s": 60,
+   "in_recording_events": 3,
+   "boundaries_total": 9,
+   "boundaries_from_in_recording_events": 2,
+   "ambiguous_events": 1,
+   "s7_node1_step_is_boundary": false,
+   "s7_onset_offset_s": null,
+   "epochs_with_two_or_more_empty_segments": [
+    "E05",
+    "E09"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1
+    },
+    "E03": {
+     "two_people": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E06": {
+     "still": 1
+    },
+    "E07": {
+     "two_people": 1
+    },
+    "E08": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E09": {
+     "empty": 2
+    },
+    "E10": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 19:59:58",
+     "offset_s": 83.0,
+     "delta_db": 9.0,
+     "fps_before": 53.0,
+     "fps_after": 61.5,
+     "held_s": 145.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    }
+   ]
+  },
+  "6dB/10s": {
+   "step_db": 6.0,
+   "hold_s": 10,
+   "in_recording_events": 11,
+   "boundaries_total": 7,
+   "boundaries_from_in_recording_events": 1,
+   "ambiguous_events": 10,
+   "s7_node1_step_is_boundary": true,
+   "s7_onset_offset_s": 193.0,
+   "epochs_with_two_or_more_empty_segments": [
+    "E02",
+    "E07"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [
+    "E02"
+   ],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1,
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E03": {
+     "still": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E07": {
+     "empty": 2
+    },
+    "E08": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:34:14",
+     "offset_s": 199.0,
+     "delta_db": 9.0,
+     "fps_before": 65.0,
+     "fps_after": 65.5,
+     "held_s": 316.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:38:34",
+     "offset_s": 459.0,
+     "delta_db": 6.5,
+     "fps_before": 66.0,
+     "fps_after": 65.0,
+     "held_s": 53.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:39:45",
+     "offset_s": 530.0,
+     "delta_db": -6.5,
+     "fps_before": 66.0,
+     "fps_after": 66.0,
+     "held_s": 225.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-25 19:59:22",
+     "offset_s": 47.0,
+     "delta_db": null,
+     "fps_before": 54.0,
+     "fps_after": 16.0,
+     "held_s": null,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:07",
+     "offset_s": 92.0,
+     "delta_db": 7.5,
+     "fps_before": 56.0,
+     "fps_after": 60.0,
+     "held_s": 136.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s3__two_people__2026102",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-25 20:14:58",
+     "offset_s": 169.0,
+     "delta_db": null,
+     "fps_before": 57.0,
+     "fps_after": 38.5,
+     "held_s": null,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s1__still__20261027T193",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 19:36:44",
+     "offset_s": 34.0,
+     "delta_db": -7.0,
+     "fps_before": 65.5,
+     "fps_after": 66.0,
+     "held_s": 19.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s5__empty_fan__20261027",
+     "label": "empty_fan",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 19:40:41",
+     "offset_s": 138.0,
+     "delta_db": -7.0,
+     "fps_before": 65.0,
+     "fps_after": 59.5,
+     "held_s": 16.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "empty/fan recording but held only 16 s (< 60 s): excursion"
+    },
+    {
+     "recording": "s7__walking__20261027T1",
+     "label": "walking",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-27 19:48:51",
+     "offset_s": 194.0,
+     "delta_db": null,
+     "fps_before": 63.0,
+     "fps_after": 42.0,
+     "held_s": null,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:25:33",
+     "offset_s": 265.0,
+     "delta_db": -9.0,
+     "fps_before": 67.0,
+     "fps_after": 55.5,
+     "held_s": 12.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    }
+   ]
+  },
+  "6dB/30s": {
+   "step_db": 6.0,
+   "hold_s": 30,
+   "in_recording_events": 3,
+   "boundaries_total": 6,
+   "boundaries_from_in_recording_events": 0,
+   "ambiguous_events": 3,
+   "s7_node1_step_is_boundary": false,
+   "s7_onset_offset_s": null,
+   "epochs_with_two_or_more_empty_segments": [
+    "E02",
+    "E06"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [
+    "E02"
+   ],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1,
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E03": {
+     "still": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E06": {
+     "empty": 2
+    },
+    "E07": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:34:08",
+     "offset_s": 193.0,
+     "delta_db": 9.0,
+     "fps_before": 65.0,
+     "fps_after": 65.0,
+     "held_s": 322.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:39:42",
+     "offset_s": 527.0,
+     "delta_db": -7.0,
+     "fps_before": 66.0,
+     "fps_after": 66.0,
+     "held_s": 228.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:05",
+     "offset_s": 90.0,
+     "delta_db": 9.0,
+     "fps_before": 56.0,
+     "fps_after": 60.0,
+     "held_s": 138.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    }
+   ]
+  },
+  "6dB/60s": {
+   "step_db": 6.0,
+   "hold_s": 60,
+   "in_recording_events": 2,
+   "boundaries_total": 7,
+   "boundaries_from_in_recording_events": 1,
+   "ambiguous_events": 1,
+   "s7_node1_step_is_boundary": false,
+   "s7_onset_offset_s": null,
+   "epochs_with_two_or_more_empty_segments": [
+    "E03",
+    "E07"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [
+    "E03"
+   ],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1
+    },
+    "E03": {
+     "two_people": 1,
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E04": {
+     "still": 1
+    },
+    "E05": {
+     "two_people": 1
+    },
+    "E06": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E07": {
+     "empty": 2
+    },
+    "E08": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:02",
+     "offset_s": 87.0,
+     "delta_db": 9.0,
+     "fps_before": 55.5,
+     "fps_after": 62.0,
+     "held_s": 141.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    }
+   ]
+  },
+  "8dB/10s": {
+   "step_db": 8.0,
+   "hold_s": 10,
+   "in_recording_events": 6,
+   "boundaries_total": 7,
+   "boundaries_from_in_recording_events": 1,
+   "ambiguous_events": 5,
+   "s7_node1_step_is_boundary": true,
+   "s7_onset_offset_s": 194.0,
+   "epochs_with_two_or_more_empty_segments": [
+    "E02",
+    "E07"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [
+    "E02"
+   ],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1,
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E03": {
+     "still": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E07": {
+     "empty": 2
+    },
+    "E08": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:34:14",
+     "offset_s": 199.0,
+     "delta_db": 9.0,
+     "fps_before": 65.0,
+     "fps_after": 65.5,
+     "held_s": 70.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-25 19:59:22",
+     "offset_s": 47.0,
+     "delta_db": null,
+     "fps_before": 54.0,
+     "fps_after": 16.0,
+     "held_s": null,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s3__two_people__2026102",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-25 20:14:58",
+     "offset_s": 169.0,
+     "delta_db": null,
+     "fps_before": 57.0,
+     "fps_after": 38.5,
+     "held_s": null,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    },
+    {
+     "recording": "s7__walking__20261027T1",
+     "label": "walking",
+     "node": 1,
+     "kind": "rate_collapse",
+     "time_utc": "2026-10-27 19:48:51",
+     "offset_s": 194.0,
+     "delta_db": null,
+     "fps_before": 63.0,
+     "fps_after": 42.0,
+     "held_s": null,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s10__still__20261027T21",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-27 21:25:33",
+     "offset_s": 265.0,
+     "delta_db": -9.0,
+     "fps_before": 67.0,
+     "fps_after": 55.5,
+     "held_s": 12.0,
+     "persistent": null,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, last recording of its day: persistence cannot be confirmed"
+    }
+   ]
+  },
+  "8dB/30s": {
+   "step_db": 8.0,
+   "hold_s": 30,
+   "in_recording_events": 2,
+   "boundaries_total": 6,
+   "boundaries_from_in_recording_events": 0,
+   "ambiguous_events": 2,
+   "s7_node1_step_is_boundary": false,
+   "s7_onset_offset_s": null,
+   "epochs_with_two_or_more_empty_segments": [
+    "E02",
+    "E06"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [
+    "E02"
+   ],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1,
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E03": {
+     "still": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E06": {
+     "empty": 2
+    },
+    "E07": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s1__two_people__2026101",
+     "label": "two_people",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-18 17:34:12",
+     "offset_s": 197.0,
+     "delta_db": 9.0,
+     "fps_before": 65.0,
+     "fps_after": 65.0,
+     "held_s": 72.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    },
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:05",
+     "offset_s": 90.0,
+     "delta_db": 9.0,
+     "fps_before": 56.0,
+     "fps_after": 60.0,
+     "held_s": 138.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    }
+   ]
+  },
+  "8dB/60s": {
+   "step_db": 8.0,
+   "hold_s": 60,
+   "in_recording_events": 1,
+   "boundaries_total": 6,
+   "boundaries_from_in_recording_events": 0,
+   "ambiguous_events": 1,
+   "s7_node1_step_is_boundary": false,
+   "s7_onset_offset_s": null,
+   "epochs_with_two_or_more_empty_segments": [
+    "E02",
+    "E06"
+   ],
+   "epochs_with_two_empties_and_walking_or_still": [],
+   "epochs_with_two_empties_and_two_people": [
+    "E02"
+   ],
+   "segments_by_epoch": {
+    "E02": {
+     "two_people": 1,
+     "empty": 2,
+     "empty_fan": 1
+    },
+    "E03": {
+     "still": 1
+    },
+    "E04": {
+     "two_people": 1
+    },
+    "E05": {
+     "still": 1,
+     "empty_fan": 1,
+     "empty": 1,
+     "walking": 1
+    },
+    "E06": {
+     "empty": 2
+    },
+    "E07": {
+     "still": 1
+    }
+   },
+   "ambiguous": [
+    {
+     "recording": "s2__still__20261025T195",
+     "label": "still",
+     "node": 1,
+     "kind": "rssi_step",
+     "time_utc": "2026-10-25 20:00:02",
+     "offset_s": 87.0,
+     "delta_db": 9.0,
+     "fps_before": 55.5,
+     "fps_after": 62.0,
+     "held_s": 141.0,
+     "persistent": false,
+     "reversal": false,
+     "why_not_a_boundary": "occupied recording, not persistent: may be the person's own body"
+    }
+   ]
+  }
+ }
+}

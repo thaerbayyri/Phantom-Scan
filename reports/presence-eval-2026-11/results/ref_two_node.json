@@ -1,0 +1,289 @@
+{
+ "nodes": [
+  1,
+  2
+ ],
+ "note": "tier decision = NodeBaselineTracker x2 -> RoomPresence; legacy = fuseTwoNodeTarget energy gate; both read-only",
+ "rows": [
+  {
+   "protocol": "adjacent_same_evening",
+   "calib": "s6__empty",
+   "test": "s7__walking",
+   "label": "walking",
+   "seconds": 212.4,
+   "ticks": 4232,
+   "tierShare": {
+    "absent": 0.63,
+    "present_still": 0.1356,
+    "present_moving": 0.2162,
+    "active": 0.0182
+   },
+   "occupiedShare": 0.37,
+   "ttfdSecondsFromTestStart": 1.2,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.1257,
+   "maxMotionP50": 0.3617,
+   "maxMotionP99": 0.885
+  },
+  {
+   "protocol": "adjacent_same_evening",
+   "calib": "s6__empty",
+   "test": "s1__still__20261027",
+   "label": "still",
+   "seconds": 94.5,
+   "ticks": 1874,
+   "tierShare": {
+    "absent": 0.4392,
+    "present_still": 0.1366,
+    "present_moving": 0.3399,
+    "active": 0.0843
+   },
+   "occupiedShare": 0.5608,
+   "ttfdSecondsFromTestStart": 1.5,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.1014,
+   "maxMotionP50": 0.3882,
+   "maxMotionP99": 0.8206
+  },
+  {
+   "protocol": "adjacent_same_evening",
+   "calib": "s6__empty",
+   "test": "s5__empty_fan",
+   "label": "empty_fan",
+   "seconds": 201.7,
+   "ticks": 4018,
+   "tierShare": {
+    "absent": 0.9099,
+    "present_still": 0.0729,
+    "present_moving": 0.0172,
+    "active": 0
+   },
+   "occupiedShare": 0.0901,
+   "ttfdSecondsFromTestStart": 87.05,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.006,
+   "maxMotionP50": 0.3074,
+   "maxMotionP99": 0.5777
+  },
+  {
+   "protocol": "adjacent_same_evening",
+   "calib": "s6__empty",
+   "test": "s8__empty",
+   "label": "empty",
+   "seconds": 3208.9,
+   "ticks": 64163,
+   "tierShare": {
+    "absent": 0.9367,
+    "present_still": 0.0206,
+    "present_moving": 0.0287,
+    "active": 0.014
+   },
+   "occupiedShare": 0.0633,
+   "ttfdSecondsFromTestStart": 1.2,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.0109,
+   "maxMotionP50": 0.4064,
+   "maxMotionP99": 0.6034
+  },
+  {
+   "protocol": "adjacent_same_evening",
+   "calib": "s6__empty",
+   "test": "s9__empty",
+   "label": "empty",
+   "seconds": 722.9,
+   "ticks": 14443,
+   "tierShare": {
+    "absent": 0.462,
+    "present_still": 0.1209,
+    "present_moving": 0.4171,
+    "active": 0
+   },
+   "occupiedShare": 0.538,
+   "ttfdSecondsFromTestStart": 1.2,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.012,
+   "maxMotionP50": 0.4705,
+   "maxMotionP99": 0.6056
+  },
+  {
+   "protocol": "adjacent_same_evening",
+   "calib": "s9__empty",
+   "test": "s10__still",
+   "label": "still",
+   "seconds": 362.7,
+   "ticks": 7239,
+   "tierShare": {
+    "absent": 0.2006,
+    "present_still": 0.0163,
+    "present_moving": 0.4246,
+    "active": 0.3585
+   },
+   "occupiedShare": 0.7994,
+   "ttfdSecondsFromTestStart": 1.2,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.7867,
+   "maxMotionP50": 0.7514,
+   "maxMotionP99": 1
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s7__walking",
+   "label": "walking",
+   "seconds": 212.4,
+   "ticks": 4232,
+   "tierShare": {
+    "absent": 0.9887,
+    "present_still": 0.0113,
+    "present_moving": 0,
+    "active": 0
+   },
+   "occupiedShare": 0.0113,
+   "ttfdSecondsFromTestStart": 127.95,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.1257,
+   "maxMotionP50": 0.3617,
+   "maxMotionP99": 0.885
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s2__still",
+   "label": "still",
+   "seconds": 228,
+   "ticks": 4544,
+   "tierShare": {
+    "absent": 0.7819,
+    "present_still": 0.1596,
+    "present_moving": 0.0585,
+    "active": 0
+   },
+   "occupiedShare": 0.2181,
+   "ttfdSecondsFromTestStart": 3.75,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.4668,
+   "maxMotionP50": 0.5676,
+   "maxMotionP99": 1
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s1__still__20261027",
+   "label": "still",
+   "seconds": 94.5,
+   "ticks": 1874,
+   "tierShare": {
+    "absent": 1,
+    "present_still": 0,
+    "present_moving": 0,
+    "active": 0
+   },
+   "occupiedShare": 0,
+   "ttfdSecondsFromTestStart": null,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.1014,
+   "maxMotionP50": 0.3882,
+   "maxMotionP99": 0.8206
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s10__still",
+   "label": "still",
+   "seconds": 362.7,
+   "ticks": 7239,
+   "tierShare": {
+    "absent": 0.8087,
+    "present_still": 0.051,
+    "present_moving": 0.1276,
+    "active": 0.0127
+   },
+   "occupiedShare": 0.1913,
+   "ttfdSecondsFromTestStart": 1.35,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.7867,
+   "maxMotionP50": 0.7514,
+   "maxMotionP99": 1
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s5__empty_fan",
+   "label": "empty_fan",
+   "seconds": 201.7,
+   "ticks": 4018,
+   "tierShare": {
+    "absent": 1,
+    "present_still": 0,
+    "present_moving": 0,
+    "active": 0
+   },
+   "occupiedShare": 0,
+   "ttfdSecondsFromTestStart": null,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.006,
+   "maxMotionP50": 0.3074,
+   "maxMotionP99": 0.5777
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s6__empty",
+   "label": "empty",
+   "seconds": 153.3,
+   "ticks": 3051,
+   "tierShare": {
+    "absent": 1,
+    "present_still": 0,
+    "present_moving": 0,
+    "active": 0
+   },
+   "occupiedShare": 0,
+   "ttfdSecondsFromTestStart": null,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0,
+   "maxMotionP50": 0.2967,
+   "maxMotionP99": 0.4344
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s8__empty",
+   "label": "empty",
+   "seconds": 3208.9,
+   "ticks": 64163,
+   "tierShare": {
+    "absent": 0.9926,
+    "present_still": 0.0074,
+    "present_moving": 0,
+    "active": 0
+   },
+   "occupiedShare": 0.0074,
+   "ttfdSecondsFromTestStart": 560.2,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.0109,
+   "maxMotionP50": 0.4064,
+   "maxMotionP99": 0.6034
+  },
+  {
+   "protocol": "cross_session_from_18Oct_empty",
+   "calib": "s1__empty__20261018T180250Z",
+   "test": "s9__empty",
+   "label": "empty",
+   "seconds": 722.9,
+   "ticks": 14443,
+   "tierShare": {
+    "absent": 0.9973,
+    "present_still": 0.0027,
+    "present_moving": 0,
+    "active": 0
+   },
+   "occupiedShare": 0.0027,
+   "ttfdSecondsFromTestStart": 257.95,
+   "legacyGateThreshold": 0.6,
+   "legacyTargetShare": 0.012,
+   "maxMotionP50": 0.4705,
+   "maxMotionP99": 0.6056
+  }
+ ]
+}

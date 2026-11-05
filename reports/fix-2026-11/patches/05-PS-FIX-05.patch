@@ -1,0 +1,416 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\.agents\\AGENTS.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\.agents\\AGENTS.md"
+index 60b6103..1d3f49f 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\.agents\\AGENTS.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\.agents\\AGENTS.md"	
+@@ -4,7 +4,7 @@ This file serves as the persistent memory of the **Phantom Scan** project, provi
+ 
+ ## 1. Project Mission & Capabilities
+ Phantom Scan is a camera-free human sensing grid utilizing ambient Wi-Fi Channel State Information (CSI) (2.4GHz / 5GHz).
+-- **Through-Wall Human Tracking**: Uses Exponential Moving Average (EMA) background subtraction and 3D Kalman filter tracking.
++- **Through-Wall Human Tracking** (design goal; through-wall performance is [TO BE MEASURED]): Uses Exponential Moving Average (EMA) background subtraction and 3D Kalman filter tracking.
+ - **Vital Signs Estimation**: Butterworth filtering, DFT, and phase unwrapping for breathing rate (RPM) and heart rate (BPM) tracking.
+ - **Directional Mapping (AoA)**: MUSIC (Multiple Signal Classification) algorithm using spatial covariance and eigenvalue decomposition.
+ - **Distance Ranging**: Power Delay Profile (PDP) via IFFT combined with RSSI log-distance model.
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\DETECTION_REPORT.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\DETECTION_REPORT.md"
+index 2058f73..3a4ec3e 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\DETECTION_REPORT.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\DETECTION_REPORT.md"	
+@@ -29,7 +29,7 @@ A valid detection trial requires all of the following:
+ | Live CSI Hz, node 1 | [TO BE MEASURED] | No packet arrived on UDP `5005`; no source pinning for node 1. |
+ | Live CSI Hz, node 2 | [TO BE MEASURED] | No packet arrived on UDP `5005`; no source pinning for node 2. |
+ | Fused two-node mode | [TO BE MEASURED] | Requires both nodes fresh and temporally aligned. |
+-| Midpoint localization | [TO BE MEASURED] | Requires two live nodes on the centered 3 m baseline (`N1=(-1.5,0)`, `N2=(+1.5,0)`; see `shared/schema.ts`). |
++| Midpoint localization | [TO BE MEASURED] | Requires two live nodes on the original centered 3 m baseline (`N1=(-1.5,0)`, `N2=(+1.5,0)`); NOTE the committed geometry is now 4 m (`config/room.json`, `shared/schema.ts` `DEFAULT_NODE_ANCHORS`) — use the distance actually measured. |
+ | Drywall detection rate | [TO BE MEASURED] | Requires repeated live target-present and target-absent trials. |
+ | Empty-room false positive rate | [TO BE MEASURED] | Requires matched negative-control trials. |
+ | Fan/curtain rejection | [TO BE MEASURED] | Required stop-condition control was not run. |
+@@ -69,7 +69,7 @@ No live trials were executed, so the confusion matrix is not populated.
+ 3. Confirm node 1 on COM5 source-pins and emits CSI for 60 seconds.
+ 4. Confirm node 2 on COM6 source-pins independently and fused mode activates only when both nodes are fresh.
+ 5. Record per-node CSI Hz from JSONL `csi_frame` counts.
+-6. Run midpoint sanity on the centered 3 m baseline (`x = 0 m` midpoint; see `shared/schema.ts`).
++6. Run midpoint sanity on the centered 3 m baseline of the original rig (`x = 0 m` midpoint; the committed geometry is now 4 m, `config/room.json` — use the measured distance).
+ 7. Only then run target-present, empty-room, and fan/curtain trials with session JSONL references.
+ 
+ ## Honesty Statement
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\JODDB_PHASE2_TECHNICAL_PROPOSAL.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\JODDB_PHASE2_TECHNICAL_PROPOSAL.md"
+index 66f0f91..06bb5bd 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\JODDB_PHASE2_TECHNICAL_PROPOSAL.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\JODDB_PHASE2_TECHNICAL_PROPOSAL.md"	
+@@ -2,6 +2,8 @@
+ 
+ **Multi-Node, Through-Wall Wi-Fi CSI Human Presence, Movement & Localization Sensing**
+ 
++> **Status note (2026-11):** through-wall operation, localization accuracy, range, detection rates, pose and vital-sign error are design goals, [TO BE MEASURED]; none has been validated on our hardware (see `reports/presence-eval-2026-11/00-summary.md`). The two-node, one-antenna rig has no pose or spatial-angle capability.
++
+ Prepared for: JODDB (Jordan Design & Development Bureau) technical review
+ Prepared by: Phantom Scan project team
+ Status of figures in this document: current-system facts are drawn directly from the
+@@ -54,10 +56,10 @@ existing invariant tests support.
+ 
+ | Property | Current reality | Source |
+ |---|---|---|
+-| Node count | **Exactly 2** ESP32-S3 boards, fixed 3 m baseline, `N1=(-1.5,0)`, `N2=(+1.5,0)` | `shared/schema.ts` `NODE_ANCHORS`, README |
++| Node count | **Exactly 2** ESP32-S3 boards, 4 m N1–N2 baseline in the committed geometry (`N1=(-2,-3)`, `N2=(+2,-3)`; the original July two-node rig used 3 m, `(-1.5,0)`/`(+1.5,0)`) | `config/room.json`, `shared/schema.ts` `DEFAULT_NODE_ANCHORS`, README |
+ | Antennas | **1 receive antenna per node** — no antenna array | `PhantomScan_HardwareReality_Alignment_Report.md`, CNN-LSTM research doc |
+-| CSI acquisition mode | Node **associates to a Wi-Fi AP as a normal STA client** and self-pings it (~50 Hz ICMP) to keep a steady CSI packet rate | `firmware/esp32-csi-node/main/main.c` (`esp_wifi_set_mode(WIFI_MODE_STA)`, `esp_wifi_connect()`) |
+-| Effective CSI rate | ~41–43 packets/sec/node measured (50 Hz firmware cap, not guaranteed) | README wire-protocol table |
++| CSI acquisition mode | Node **associates to a Wi-Fi AP as a normal STA client** and self-pings it (ICMP every 30 ms in the committed firmware) to keep a steady CSI packet rate | `firmware/esp32-csi-node/main/main.c` (`esp_wifi_set_mode(WIFI_MODE_STA)`, `esp_wifi_connect()`) |
++| Effective CSI rate | 64–67 frames/s per well-linked node measured 2026-10-27 (10 ms send gate; the older ~41–43 figure is pre-2026-10-18 firmware; not guaranteed) | README wire-protocol table |
+ | Subcarriers | 64 per packet, amplitude (+ raw phase, not yet SFO/PDD-sanitized for use) | README, ADR-058 |
+ | Localization | **1-D only** — target is placed along the N1–N2 axis using a cross-node motion-energy ratio (`balance = r2^p/(r1^p+r2^p)`); there is **no true 2-D position** and no spatial angle-of-arrival (single antenna per node makes AoA physically impossible) | README §Phantom Balance Fusion, `server/lib/node-fusion.ts` |
+ | Multi-target tracking | **Not implemented.** No multi-target data structures, IDs, or count logic exist anywhere in `server/`, `client/`, or `shared/` | verified by direct code search, this session |
+@@ -206,7 +208,7 @@ project lead's direction.
+ **Current reality**: `firmware/esp32-csi-node/main/main.c` puts the ESP32-S3 in
+ `WIFI_MODE_STA` and calls `esp_wifi_connect()` — the node must have valid credentials
+ for, and actively join, a Wi-Fi network before it can receive any CSI at all. It then
+-self-pings that network's gateway at ~50 Hz specifically to guarantee the steady
++self-pings that network's gateway (every 30 ms in the committed firmware) specifically to guarantee the steady
+ packet rate the DSP pipeline is tuned for.
+ 
+ **Proposed R&D path**:
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\MEASUREMENT_PLAN.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\MEASUREMENT_PLAN.md"
+index 951c8be..aada080 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\MEASUREMENT_PLAN.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\MEASUREMENT_PLAN.md"	
+@@ -28,7 +28,7 @@ Coordinate convention (single source of truth: `NODE_ANCHORS` in `shared/schema.
+ node 1 at `[-1.5, 0]`, node 2 at `[+1.5, 0]` — 3 m separation, origin at the center
+ (midpoint), matching the radar render and the dashboard fusion path.
+ 
+-1. Place node 1 at `[-1.5, 0]` and node 2 at `[+1.5, 0]` (3 m apart, centered).
++1. Place node 1 at `[-1.5, 0]` and node 2 at `[+1.5, 0]` (3 m apart, centered — original rig; the committed geometry is now 4 m, `config/room.json`; use the measured distance).
+ 2. Place the target at the midpoint.
+ 3. Run the dashboard fusion path (`fused_two_node`) with both nodes fresh.
+ 4. Record fused `balance`, `x`, and node mode.
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\Phantom-Scan-Final-Project-Report-4Node.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\Phantom-Scan-Final-Project-Report-4Node.md"
+index 5c6103a..be0bf2f 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\Phantom-Scan-Final-Project-Report-4Node.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\Phantom-Scan-Final-Project-Report-4Node.md"	
+@@ -336,7 +336,7 @@ This chapter specifies what Phantom Scan must do and under what quality conditio
+ | ID | Functional Requirement | Implemented By |
+ |---|---|---|
+ | FR1 | Each of up to four nodes shall capture Wi-Fi CSI and stream binary frames (32-byte versioned header, sequence number, RSSI, device timestamps, raw I/Q payload) over UDP to the host [16]. | `csi_collector.c`, `stream_sender.c` |
+-| FR2 | Each node shall self-generate channel traffic (~50 Hz gateway ping) independently of any other node, and shall rate-limit its own transmission to 50 Hz. | `csi_collector.c` |
++| FR2 | Each node shall self-generate channel traffic (~50 Hz gateway ping) independently of any other node, and shall rate-limit its own transmission (current firmware: 10 ms send gate). | `csi_collector.c` |
+ | FR3 | The host shall be the sole owner of UDP port 5005 for all live nodes simultaneously, and shall parse/validate CSI frames, heartbeats, and firmware feature-state packets from any of up to four node identities. | `server/lib/udp-server.ts` |
+ | FR4 | The host shall independently pin each of up to four node identities to its first-seen source address and reject frames for a known node arriving from a foreign source, with rate-limited security logging. | `SourcePinningGuard` (`udp-server.ts`) |
+ | FR5 | The host shall compute a per-node motion metric — gain-normalized, per-subcarrier temporal standard deviation of CSI amplitude — independently for however many nodes (1–4) are currently live. | `node-fusion.ts`, `websocket.ts` |
+@@ -642,7 +642,7 @@ The `PhantomScan_4Node_FusedRoom_Test_Report.md` verification pass is the strong
+ | Metric | Status | Evidence / Blocking Condition |
+ |---|---|---|
+ | Software correctness (parsers, 2-node and N-node fusion math, Kalman filter, state machine) | **MEASURED PASS** | 256 TS + 91 Python tests green [19]. |
+-| Two-node live ingest rate and RSSI envelope | MEASURED (two-node rig) | ~40 pkt/s aggregate, RSSI −23 to −38 dBm, yield 41–43 pps/node [19]. |
++| Two-node live ingest rate and RSSI envelope | MEASURED (two-node rig) | ~40 pkt/s aggregate, RSSI −23 to −38 dBm, yield 41–43 pps/node, pre-2026-10-18 firmware; current recordings 64–67 frames/s per node [19]. |
+ | Four-node room-mode fusion math correctness | **MEASURED PASS (static/code-level)** | Independent verification pass confirmed generic correctness; no live hardware exercised in that session [this report, §7.3.2]. |
+ | Four-node empty-room false-positive rate | **[TO BE MEASURED — currently unresolved, actively investigated]** | Existing recordings are motion-metric-saturated (censored) on ~half of all ticks; cannot honestly support re-deriving the threshold yet; `raw_perturbation_n1..n4` added to unblock diagnosis. |
+ | Four-node room-centroid localization error vs. ground truth | **[TO BE MEASURED]** | Ready-to-run 9-point ground-truth walk procedure specified in the verification report; not yet executed against live hardware. |
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\README.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\README.md"
+index 46c1fdc..791e74e 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\README.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\README.md"	
+@@ -3,7 +3,7 @@
+ </p>
+ 
+ <h1 align="center">Phantom Scan</h1>
+-<p align="center"><strong>Through-wall human presence sensing from $7 ESP32-S3 radios — no cameras, no wearables.</strong></p>
++<p align="center"><strong>Through-wall human presence sensing from $7 ESP32-S3 radios — no cameras, no wearables.</strong><br/><sub>Through-wall performance, range and detection rates are design goals, [TO BE MEASURED]; see <code>reports/presence-eval-2026-11/00-summary.md</code>.</sub></p>
+ 
+ <p align="center">
+   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-18%2B-green.svg" alt="Node.js 18+"></a>
+@@ -94,7 +94,7 @@ python -m esptool --chip esp32s3 --port COM6 --baud 460800 \
+ python esp-flash.py --port COM7 --ssid "YourSSID" --password "YourPass" --target-ip 192.168.1.155
+ ```
+ 
+-All nodes join the same Wi-Fi AP and self-ping their gateway at ~50 Hz to keep the CSI engine fed (this is a per-node RF stimulus trick, **not** inter-node coordination — nodes never talk to each other). Every node needs a distinct `node_id` (1–4) provisioned via `esp-flash.py`; the host maps that ID straight to a fixed room-corner anchor (see [Phantom Balance Fusion](#phantom-balance-fusion)).
++All nodes join the same Wi-Fi AP and self-ping their gateway (every 30 ms in the committed firmware, `csi_ping_pure.h`; ~50 Hz before 2026-10-18) to keep the CSI engine fed (this is a per-node RF stimulus trick, **not** inter-node coordination — nodes never talk to each other). Every node needs a distinct `node_id` (1–4) provisioned via `esp-flash.py`; the host maps that ID straight to a fixed room-corner anchor (see [Phantom Balance Fusion](#phantom-balance-fusion)).
+ 
+ See [firmware/esp32-csi-node/README.md](firmware/esp32-csi-node/README.md) for the full firmware architecture and Windows/Ubuntu setup notes in [docs/WINDOWS_ESP32_SETUP.md](docs/WINDOWS_ESP32_SETUP.md) / [docs/UBUNTU_ESP32_SETUP.md](docs/UBUNTU_ESP32_SETUP.md).
+ 
+@@ -153,7 +153,7 @@ Recorded session (CSV / JSONL) -> parser -> runtime semantics -> deterministic D
+ 
+ | Layer | Responsibility | Key files |
+ |---|---|---|
+-| **A — Firmware capture** | Capture CSI on-device, timestamp, self-ping the gateway (ICMP @ ~50 Hz) so the CSI engine doesn't starve on a quiet network, stream UDP frames | `firmware/esp32-csi-node/main/{main.c, csi_collector.c, stream_sender.c, nvs_config.c}` |
++| **A — Firmware capture** | Capture CSI on-device, timestamp, self-ping the gateway (ICMP every 30 ms) so the CSI engine doesn't starve on a quiet network, stream UDP frames | `firmware/esp32-csi-node/main/{main.c, csi_collector.c, stream_sender.c, nvs_config.c}` |
+ | **B — Host ingest** | Receive UDP, validate schema/version, preserve device + host timestamps, detect loss/reorder, maintain per-node state (up to 4), write session CSV + index | `server/lib/{udp-server.ts, websocket.ts, session-store.ts}`, `shared/schema.ts`; Python: `phantom/{protocol,ingest,recording,runtime}.py` |
+ | **C — Deterministic DSP** | Amplitude extraction, phase unwrap, static-clutter suppression, Hampel filter, respiration-band filtering, motion energy, cross-node correlation | `phantom/dsp.py`, `scripts/csi_filter_pipeline.py` |
+ | **D — Node fusion + smoothing** | Per-node motion energy → 1-D or 2-D fused position (`node-fusion.ts`) → 2-D Kalman smoothing of the fused track (`fused-position-kalman.ts`) | `server/lib/{node-fusion.ts, fused-position-kalman.ts}` |
+@@ -215,7 +215,7 @@ All packets travel over UDP to the host on `:5005`. A 4-byte little-endian magic
+ 
+ | Magic | Frame | Rate | Notes |
+ |---|---|---|---|
+-| `0xC5110001` | CSI frame | ~41-43 pps/node measured (50 Hz firmware send-rate cap, not a guaranteed rate — see `csi_collector.c` `CSI_MIN_SEND_INTERVAL_US`) | 32-byte header (ADR-018); legacy 20-byte header accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
++| `0xC5110001` | CSI frame | 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings (45-60 on weaker links; bursty; host receive time — see `reports/presence-eval-2026-11/01-data-inventory.md`). Committed send gate: 10 ms (`CSI_MIN_SEND_INTERVAL_MS`); the older ~41-43 pps / 50 Hz-cap figure is from firmware before 2026-10-18 | 32-byte header (ADR-018); legacy 20-byte header accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
+ | `0xC5110002` | Vitals | 1 Hz/node | Board-side presence/motion/vitals, shown alongside — never fused into — the host-DSP target math |
+ | `0xC5110004` | WASM module output | event-driven | Output from optional programmable sensing modules |
+ | `0xC5110006` | Feature-state | 1 Hz/node | Board-computed motion/presence/respiration/heart-rate metrics for the **Board DSP** card |
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md"
+index cec61a4..9dbfac5 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md"	
+@@ -6,7 +6,9 @@
+ **Document Classification:** Preliminary — Controlled Distribution  
+ **Revision:** 1.0 — DRAFT  
+ **Date:** 18 April 2026  
+-**Prepared by:** Systems Architecture Division, Project Phantom Scan  
++**Prepared by:** Systems Architecture Division, Project Phantom Scan
++
++> **Status note (2026-11):** through-wall operation, airborne sensing, localization accuracy, range, detection rates, pose and vital-sign error in this draft are design goals, [TO BE MEASURED]; none has been validated on our hardware (see `reports/presence-eval-2026-11/00-summary.md`). The two-node, one-antenna rig has no pose or spatial-angle capability.  
+ 
+ ---
+ 
+@@ -54,7 +56,7 @@ The platform is designed to operate from both **fixed infrastructure** (wall/cei
+ | Differentiator | Phantom Scan | Camera / LIDAR / Thermal |
+ |---|---|---|
+ | **PII Capture** | Zero — RF reflection only | Face, body, clothing, skin tone |
+-| **Through-Wall** | ✅ Up to 8 m through drywall/concrete | ❌ Line-of-sight only |
++| **Through-Wall** | [TO BE MEASURED] (design goal; not validated) | ❌ Line-of-sight only |
+ | **Illumination** | Independent (works in total darkness) | Requires illumination or active emission |
+ | **GDPR/CCPA Risk** | Minimal — no biometric classification | High — biometric data by default |
+ | **Per-Node Cost** | ~$28 USD | $500–$5,000+ per sensor |
+@@ -185,7 +187,7 @@ For 3D spatial resolution, 3–6 ESP32-S3 nodes are deployed per monitored area.
+ |---|---|
+ | Nodes per area | 3–6 (minimum 3 for 3D triangulation) |
+ | Synchronisation | NTP-aligned timestamps (± 2 ms inter-node skew) |
+-| Spatial jitter | < 30 mm RMS after Kalman fusion |
++| Spatial jitter | < 30 mm RMS after Kalman fusion (target, [TO BE MEASURED]; pose is not supported by the two-node rig) |
+ | Coverage volume | Up to 8 m × 8 m × 3 m per area |
+ | GDOP Factor | 1.2–1.8 (corner + ceiling placement) |
+ 
+@@ -427,7 +429,7 @@ Raw CSI (I/Q)
+ | **Measurement noise R** | 0.15 m² |
+ | **Update rate** | 20 Hz |
+ | **Coasting** | Up to 5 missed frames (250 ms) before track loss |
+-| **Validation** | Trajectory RMS jitter < 30 mm; velocity estimation within ± 0.1 m/s |
++| **Validation** | Trajectory RMS jitter < 30 mm; velocity estimation within ± 0.1 m/s (targets, [TO BE MEASURED]) |
+ 
+ ### 4.3 On-Device Edge Processing (Firmware DSP)
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md"
+index 6f66c0e..85b4afc 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md"	
+@@ -5,7 +5,9 @@
+ **Document Classification:** Internal Engineering Reference  
+ **Revision:** 2.0  
+ **Date:** 2026-03-26  
+-**Authors:** Systems Architecture Division  
++**Authors:** Systems Architecture Division
++
++> **Status note (2026-11):** the figures in this document (jitter, accuracy, range, vital-sign error, pose) are design targets, [TO BE MEASURED]; none has been validated on our hardware. The two-node, one-antenna rig has no pose or spatial-angle capability.  
+ 
+ ---
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\WIFI_DENSEPOSE_INTEGRATION.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\WIFI_DENSEPOSE_INTEGRATION.md"
+index 93762d8..673e8f7 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\WIFI_DENSEPOSE_INTEGRATION.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\WIFI_DENSEPOSE_INTEGRATION.md"	
+@@ -14,7 +14,7 @@ Traditional **DensePose** (developed by Facebook AI Research) is an algorithm th
+ 
+ **Why it matters:**
+ *   **Privacy-First:** It completely eliminates cameras, capturing no facial data, skin tone, or clothing details.
+-*   **Non-Line-of-Sight (NLOS):** 2.4GHz and 5GHz Wi-Fi waves easily penetrate drywall, wooden doors, and concrete blocks, allowing the system to literally "see" human postures through walls.
++*   **Non-Line-of-Sight (NLOS):** 2.4GHz and 5GHz Wi-Fi waves easily penetrate drywall, wooden doors, and concrete blocks, which is the basis of the through-wall idea. (Upstream claim: Phantom Scan has not demonstrated through-wall operation, its through-wall performance is [TO BE MEASURED], and the two-node rig cannot recover postures.)
+ *   **Illumination Independent:** It works flawlessly in pitch-black conditions or absolute darkness.
+ 
+ ---
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\presentations\\JODDB-Sponsorship-Pitch-Script.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\presentations\\JODDB-Sponsorship-Pitch-Script.md"
+index 2d9c451..efa13d9 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\presentations\\JODDB-Sponsorship-Pitch-Script.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\presentations\\JODDB-Sponsorship-Pitch-Script.md"	
+@@ -58,7 +58,7 @@ Pick one language track and stay consistent within a section — switching mid-s
+ 
+ ## 1. Opening & Greeting (0:00–0:45)
+ 
+-**Slide:** Title — "Phantom Scan: Through-Wall Human Presence Sensing from Two $7 Radios" + your name/team.
++**Slide:** Title — "Phantom Scan: Through-Wall Human Presence Sensing from Two $7 Radios" + your name/team. **(Presenter note: through-wall performance is not yet measured; present it as a goal, not a result.)**
+ 
+ **EN:**
+ > Good [morning/afternoon], and thank you for the time. My name is [YOUR NAME], from [TEAM/SUPERVISOR'S LAB]. Today I want to show you something we built that turns ordinary Wi-Fi hardware — the same radios already inside routers and laptops — into a device that can sense a person moving in a room, through a wall, without a camera and without anything worn on the body. I'll explain how it works, show you it running live, and tell you exactly what it can and can't do today — and where [FUNDING AMOUNT] of support would take it next.
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\system_architecture_methodology.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\system_architecture_methodology.md"
+index a96286c..9b11288 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\docs\\system_architecture_methodology.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\docs\\system_architecture_methodology.md"	
+@@ -99,6 +99,6 @@ Phantom Scan is built on "Privacy by Design" principles:
+ 
+ ## 5. Summary of Technical Specs
+ - **Frequency**: 2.4GHz / 5GHz (Device dependent).
+-- **Sample Rate**: ~41-43 pps/node measured (50 Hz firmware send-rate cap; see README.md wire-protocol table).
++- **Sample Rate**: 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings (10 ms firmware send gate; the earlier ~41-43 pps / 50 Hz-cap figure predates the 2026-10-18 firmware change; see README.md wire-protocol table).
+ - **Angular Resolution**: ~5° with 2-antenna array.
+ - **Ranging Precision**: ±15cm (Indoor Environment).
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\firmware\\esp32-csi-node\\README.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\firmware\\esp32-csi-node\\README.md"
+index 2d9e54f..54d76d9 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\firmware\\esp32-csi-node\\README.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\firmware\\esp32-csi-node\\README.md"	
+@@ -12,7 +12,7 @@ This firmware captures WiFi Channel State Information (CSI) from an ESP32-S3 and
+ 
+ > | Capability | Method | Performance |
+ > |------------|--------|-------------|
+-> | **CSI streaming** | Per-subcarrier I/Q capture over UDP | ~41-43 pps measured (50 Hz send-rate cap), ADR-018 binary format |
++> | **CSI streaming** | Per-subcarrier I/Q capture over UDP | 64-67 frames/s per node measured 2026-10-27 (10 ms send gate; the older ~41-43 pps figure is pre-2026-10-18 firmware), ADR-018 binary format |
+ > | **Breathing detection** | Bandpass 0.1-0.5 Hz, zero-crossing BPM | 6-30 BPM |
+ > | **Heart rate** | Bandpass 0.8-2.0 Hz, zero-crossing BPM | 40-120 BPM |
+ > | **Presence sensing** | Phase variance + adaptive calibration | < 1 ms latency |
+@@ -84,7 +84,7 @@ curl http://<ESP32_IP>:8032/wasm/list
+ | **Recommended boards** | ESP32-S3-DevKitC-1, XIAO ESP32-S3 | Any ESP32-S3 with 8 MB flash works |
+ | **Deployment** | 3-6 nodes per room | Multistatic mesh for 360-degree coverage |
+ 
+-> **Tip:** A single node provides presence and vital signs along its line of sight. Multiple nodes (3-6) create a multistatic mesh that resolves 3D pose with <30 mm jitter and zero identity swaps.
++> **Tip:** A single node provides presence and vital signs along its line of sight. Multiple nodes (3-6) create a multistatic mesh; upstream RuView claims this resolves 3D pose with <30 mm jitter, which is **not** a Phantom Scan capability and is not measured here [TO BE MEASURED].
+ 
+ ---
+ 
+@@ -112,7 +112,7 @@ The firmware implements a tiered processing pipeline. Each tier builds on the pr
+ The default, production-stable baseline. Captures CSI frames from the WiFi driver and streams them over UDP in the ADR-018 binary format.
+ 
+ - **Magic:** `0xC5110001`
+-- **Rate:** ~41-43 pps measured per node (50 Hz firmware send-rate cap, not a guaranteed rate)
++- **Rate:** 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings, 45-60 on weaker links (10 ms send gate since 2026-10-18; the older ~41-43 pps / 50 Hz-cap figure is pre-fix; host receive time, bursty)
+ - **Payload:** 20-byte header + I/Q pairs (2 bytes per subcarrier per antenna)
+ - **Bandwidth:** ~5 KB/s per node (64 subcarriers, 1 antenna)
+ 
+@@ -150,7 +150,7 @@ All packets are sent over UDP to the configured aggregator. The magic number in
+ 
+ | Magic | Name | Rate | Size | Contents |
+ |-------|------|------|------|----------|
+-| `0xC5110001` | CSI Frame (ADR-018) | ~41-43 pps measured (50 Hz cap) | Variable | Raw I/Q per subcarrier per antenna |
++| `0xC5110001` | CSI Frame (ADR-018) | 64-67 frames/s measured (10 ms send gate) | Variable | Raw I/Q per subcarrier per antenna |
+ | `0xC5110002` | Vitals Packet | 1 Hz | 32 bytes | Presence, breathing BPM, heart rate, fall flag, occupancy |
+ | `0xC5110004` | WASM Output | Event-driven | Variable | Custom events from WASM modules (u8 type + f32 value) |
+ | `0xC5110006` | Feature State (RuView lineage) | 1 Hz | ≥56 bytes | Board-DSP motion, presence, respiration BPM+conf, heart BPM+conf — parsed by the dashboard into the "Board DSP" card |
+@@ -379,7 +379,7 @@ Tier 3 turns the ESP32 from a fixed-function sensor into a programmable sensing
+ - **Compiled from Rust** using the `wasm32-unknown-unknown` target
+ - **Packaged in signed RVF containers** with Ed25519 signatures
+ - **Uploaded over HTTP** to the running device (no physical access needed)
+-- **Executed per-frame** (~41-43 Hz measured, 50 Hz cap) by the WASM3 interpreter after Tier 2 DSP completes
++- **Executed per-frame** (64-67 Hz measured, 10 ms send gate) by the WASM3 interpreter after Tier 2 DSP completes
+ 
+ ### RVF (RuVector Format)
+ 
+@@ -426,7 +426,7 @@ Every WASM module must export these three functions:
+ | Export | Called | Purpose |
+ |--------|--------|---------|
+ | `on_init()` | Once, when started | Allocate state, initialize algorithms |
+-| `on_frame(n_subcarriers: i32)` | Per CSI frame (~41-43 Hz measured, 50 Hz cap) | Process sensor data, emit events |
++| `on_frame(n_subcarriers: i32)` | Per CSI frame (64-67 Hz measured, 10 ms send gate) | Process sensor data, emit events |
+ | `on_timer()` | At configurable interval (default 1 s) | Periodic housekeeping, aggregated output |
+ 
+ ### HTTP Management Endpoints
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\generated_reports\\Appendix.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\generated_reports\\Appendix.md"
+index e6876ea..4a28ea8 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\generated_reports\\Appendix.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\generated_reports\\Appendix.md"	
+@@ -30,7 +30,7 @@
+ | File | Description |
+ |---|---|
+ | `CMakeLists.txt` | ESP-IDF component build definition listing the firmware source files and dependencies. |
+-| `csi_collector.c` | Core CSI capture: enables promiscuous WiFi mode, registers the CSI callback, runs the ~50 Hz gateway self-ping that keeps CSI flowing on quiet networks, serializes each measurement into the ADR-018 32-byte binary frame (magic 0xC5110001), and rate-limits transmission to 50 Hz. |
++| `csi_collector.c` | Core CSI capture: enables promiscuous WiFi mode, registers the CSI callback, runs the gateway self-ping (30 ms interval in the committed firmware; ~50 Hz before 2026-10-18) that keeps CSI flowing on quiet networks, serializes each measurement into the ADR-018 32-byte binary frame (magic 0xC5110001), and rate-limits transmission to 50 Hz. |
+ | `csi_collector.h` | Public interface and frame-format constants for the CSI collector. |
+ | `display_hal.c` | Hardware abstraction for the optional on-board display panel (SPI init, backlight, flush callbacks). |
+ | `display_hal.h` | Display HAL interface definitions. |
+@@ -212,7 +212,7 @@ The following screenshots document the live operator dashboard during a real two
+ | DHCP address in verified session | 192.168.1.133 | 192.168.1.238 |
+ | Network | operator 2.4 GHz WLAN (SSID redacted) | operator 2.4 GHz WLAN (SSID redacted) |
+ | Stream target | laptop-IP:5005 (UDP) | laptop-IP:5005 (UDP) |
+-| Firmware send rate | 50 Hz cap, ~41-43 pkt/s observed | 50 Hz cap, ~41-43 pkt/s observed |
++| Firmware send rate | 10 ms send gate since 2026-10-18; 64-67 frames/s measured 2026-10-27 (this run: ~41-43 pkt/s, pre-fix firmware) | same |
+ 
+ **G.3 Deployment geometry**
+ 
+@@ -249,7 +249,7 @@ The two nodes are placed 3 m apart at similar height with clear line to the moni
+ **H.3 Live hardware session (July 8, 2026)**
+ 
+ - Two ESP32-S3 boards streaming simultaneously: ~200 packets per 5 s interval (~40 pkt/s aggregate) into the live ingest.
+-- RSSI envelope -23 to -38 dBm; firmware-reported yield 41-43 pkt/s per node (preflight minimum: 20 pkt/s per node).
++- RSSI envelope -23 to -38 dBm; firmware-reported yield 41-43 pkt/s per node (this two-node session, before the 2026-10-18 firmware change; preflight minimum: 20 pkt/s per node).
+ - Node identity confirmed cached before WiFi start on both boards.
+ - **Spoofing drill:** ~640 packets claiming both node identities injected from a foreign source - all rejected by the source-pinning guard with four rate-limited security log entries; real streams unaffected.
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\generated_reports\\Section-1.2-WiFi-Frequency-vs-CSI.md" "b/D:\\WIFI csi\\phanotm\\phantom scan\\generated_reports\\Section-1.2-WiFi-Frequency-vs-CSI.md"
+index 1126aa7..08f5dba 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\generated_reports\\Section-1.2-WiFi-Frequency-vs-CSI.md"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\generated_reports\\Section-1.2-WiFi-Frequency-vs-CSI.md"	
+@@ -91,7 +91,7 @@ and is unstable frame-to-frame, whereas the amplitude is robust [1], [12].
+ |---|---|---|
+ | What it is | Position of the channel in the radio spectrum (e.g. 2437 MHz for channel 6) | Per-subcarrier estimate of how the environment transformed the received signal |
+ | Form | One fixed number per channel | Vector of complex values (amplitude + phase), one per subcarrier, up to 64 in this project |
+-| Refresh rate | Static (changes only if the network changes channel) | Every received frame (up to 50 Hz per node in this project) |
++| Refresh rate | Static (changes only if the network changes channel) | Every received frame (64-67 frames/s per well-linked node measured 2026-10-27; see `reports/presence-eval-2026-11/01-data-inventory.md`) |
+ | Affected by a moving human? | No | Yes — reflections off the body reshape the per-subcarrier amplitudes |
+ | Role in Phantom Scan | Operating band of the two nodes (2.4 GHz) | The sensing signal: temporal std of per-subcarrier amplitudes over 1.5 s drives motion detection and two-node balance localization |
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\scripts\\build_academic_reports.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\build_academic_reports.py"
+index 4fde4fe..17c0d00 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\05-PS-FIX-05\\scripts\\build_academic_reports.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\build_academic_reports.py"	
+@@ -757,7 +757,7 @@ def chapter_4(doc: Document) -> list[int]:
+         ["ID", "Functional Requirement", "Implemented By"],
+         [
+             ["FR1", "Each node shall capture WiFi CSI and stream binary frames (32-byte versioned header, sequence number, RSSI, device timestamps, raw I/Q payload) over UDP to the host [16].", "firmware csi_collector.c, stream_sender.c"],
+-            ["FR2", "Each node shall self-generate channel traffic (~50 Hz gateway ping) so CSI capture continues on otherwise quiet networks, and shall rate-limit transmission to 50 Hz.", "firmware csi_collector.c"],
++            ["FR2", "Each node shall self-generate channel traffic (~50 Hz gateway ping) so CSI capture continues on otherwise quiet networks, and shall rate-limit transmission with a 10 ms send gate in the current firmware.", "firmware csi_collector.c"],
+             ["FR3", "The host shall be the sole owner of UDP port 5005 and shall parse and validate CSI frames (magic 0xC5110001), heartbeats (0xC51100A1), and firmware feature-state packets (0xC5110006).", "server/lib/udp-server.ts"],
+             ["FR4", "The host shall pin each node identity to its source address and reject frames for a known node arriving from a foreign source, with rate-limited security logging.", "SourcePinningGuard in udp-server.ts"],
+             ["FR5", "The host shall compute a per-node motion metric as the windowed per-subcarrier temporal standard deviation of CSI amplitude (default window 1500 ms).", "node-fusion.ts, websocket.ts"],
+@@ -802,7 +802,7 @@ def chapter_4(doc: Document) -> list[int]:
+ DATAFLOW_DIAGRAM = r"""
+   ESP32-S3 Node 1 (node_id=1)            ESP32-S3 Node 2 (node_id=2)
+   csi_collector.c -> stream_sender.c     csi_collector.c -> stream_sender.c
+-        |  ADR-018 CSI frames (0xC5110001, 50 Hz cap)  |
++        |  ADR-018 CSI frames (0xC5110001, 10 ms send gate)  |
+         |  heartbeats (0xC51100A1, 1 Hz)               |
+         |  feature-state (0xC5110006, 1 Hz)            |
+         +----------------------+------------------------+
+@@ -1054,8 +1054,8 @@ def chapter_6(doc: Document) -> list[int]:
+         "network as a station with power-save disabled, then csi_collector.c enables promiscuous "
+         "mode with management+data filtering and registers the WiFi driver's CSI callback with "
+         "legacy-LTF, HT-LTF, and STBC capture enabled. Because CSI is only produced when frames "
+-        "are received, the collector starts a self-ping task that pings the gateway every 20 ms "
+-        "(~50 Hz), guaranteeing a steady CSI supply even on an otherwise idle network.",
++        "are received, the collector starts a self-ping task that pings the gateway every 30 ms "
++        "(~33 Hz), guaranteeing a steady CSI supply even on an otherwise idle network.",
+     )
+     add_text_paragraph(
+         doc,
+@@ -1063,7 +1063,7 @@ def chapter_6(doc: Document) -> list[int]:
+         "writes the exact ADR-018 contract: magic 0xC5110001, schema version, node_id, antenna "
+         "count, subcarrier count, channel frequency, monotonically increasing sequence number, "
+         "RSSI, noise floor, channel, and dual device timestamps (microseconds and milliseconds), "
+-        "followed by the raw int8 I/Q pairs [16]. Transmission is rate-limited to 50 Hz and handed "
++        "followed by the raw int8 I/Q pairs [16]. Transmission is rate-limited by a 10 ms send gate and handed "
+         "to stream_sender.c, which owns a UDP socket to the configured host, a 32-slot FreeRTOS "
+         "queue with a dedicated sender task, and an ENOMEM backoff so lwIP buffer exhaustion "
+         "degrades throughput instead of crashing the node. A 1 Hz heartbeat (magic 0xC51100A1) "
+@@ -1327,7 +1327,7 @@ def chapter_7(doc: Document) -> list[int]:
+         "node 2 (COM6, 192.168.1.238), with on-device confirmation that node identity is cached "
+         "before WiFi start. The live ingest sustained approximately 200 packets per 5-second "
+         "interval (~40 packets/s aggregate) with RSSI between -23 and -38 dBm and firmware-reported "
+-        "yield of 41-43 packets/s per node - comfortably above the 20 packets/s per-node preflight "
++        "yield of 41-43 packets/s per node (pre-2026-10-18 firmware) - comfortably above the 20 packets/s per-node preflight "
+         "minimum. During the same session, a deliberate spoofing drill injected ~640 packets "
+         "claiming both node identities from a foreign source; the source-pinning guard rejected "
+         "all of them with only four rate-limited security log lines while the real streams "
+@@ -1348,7 +1348,7 @@ def chapter_7(doc: Document) -> list[int]:
+         ["Metric", "Status", "Evidence / Blocking Condition"],
+         [
+             ["Software correctness (parsers, fusion math, state machine)", "MEASURED - PASS", "91 TS + 82 Python tests green [19]"],
+-            ["Two-node live ingest rate and RSSI envelope", "MEASURED", "~40 pkt/s aggregate, RSSI -23..-38 dBm, yield 41-43 pps/node [19]"],
++            ["Two-node live ingest rate and RSSI envelope", "MEASURED", "~40 pkt/s aggregate, RSSI -23..-38 dBm, yield 41-43 pps/node (pre-2026-10-18 firmware) [19]"],
+             ["Spoofing resistance of live ingest", "MEASURED - PASS", "~640/640 spoofed packets rejected in live drill [19]"],
+             ["Dashboard truthfulness (no ghosts, degraded labeling)", "MEASURED - PASS", "Behavioral verification + regression tests [18]"],
+             ["Detection rate / false-positive rate per room", "[TO BE MEASURED]", "Requires empty-room calibration + negative-control campaign [20], [21]"],
+diff --git a/.tmp/fix-backups/05-PS-FIX-05/ai model and densepose/model/README.md b/ai model and densepose/model/README.md
+index cc6cf17..eeca2d9 100644
+--- a/.tmp/fix-backups/05-PS-FIX-05/ai model and densepose/model/README.md	
++++ b/ai model and densepose/model/README.md	
+@@ -20,6 +20,8 @@ pipeline_tag: other
+ 
+ # RuView — WiFi Sensing Models
+ 
++> **Phantom Scan note (2026-11):** this is upstream RuView text. Its accuracy, pose, vital-sign, range and through-wall figures are RuView's own claims, **not measured on Phantom Scan hardware or data**; our two-node rig has no pose capability. Model/weight licences (including CC BY-NC material) are listed in `reports/fix-2026-11/06-licences.md`.
++
+ **Turn WiFi signals into spatial intelligence.** Detect people, measure breathing and heart rate, track movement, and monitor rooms — through walls, in the dark, with no cameras. Just radio physics.
+ 
+ ## What This Does

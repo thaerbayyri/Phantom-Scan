@@ -1,0 +1,229 @@
+--- a/docs/SPATIAL_CALIBRATION.md
++++ b/docs/SPATIAL_CALIBRATION.md
+@@ -22,15 +22,18 @@
+ ## What changed (this session)
+ 
+ 1. `server/lib/tracking.ts` — new pure `calibrateEnergyThreshold(samples, k)`
+-   (mean + k·σ, the same statistical method `scripts/calibrate-threshold.ts`
+-   uses for the motion gate), plus `DEFAULT_SPATIAL_ENERGY_THRESHOLD`
++   (mean + k·σ over whatever samples it is given — a **provisional**,
++   descriptive helper: it is not drift- or pooling-checked, and since PS-FIX-11
++   `scripts/calibrate-threshold.ts` no longer derives the motion gate this way), plus `DEFAULT_SPATIAL_ENERGY_THRESHOLD`
+    (env `PHANTOM_SPATIAL_ENERGY_THRESHOLD`, default **10 — identical to the old
+    hardcoded literal**, so behavior is unchanged until an operator applies a
+    real calibration). `TrackingProcessor` now accepts the threshold as a
+    constructor parameter instead of a buried literal.
+ 2. `scripts/calibrate-threshold.ts` — new `--spatial` flag: alongside the
+    motion-gate calibration it samples per-packet total amplitude energy and
+-   prints a suggested `PHANTOM_SPATIAL_ENERGY_THRESHOLD` (mean+3σ / mean+4σ).
++   prints a **provisional**, descriptive `PHANTOM_SPATIAL_ENERGY_THRESHOLD`
++   suggestion (mean+3σ / mean+4σ over that one run). It is not drift- or
++   pooling-checked: do not apply it from a single run.
+ 3. `server/lib/tracking.test.ts` — unit tests for the calibration math
+    (synthetic samples, clearly labeled) and regression tests pinning the
+    default threshold to the historical value.
+@@ -53,12 +56,27 @@
+ cloud and DBSCAN membership). Treat its suggestion as a starting point, then
+ validate behaviorally.
+ 
+-## Procedure (hardware session, ~15 min)
++## Procedure (hardware session: hours, not minutes)
++
++A 5-minute run cannot support a threshold. The committed 0.6 motion gate came from a
++single 60 s empty recording, and recordings of the same empty room separate from each
++other (symmetric AUC upper bounds 0.68–0.91 against a 0.65 limit, `reports/fix-2026-11/13-PS-FIX-11.md`).
++The procedure below is **provisional** until it has been run; the resulting false-alarm
++and detection figures stay `[TO BE MEASURED]`.
+ 
+ 1. Stop the dashboard (the calibration tool must own UDP :5005).
+-2. Empty the room completely. Run:
+-   `npx tsx scripts/calibrate-threshold.ts --seconds 300 --spatial`
+-3. Note both suggestions (motion threshold and spatial energy threshold).
++2. Empty the room completely and keep an entry log (time, who, door). Collect an
++   **empty soak of at least 60 minutes**, nodes not moved (add `--spatial` to also
++   sample spatial energy):
++   `npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600 --out .tmp/cal/empty1.json`
++   Then, in the **same link state**, a **fan negative control of at least 5 minutes**
++   (fan or other vibration source, no person):
++   `npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --out .tmp/cal/fan.json`
++3. Evaluate offline (no socket):
++   `npx tsx scripts/calibrate-threshold.ts --evaluate --empty .tmp/cal/empty1.json --fan .tmp/cal/fan.json`
++   The tool refuses to print a candidate when the soak is too short, the negative
++   control is missing, the runs span a link-state change, or the empty-vs-empty control
++   shows drift. A refusal is a valid outcome. The spatial-energy figure is descriptive only.
+ 4. Restart the dashboard with the candidate value:
+    `PHANTOM_SPATIAL_ENERGY_THRESHOLD=<suggested> npm run dev`
+ 5. Validate per ADR-057's own recommendation: leave the room empty >5 s in
+--- a/Phantom-Scan-Final-Project-Report-4Node.md
++++ b/Phantom-Scan-Final-Project-Report-4Node.md
+@@ -67,7 +67,7 @@
+ 
+ - **Fusion is not RF multilateration at any node count.** With exactly two nodes live, the target is still placed on the 1-D line between them (as in the original rig). With three or four nodes live, `fuseNodeTargets` computes a perturbation-weighted centroid over the active anchors — a genuine 2-D estimate, but still a proxy derived from relative signal perturbation, not true time-of-flight or phase-based ranging [12], [15].
+ - Each node still uses a single antenna, so classical multi-antenna Angle-of-Arrival techniques run only on synthetic or replay inputs, never on the live path, at any node count [12].
+-- The detection gate threshold (`PHANTOM_MOTION_THRESHOLD`, default **0.6**) was calibrated against the original two-node rig's empty-room baseline. **A currently open, actively investigated issue**: repeated real four-node empty-room recordings taken in September 2026 show persistent false-positive presence detection, with the per-node motion metric pinned at its saturation ceiling on roughly half of all ticks — meaning existing four-node recordings are too *censored* (clamped) to safely re-derive the threshold as-is. An unclamped `raw_perturbation_n1..n4` export was added specifically to unblock this diagnosis; the leading unconfirmed hypothesis is RF self-interference among four same-channel, same-AP nodes each self-pinging at ~50 Hz, as an alternative to a genuinely elevated real noise floor.
++- The detection gate threshold (`PHANTOM_MOTION_THRESHOLD`, default **0.6**) was set from a single 60 s empty-room recording on the original two-node rig (provisional). **A currently open, actively investigated issue**: repeated real four-node empty-room recordings taken in September 2026 show persistent false-positive presence detection, with the per-node motion metric pinned at its saturation ceiling on roughly half of all ticks — meaning existing four-node recordings are too *censored* (clamped) to safely re-derive the threshold as-is. An unclamped `raw_perturbation_n1..n4` export was added specifically to unblock this diagnosis; the leading unconfirmed hypothesis is RF self-interference among four same-channel, same-AP nodes each self-pinging at ~50 Hz, as an alternative to a genuinely elevated real noise floor.
+ - Headline live metrics — detection rate, false-positive rate, and localization error — are defined in measurement protocols but not yet populated from repeated four-node live campaigns [20], [21], and the false-positive investigation above means the four-node false-positive rate is *known to be unresolved*, not merely unmeasured.
+ - Two people in the sensing area still blend into a single fused estimate at any node count; multi-target separation remains out of scope [20].
+ - A **known historical defect**, since fixed, is worth recording for engineering-process honesty: an earlier revision of the two-node fusion branch, exercised only against the fixed pair {N1, N2}, silently produced a false "no target" state whenever exactly two *other* nodes (e.g., N3+N4) were the ones actually live, because the fusion call still read node 1/2's motion windows regardless of which two nodes `resolveLiveNodeMode()` had identified as active. The current code path resolves this generically — `computeFusedTarget` reads `activeHardwareNodeIds()` and fuses whichever two node IDs are actually live — but this is flagged here because it demonstrates the class of bug the project's own honesty testing exists to catch, and because it is exactly the kind of regression a future geometry or ID-mapping change could reintroduce.
+@@ -327,7 +327,7 @@
+ | Honesty / Integrity | Synthetic, replayed, or single-node data can never be presented as fused live truth at any node count; the currently open four-node false-positive investigation is itself documented as a limitation rather than smoothed over in this report or the README. |
+ | Maintainability | Strict layer boundaries retained; shared zod schemas remain the single geometry/message contract; **256 TypeScript + 91 Python** automated tests at time of writing [19]. |
+ | Portability | Host stack still runs on Windows and Ubuntu; firmware still builds under ESP-IDF, with provisioning documented per node ID via `esp-flash.py`. |
+-| Configurability | Detection parameters remain environment-tunable; `PHANTOM_MOTION_THRESHOLD` default is now **0.6** (recalibrated from the original **0.12** against the two-node rig's own empty-room baseline — see the open four-node caveat above), alongside `PHANTOM_MOTION_WINDOW_MS`, `PHANTOM_BALANCE_CONTRAST`, `PHANTOM_BALANCE_BIAS_EXPONENT`, and `PHANTOM_TREND_DEADBAND_MPS`. |
++| Configurability | Detection parameters remain environment-tunable; `PHANTOM_MOTION_THRESHOLD` default is now **0.6** (provisional: re-set from the original **0.12** using a single 60 s two-node empty-room recording — see the open four-node caveat above), alongside `PHANTOM_MOTION_WINDOW_MS`, `PHANTOM_BALANCE_CONTRAST`, `PHANTOM_BALANCE_BIAS_EXPONENT`, and `PHANTOM_TREND_DEADBAND_MPS`. |
+ 
+ *Table 4.1 — Non-functional requirements with current evidence, updated for the 1–4-node system.*
+ 
+@@ -349,7 +349,7 @@
+ | FR12 | The dashboard shall render one node beacon per currently-configured anchor (up to four), the fused target, motion vectors, temporal spectral views, and Board-DSP cards, gated by presentation-honesty helpers shared across all fusion modes. | `client/src/components/dashboard/` |
+ | FR13 | Operators shall authenticate before accessing the dashboard or privileged actions; security-relevant events shall be audit-logged. | `server/auth/`, `server/audit/` |
+ | FR14 | The system shall support per-session CSV recording (with a JSON session index) and deterministic replay, including unclamped `raw_perturbation_n1..n4` columns added specifically to diagnose the four-node calibration question. | `recording-export.ts`, `session-store.ts`, `phantom/` package |
+-| FR15 | The system shall provide an empty-room calibration tool that derives the motion gate from a recorded baseline (mean + k·σ), understood to require re-validation specifically at four-node room-mode operation before the current threshold can be trusted there. | `scripts/calibrate-threshold.ts` |
++| FR15 | The system shall provide an empty-room and negative-control calibration tool. A single short run yields descriptive statistics only; a candidate threshold is produced only from an empty soak of at least 60 min plus a fan control of at least 5 min in one link state with the empty-vs-empty drift check passing. The current gate (0.6) is provisional and requires re-validation at four-node room-mode operation; its false-alarm and detection rates are `[TO BE MEASURED]`. | `scripts/calibrate-threshold.ts` |
+ 
+ *Table 4.2 — Functional requirements traced to implementing modules, updated for 1–4-node operation.*
+ 
+@@ -487,7 +487,7 @@
+ ```
+ *Listing 6.1 — Per-node turbulence detector (unchanged mathematics; now instantiated once per live node, 1–4).*
+ 
+-The empty-room gate itself has been recalibrated since the two-node edition: `DEFAULT_MOTION_THRESHOLD` is now **0.6** (env `PHANTOM_MOTION_THRESHOLD`), derived 2026-07-20 from the two-node rig's measured empty-room baseline (`max(motion1, motion2)` over 296 samples: mean 0.49, σ 0.027, max 0.58), up from the original placeholder of 0.12. This is the threshold currently under active re-investigation for four-node operation (§1.4, §8.3) — the two-node calibration does not automatically transfer to four simultaneously self-pinging nodes.
++The empty-room gate itself has been recalibrated since the two-node edition: `DEFAULT_MOTION_THRESHOLD` is now **0.6** (env `PHANTOM_MOTION_THRESHOLD`), set 2026-07-20 from the two-node rig's measured empty-room baseline — a single 60 s recording (`max(motion1, motion2)` over 296 samples: mean 0.49, σ 0.027, max 0.58; 0.6 sits just above that recording's maximum, it is **provisional** and not a mean + k·σ result) — up from the original placeholder of 0.12. This is the threshold currently under active re-investigation for four-node operation (§1.4, §8.3) — the two-node calibration does not automatically transfer to four simultaneously self-pinging nodes.
+ 
+ ### 6.3.4 Gain Normalization, Two-Node Balance, and N-Node Room Fusion
+ 
+--- a/README.md
++++ b/README.md
+@@ -191,7 +191,7 @@
+ 
+ Each broadcast node also carries `distanceM` (on-axis distance in 2-node mode, true straight-line distance to the anchor in 3–4-node mode) and `trend` (`approaching` / `receding` / `stable`, from the sign of `d(balance)/dt` with a `PHANTOM_TREND_DEADBAND_MPS` deadband, default 0.05 m/s). The radar renders each active node's beacon, connector lines to the target, and a travel arrow toward the node being approached.
+ 
+-> **Calibration caveat (active investigation):** `PHANTOM_MOTION_THRESHOLD` (0.6) was calibrated 2026-07-20 against a 2-node rig's empty-room baseline. Repeated real 4-node empty-room recordings in September 2026 show persistent false-positive presence detection, with the `motion_nX` metric pinned at its 1.0 saturation ceiling on roughly half of all ticks — meaning the recorded data is **censored** (clamped) and cannot honestly support re-deriving the threshold as-is. `raw_perturbation_n1..n4` (see [Recording & Replay](#recording--replay)) now exports the unclamped ratio specifically to unblock this diagnosis. Do not change `MOTION_SATURATION_SCALE` or `DEFAULT_MOTION_THRESHOLD` independently — the code comment on `MOTION_SATURATION_SCALE` is explicit that they must be re-derived together, from real uncensored data, never guessed.
++> **Calibration caveat (active investigation):** `PHANTOM_MOTION_THRESHOLD` (0.6) was set on 2026-07-20 from a single 60 s empty-room recording on a 2-node rig (296 samples: mean 0.49, σ 0.027, max 0.58) and is **provisional**. Repeated real 4-node empty-room recordings in September 2026 show persistent false-positive presence detection, with the `motion_nX` metric pinned at its 1.0 saturation ceiling on roughly half of all ticks — meaning the recorded data is **censored** (clamped) and cannot honestly support re-deriving the threshold as-is. `raw_perturbation_n1..n4` (see [Recording & Replay](#recording--replay)) now exports the unclamped ratio specifically to unblock this diagnosis. Do not change `MOTION_SATURATION_SCALE` or `DEFAULT_MOTION_THRESHOLD` independently — the code comment on `MOTION_SATURATION_SCALE` is explicit that they must be re-derived together, from real uncensored data, never guessed. A mean + k·σ rule over a window that short is not supported: recordings of the same empty room separate from each other (symmetric AUC upper bounds 0.68–0.91 against a 0.65 limit, `reports/fix-2026-11/13-PS-FIX-11.md`). Real recalibration needs a live empty-room soak of at least 60 minutes with an entry log, plus a negative control with a fan or vibration source in the same link state, evaluated with `scripts/calibrate-threshold.ts --evaluate`; the resulting false-alarm and detection rates are `[TO BE MEASURED]`.
+ 
+ ---
+ 
+@@ -231,7 +231,7 @@
+ | `PORT` / `HOST` | `5000` / all interfaces | Dashboard HTTP/WebSocket bind |
+ | `UDP_PORT` | `5005` | CSI ingest bind port (shared by all 1–4 nodes) |
+ | `PHANTOM_MOTION_WINDOW_MS` | `1500` | Fusion motion-energy time window |
+-| `PHANTOM_MOTION_THRESHOLD` | `0.6` | Empty-room detection gate — calibrated on a 2-node rig; see the calibration caveat under [Phantom Balance Fusion](#phantom-balance-fusion) |
++| `PHANTOM_MOTION_THRESHOLD` | `0.6` | Empty-room detection gate — provisional: set from one 60 s empty recording on a 2-node rig; see the calibration caveat under [Phantom Balance Fusion](#phantom-balance-fusion) |
+ | `PHANTOM_BALANCE_CONTRAST` | `2.0` | Contrast exponent (both 2-node balance and N-node centroid weighting) |
+ | `PHANTOM_BALANCE_BIAS_EXPONENT` | `0.72` | Nearest-node display bias exponent (2-node mode only) |
+ | `PHANTOM_TREND_DEADBAND_MPS` | `0.05` | Approach/recede trend deadband |
+--- a/MEASUREMENT_PLAN.md
++++ b/MEASUREMENT_PLAN.md
+@@ -35,7 +35,7 @@
+ 5. Pass criterion for the synthetic unit test is `balance ~= 0.5 -> x ~= 0 m` (midpoint is
+    ~1.5 m from each node); live hardware tolerance is `[TO BE MEASURED]`.
+    Negative control: an empty room / on-axis fan must yield **no target** (motion below the
+-   calibrated `PHANTOM_MOTION_THRESHOLD`), not a centered ghost.
++   provisional `PHANTOM_MOTION_THRESHOLD`, 0.6; false-alarm rate `[TO BE MEASURED]`), not a centered ghost.
+ 6. Distance-readout accuracy (per trial): at 3+ tape-marked points on the axis, record
+    **displayed per-node `distanceM` vs actual tape-measured distance** to each node, so the
+    readout has an error figure instead of "looks right". Same trial logs whether the per-node
+--- a/docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
++++ b/docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
+@@ -439,7 +439,7 @@
+ | Biquad IIR bandpass | Butterworth, Respiration: 0.1–0.5 Hz; Cardiac: 0.8–2.0 Hz | 28 bytes per filter |
+ | Welford running variance | Numerically stable online algorithm | 12 bytes per subcarrier |
+ | Top-K subcarrier selection | Variance-ranked partial sort | K=8, refresh every 300 frames |
+-| Presence detection | Adaptive threshold: μ + 3σ (60-second sliding window) | 1,200-sample calibration |
++| Presence detection | Adaptive threshold: μ + 3σ over a 60-second sliding window (firmware edge-tier design target, **provisional**; false-alarm and detection rates `[TO BE MEASURED]`) | 1,200-sample calibration |
+ | Fall detection | Phase acceleration spike > 2.0 rad/s² | < 200 ms latency |
+ | Multi-person vitals | Subcarrier group clustering (up to 4 persons) | Concurrent BPM/RPM per person |
+ | Delta compression | XOR + RLE for bandwidth reduction | 40–60% payload reduction |
+--- a/scripts/build_academic_reports.py
++++ b/scripts/build_academic_reports.py
+@@ -769,7 +769,7 @@
+             ["FR11", "The dashboard shall render node beacons, the fused target, motion vectors, spectral views, and Board-DSP cards, gated by presentation-honesty helpers.", "client/src/components/dashboard/"],
+             ["FR12", "Operators shall authenticate before accessing the dashboard or privileged actions; security-relevant events shall be audit-logged.", "server/auth/, server/audit/"],
+             ["FR13", "The system shall support session recording (JSONL/CSV) and deterministic replay for offline analysis and testing.", "recording-export.ts, phantom/ package"],
+-            ["FR14", "The system shall provide an empty-room calibration tool that derives the motion gate from a recorded baseline (mean + k*sigma).", "scripts/calibrate-threshold.ts"],
++            ["FR14", "The system shall provide an empty-room and negative-control calibration tool: a single short run yields descriptive statistics only, and a candidate threshold requires an empty soak of at least 60 min plus a fan control of at least 5 min in one link state with the drift check passing. The current gate is provisional.", "scripts/calibrate-threshold.ts"],
+         ],
+         widths=[0.5, 4.0, 2.0],
+     )
+@@ -1446,7 +1446,7 @@
+     add_text_paragraph(doc, "Recommendations for future work, in priority order:")
+     add_numbered_list(doc, [
+         "Execute the full positional-fidelity campaign (stages P0-S8) and the measurement plan, populating the results ledger with defensible live numbers [20], [21].",
+-        "Run the empty-room calibration tool in each deployment room and replace the placeholder gate with a mean + k*sigma calibrated threshold, validated against fan/curtain negative controls.",
++        "Recalibrate the placeholder gate in each deployment room from a live empty-room soak of at least 60 minutes (with an entry log) plus a fan/vibration negative control in the same link state, using the calibration tool's --evaluate mode; the current gate is provisional and its false-alarm and detection rates are [TO BE MEASURED].",
+         "Extend the geometry beyond one dimension: a third node (the firmware's channel-hop and multistatic decision records already sketch this path) would resolve off-axis position and front/back ambiguity [12].",
+         "Promote the firmware edge-DSP tier so board-side presence/respiration estimates can cross-check host fusion, with the host remaining authoritative.",
+         "Investigate multi-antenna ESP32-S3 configurations or a hybrid node to enable live AoA and reduce the single-target limitation.",
+--- a/scripts/calibrate-threshold.ts
++++ b/scripts/calibrate-threshold.ts
+@@ -7,7 +7,8 @@
+  * window -> computeNodeMotionFromMatrix), sampling max(motion1, motion2).
+  * With --spatial it ALSO samples per-packet total amplitude energy (the same
+  * magnitude quantity TrackingProcessor's cluster-energy gate sums) and
+- * reports a mean+k*sigma suggestion for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
++ * reports a descriptive, provisional mean+k*sigma figure (not drift- or pooling-checked;
++ * never apply it from a single run) for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
+  * calibrateEnergyThreshold (server/lib/tracking.ts).
+  *
+  * Usage:
+@@ -44,7 +45,7 @@
+ const packetCounts = new Map<number, number>();
+ /** --spatial: per-packet total amplitude energy (sum of per-subcarrier
+  * amplitudes) — the magnitude quantity the TrackingProcessor cluster gate
+- * sums. Collected raw here; mean+k*sigma computed by calibrateEnergyThreshold. */
++ * sums. Collected raw here; a descriptive, provisional mean+k*sigma is computed by calibrateEnergyThreshold. */
+ const energySamples: number[] = [];
+ 
+ const sock = dgram.createSocket("udp4");
+--- a/server/lib/tracking.ts
++++ b/server/lib/tracking.ts
+@@ -24,9 +24,9 @@
+ 
+ /**
+  * Empty-room / negative-control calibration for a magnitude-only energy
+- * threshold — same mean+k*sigma statistical method as
+- * scripts/calibrate-threshold.ts's PHANTOM_MOTION_THRESHOLD calibration,
+- * applied here to cluster energy (or raw MUSIC spectrum power) samples
++ * threshold — mean+k*sigma over the samples given: a provisional, descriptive
++ * helper, not drift- or pooling-checked (scripts/calibrate-threshold.ts no longer
++ * derives PHANTOM_MOTION_THRESHOLD this way; PS-FIX-11), applied here to cluster energy (or raw MUSIC spectrum power) samples
+  * instead of temporal motion variance. Pure and unit-testable with
+  * synthetic OR real recorded empty-room samples — this function itself
+  * makes no live/network calls.
+--- a/server/lib/tracking.test.ts
++++ b/server/lib/tracking.test.ts
+@@ -10,8 +10,8 @@
+ import type { PointCloudPoint } from "@shared/schema";
+ 
+ // ── calibrateEnergyThreshold (Item 4) ──────────────────────────────────────
+-// Same mean+k*sigma statistical method as scripts/calibrate-threshold.ts's
+-// motion-gate calibration; here applied to a pure array of synthetic
++// mean+k*sigma over given samples (a descriptive helper; scripts/calibrate-threshold.ts
++// no longer derives the motion gate this way); here applied to a pure array of synthetic
+ // empty-room energy samples (no live UDP capture — that's the real,
+ // hardware-gated calibration run, tracked as [TO BE MEASURED]).
+ 
+--- a/server/lib/node-fusion.ts
++++ b/server/lib/node-fusion.ts
+@@ -31,12 +31,16 @@
+ /**
+  * Presence/motion gate for emitting a fused target. THIS IS THE DETECTOR.
+  *
+- * Calibrated 2026-07-20 against this rig's measured empty-room baseline
++ * PROVISIONAL. Set 2026-07-20 from a single 60 s empty-room recording on this rig
+  * (`max(motion1, motion2)` over 296 samples: mean 0.49, sigma 0.027, max 0.58 —
+- * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that noise ceiling.
+- * Re-calibrate via scripts/calibrate-threshold.ts (and re-validate against a
+- * negative control: a fan/curtain must be REJECTED while a still, breathing-only
+- * person is still detected) if the room or hardware setup changes materially.
++ * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that recording's maximum;
++ * it is not a mean + k*sigma result and does not account for empty-vs-empty drift
++ * between recordings. Real recalibration needs a live empty-room soak of >= 60 min
++ * (with an entry log) plus a fan/vibration negative control in the same link state,
++ * evaluated with `scripts/calibrate-threshold.ts --evaluate`. False-alarm and
++ * detection rates: [TO BE MEASURED]. Re-validate against a negative control (a
++ * fan/curtain must be REJECTED while a still, breathing-only person is still
++ * detected) if the room or hardware setup changes materially.
+  * Override at runtime via PHANTOM_MOTION_THRESHOLD, or persistently via the
+  * "Fused Target Presence Threshold" slider (server/lib/runtime-settings.ts).
+  */

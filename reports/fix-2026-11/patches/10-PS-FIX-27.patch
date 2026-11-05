@@ -1,0 +1,1539 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_eval.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_eval.py"
+new file mode 100644
+index 0000000..926ee6b
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_eval.py"	
+@@ -0,0 +1,207 @@
++"""Epoch-stratified evaluation: every analysis is reported WITHIN each link-state epoch and ACROSS epochs, separately.
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.epoch_eval
++
++* Epochs come from scripts/presence_eval/epochs.py for a node set (default N1+N2). Empties from different epochs are never
++  pooled: a model is fit on the empties of ONE epoch.
++* Transitional windows (PRE_MARGIN_S before to SETTLE_S after a boundary event) are removed from every evaluation; so the tail of
++  s7 after node 1's step is not part of walking-vs-empty.
++* "within": leave-one-segment-out among the empty segments of the same epoch. A held-out empty is only testable when the epoch
++  has >= 2 empty segments; otherwise the cell says "insufficient data" (it never falls back to pooling).
++* "cross": train on the empties of epoch A, test every segment of epoch B != A.
++The CAUSE of any link-state change is not inferred here.
++"""
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass
++from pathlib import Path
++
++import numpy as np
++
++from . import epochs as ep
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
++from .recordings import group_recordings, load_recording
++from .tables import REC_CACHE, ROOM_DIR, RecTables, load_all
++from . import twonode as tn
++
++OUT_DIR = default_out_dir()
++DEFAULT_NODES = (1, 2)
++WINDOW_MS = 1500
++MIN_GRID_COVERAGE = 0.5   # a recording needs usable windows for at least half of its time grid to be evaluated
++
++
++def load_links(room_dir: Path = ROOM_DIR, *, step_db: float = ep.STEP_DB, hold: int = ep.HOLD_S) -> list[ep.RecordingLinks]:
++    links = []
++    for name, paths in group_recordings(room_dir).items():
++        rec = load_recording(paths, REC_CACHE)
++        links.append(ep.analyze_recording(name[7:30] if name.startswith("room1__") else name, name.split("__")[3][:8], rec.nodes, rec.t_min, rec.t_max, rec.label, step_db=step_db, hold=hold))
++    return ep.classify_persistence(links)
++
++
++def window_info(rec: RecTables, tl: ep.Timeline, k: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    """(epoch index per window, transitional flag per window) for window indices ``k`` of ``rec`` (window centre time)."""
++    centre = rec.t0_ms + ((k + 0.5) * WINDOW_MS).astype(np.int64)
++    idx = np.searchsorted(np.asarray(tl._times, dtype=np.int64), centre, side="right")
++    trans = np.zeros(k.shape, dtype=bool)
++    for a, b, _ in tl.transitional:
++        trans |= (centre >= a) & (centre < b)
++    return idx, trans
++
++
++def joint_count(seg: RecTables, need: tuple[int, ...], feat: str = "decor") -> int:
++    """Windows with a finite value on EVERY node in ``need`` (inner join; no zero-filling)."""
++    ks = None
++    for n in need:
++        t = seg.nodes.get(n)
++        if t is None:
++            return 0
++        kk = t["k"][np.isfinite(t[feat])]
++        ks = kk if ks is None else np.intersect1d(ks, kk)
++    return 0 if ks is None else int(len(ks))
++
++
++def make_segments(tabs: dict[str, RecTables], tl: ep.Timeline, min_windows: int = tn.MIN_WIN, need: tuple[int, ...] = tn.NODES) -> tuple[dict[str, RecTables], list[dict]]:
++    """Split every recording into (recording x epoch) segments, dropping transitional windows. Returns (segments, log)."""
++    segs: dict[str, RecTables] = {}
++    log: list[dict] = []
++    for rid, rec in tabs.items():
++        per_epoch: dict[int, dict[int, dict[str, np.ndarray]]] = {}
++        counts: dict[int, dict] = {}
++        for node, table in rec.nodes.items():
++            idx, trans = window_info(rec, tl, table["k"])
++            for e in np.unique(idx):
++                m_all = idx == e
++                m_keep = m_all & ~trans
++                c = counts.setdefault(int(e), {"windows": 0, "transitional_dropped": 0})
++                if node == min(rec.nodes):
++                    c["windows"] += int(m_keep.sum())
++                    c["transitional_dropped"] += int((m_all & trans).sum())
++                if m_keep.any():
++                    per_epoch.setdefault(int(e), {})[node] = {c_: v[m_keep] for c_, v in table.items()}
++        for e, nodes in per_epoch.items():
++            name = f"E{e + 1:02d}"
++            seg = RecTables(rid=f"{rid}@{name}", name=rec.name, label=rec.label, subject=rec.subject, day=rec.day, t0_ms=rec.t0_ms,
++                            duration_s=rec.duration_s, parts=rec.parts, nodes=nodes)
++            usable = joint_count(seg, need)
++            log.append({"segment": seg.rid, "epoch": name, "label": rec.label, **counts[e], "joint_N1N2_windows": usable, "kept": usable >= min_windows})
++            if usable >= min_windows:
++                segs[seg.rid] = seg
++        for e, c in counts.items():  # epochs that lost EVERY window to the transitional exclusion are still listed
++            if e not in per_epoch:
++                log.append({"segment": f"{rid}@E{e + 1:02d}", "epoch": f"E{e + 1:02d}", "label": rec.label, **c, "joint_N1N2_windows": 0, "kept": False})
++    return segs, log
++
++
++def epoch_of(seg: RecTables) -> str:
++    return seg.rid.rsplit("@", 1)[1]
++
++
++def splits_within(segs: dict[str, RecTables]) -> list[tn.Split]:
++    out = []
++    for sid, seg in segs.items():
++        e = epoch_of(seg)
++        train = tuple(r for r, o in segs.items() if o.label == "empty" and epoch_of(o) == e and r != sid)
++        if train:
++            out.append(tn.Split("epoch_within", sid, train, e))
++    return out
++
++
++def splits_cross(segs: dict[str, RecTables]) -> list[tn.Split]:
++    out = []
++    epochs = sorted({epoch_of(s) for s in segs.values()})
++    for a in epochs:
++        train = tuple(r for r, o in segs.items() if o.label == "empty" and epoch_of(o) == a)
++        if not train:
++            continue
++        for sid, seg in segs.items():
++            if epoch_of(seg) != a:
++                out.append(tn.Split("epoch_cross", sid, train, f"{a}->{epoch_of(seg)}"))
++    return out
++
++
++def run(nodes: tuple[int, ...] = DEFAULT_NODES, tabs: dict[str, RecTables] | None = None, links: list[ep.RecordingLinks] | None = None) -> dict:
++    tabs = tabs or load_all()
++    links = links or load_links()
++    tl = ep.build_timeline(links, nodes)
++    low_coverage = {}
++    for rid, rec in list(tabs.items()):  # e.g. the 11 frames/s pre-fix recording: only chance bursts reach 20 frames/window
++        grid = max(1.0, rec.duration_s / (WINDOW_MS / 1000.0))
++        cov = min((len(rec.nodes[n]["k"]) / grid for n in nodes if n in rec.nodes), default=0.0)
++        if cov < MIN_GRID_COVERAGE:
++            low_coverage[rid] = round(cov, 3)
++            del tabs[rid]
++    segs, log = make_segments(tabs, tl)
++    sp = {"epoch_within": splits_within(segs), "epoch_cross": splits_cross(segs)}
++    cands: dict = {}
++    for feat in tn.FEATS:
++        for rule in tn.RULES:
++            rows = [r for p in sp.values() for r in tn.run_candidate(segs, p, feat, rule)]
++            cands[f"{feat}/{rule}"] = tn.aggregate(rows)
++    return {
++        "provenance": provenance("python -m scripts.presence_eval.epoch_eval", sorted(t.name for t in tabs.values())),
++        "node_set": nodes,
++        "params": {"step_db": ep.STEP_DB, "hold_s": ep.HOLD_S, "pre_s": ep.PRE_S, "settle_s": ep.SETTLE_S, "pre_margin_s": ep.PRE_MARGIN_S,
++                   "min_empty_boundary_hold_s": ep.MIN_EMPTY_BOUNDARY_HOLD_S, "min_windows": tn.MIN_WIN, "n_boot": tn.N_BOOT},
++        "boundary_rule_status": "POST HOC: chosen after inspecting these recordings, not pre-registered; sensitivity in epoch_sensitivity.py",
++        "cause_of_link_changes": "UNCONFIRMED. The audit log holds only dataset_recording_started/stopped; nothing records what happened at node 1.",
++        "boundaries": [{"time_utc": ep.iso(t), "reason": r} for t, r in tl.boundaries],
++        "events": [
++            {"recording": r.rid, "label": r.label, "node": n, "time_utc": ep.iso(e.t_ms), "offset_s": (e.t_ms - r.t_start_ms) / 1000.0, "kind": e.kind,
++             "delta_db": e.delta_db, "rssi_before": e.rssi_before, "rssi_after": e.rssi_after, "fps_before": e.fps_before, "fps_after": e.fps_after,
++             "held_s": e.held_s, "persistent": e.persistent, "boundary": ep.is_boundary(r, e)}
++            for r in links for n in sorted(r.events) for e in r.events[n]
++        ],
++        "excluded_low_coverage": low_coverage,
++        "segments": log,
++        "candidates": cands,
++    }
++
++
++def _cell(v) -> str:
++    if not isinstance(v, dict):
++        return "n/a"
++    if "auc" in v and v.get("auc") is not None:
++        lo = v.get("lo")
++        return f"{v['auc']:.2f}" + (f" [{lo:.2f}, {v['hi']:.2f}]" if lo is not None else " [no CI]")
++    if "rate" in v:
++        return f"{100 * v['rate']:.0f}%"
++    return "n/a"
++
++
++def render(res: dict, show=("decor/max", "perturb_agc/max", "decor/n2", "perturb/max")) -> str:
++    nodes = "+".join(f"N{n}" for n in res["node_set"])
++    L = [f"## Link-state epochs for {nodes}", "", "Cause of every change: **unconfirmed** (the audit log has only recording start/stop).", "",
++         "| boundary (UTC) | reason |", "|--|--|"] + [f"| {b['time_utc']} | {b['reason']} |" for b in res["boundaries"]]
++    L += ["", "### Detected events (all nodes; `boundary` = used to split)", "", "| recording | label | event | at | held s | persistent | boundary |", "|--|--|--|--|--|--|--|"]
++    for e in res["events"]:
++        what = f"N{e['node']} {e['kind']}" + (f" {e['delta_db']:+.0f} dB ({e['rssi_before']:.0f}→{e['rssi_after']:.0f})" if e["delta_db"] is not None else "") + (f" fps {e['fps_before']:.0f}→{e['fps_after']:.0f}" if e["fps_before"] is not None and e["fps_after"] is not None else "")
++        held = "" if e["held_s"] is None else f"{e['held_s']:.0f}"
++        L.append(f"| {e['recording'][:26]} | {e['label']} | {what} | +{e['offset_s']:.0f} s | {held} | {e['persistent']} | {e['boundary']} |")
++    L += ["", "### Segments (recording × epoch); transitional windows removed", "", "| segment | label | kept windows | transitional dropped | N1+N2 windows | evaluated |", "|--|--|--|--|--|--|"]
++    L += [f"| {s['segment'][:40]} | {s['label']} | {s['windows']} | {s['transitional_dropped']} | {s['joint_N1N2_windows']} | {'yes' if s['kept'] else 'too few'} |" for s in res["segments"]]
++    for cand in show:
++        cells = res["candidates"].get(cand)
++        if not cells:
++            continue
++        L += ["", f"### Candidate `{cand}` (window-block CIs, optimistic; session-blocked shown where ≥ 2 recordings per class exist)", "",
++              "| protocol/group | empty windows | walking AUC | still AUC | fan AUC | walking TPR@1% | still TPR@1% | empty FPR@1% | fan FPR@1% | empty-vs-empty gate C4 |", "|--|--|--|--|--|--|--|--|--|--|"]
++        for g, c in cells.items():
++            ctrl = c["empty_vs_empty_control"]
++            gate = "n/a (needs ≥ 2 empties)" if ctrl.get("passes") is None else f"{'pass' if ctrl['passes'] else 'FAIL'} (worst sym. upper {ctrl['worst_symmetric_upper_bound']:.2f})"
++            L.append(f"| {g} | {c['n_empty_windows']} | {_cell(c['auc'].get('walking'))} | {_cell(c['auc'].get('still'))} | {_cell(c['auc'].get('empty_fan'))} | "
++                     f"{_cell(c['tpr'].get('walking@1%'))} | {_cell(c['tpr'].get('still@1%'))} | {_cell(c['fpr'].get('empty@1%'))} | {_cell(c['fpr'].get('empty_fan@1%'))} | {gate} |")
++    return "\n".join(L) + "\n"
++
++
++def main() -> None:
++    res = run()
++    (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
++    dump_json(OUT_DIR / "results" / "epoch_eval.json", res)
++    (OUT_DIR / "results" / "epoch_eval_tables.md").write_text(render(res), encoding="utf-8")
++    print("wrote results/epoch_eval.json and results/epoch_eval_tables.md;", len(res["boundaries"]), "boundaries,", len(res["segments"]), "segments")
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epochs.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epochs.py"
+new file mode 100644
+index 0000000..683125b
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epochs.py"	
+@@ -0,0 +1,264 @@
++"""Link-state epochs: split recordings where a node's link changed, so empties from different link states are never pooled.
++
++Why: node 1 stepped from about -36 to -47 dBm (and its frame rate collapsed) at +195 s inside the s7 walking recording
++and stayed there for ~1.5 h (PS-EVAL-006). Scores calibrated on one link state are not valid in another.
++
++Per node and recording, on a 1 s grid (median RSSI, frame count):
++  * rssi_step     : |median(next HOLD s) - median(previous PRE s)| >= STEP_DB, and >= 90 % of the HOLD seconds are beyond STEP_DB
++                    on the same side (the step is HELD, not a one-second dip);
++  * rate_collapse : median frame rate over the next HOLD s <= COLLAPSE x the previous PRE s median (>= 80 % of seconds below
++                    0.85 x baseline), baseline >= MIN_BASELINE_FPS.
++Between consecutive recordings of the same day the last/first EDGE_S seconds are compared the same way (the change happened
++in an unrecorded gap). A new calendar day always starts a new epoch (nodes may have been moved; nothing says otherwise).
++
++Epoch boundaries for a node SET are the union of that set's events. The time from PRE_MARGIN_S before an in-recording event to
++SETTLE_S after it is TRANSITIONAL and must be excluded from detection evaluations. The CAUSE of an event is never inferred here.
++
++STATUS OF THE BOUNDARY RULE: the persistence / empty-recording / 60 s rule in is_boundary() was chosen POST HOC, after looking at
++these recordings (it was not in the original specification and was not pre-registered). Its sensitivity to the step threshold
++(4/6/8 dB) and the hold time (10/30/60 s) is reported by epoch_sensitivity.py; every ambiguous step is listed there.
++"""
++from __future__ import annotations
++
++import bisect
++from dataclasses import dataclass, field, replace
++from datetime import datetime, timezone
++
++import numpy as np
++
++from .recordings import NodeSeries
++
++STEP_DB = 6.0
++HOLD_S = 10
++PRE_S = 30
++COLLAPSE = 0.7
++MIN_BASELINE_FPS = 20.0
++EDGE_S = 30
++PRE_MARGIN_S = 5
++SETTLE_S = 30
++HELD_FRACTION = 0.9
++COLLAPSE_FRACTION = 0.8
++
++
++@dataclass(frozen=True)
++class Event:
++    node: int
++    t_ms: int            # absolute (recorder host clock) onset
++    kind: str            # rssi_step | rate_collapse | gap_step | gap_collapse | day_boundary
++    delta_db: float | None
++    fps_before: float | None
++    fps_after: float | None
++    rssi_before: float | None
++    rssi_after: float | None
++    in_gap: bool = False
++    persistent: bool | None = None   # new level also holds at the end of the recording AND at the start of the next one
++    held_s: float | None = None      # seconds the new level held before returning toward the old one (or to the recording end)
++    reversal: bool = False           # returns to the level before the previous step: the end of an excursion, not a new link state
++
++    def label(self) -> str:
++        bits = [f"N{self.node} {self.kind}"]
++        if self.delta_db is not None:
++            bits.append(f"{self.delta_db:+.0f} dB ({self.rssi_before:.0f} -> {self.rssi_after:.0f} dBm)")
++        if self.fps_before is not None and self.fps_after is not None:
++            bits.append(f"fps {self.fps_before:.0f} -> {self.fps_after:.0f}")
++        return " ".join(bits)
++
++
++def second_series(node: NodeSeries, t0_ms: int, n_sec: int) -> tuple[np.ndarray, np.ndarray]:
++    """(median RSSI per second [NaN where no frames], frames per second) on a 1 s grid starting at t0_ms."""
++    sec = ((node.t - t0_ms) // 1000).astype(np.int64)
++    keep = (sec >= 0) & (sec < n_sec)
++    sec, rssi = sec[keep], node.rssi[keep]
++    fps = np.bincount(sec, minlength=n_sec).astype(np.float64)
++    med = np.full(n_sec, np.nan)
++    if sec.size:
++        order = np.argsort(sec, kind="stable")
++        sec, rssi = sec[order], rssi[order]
++        bounds = np.flatnonzero(np.diff(sec)) + 1
++        for s_idx, chunk in zip(sec[np.concatenate([[0], bounds])], np.split(rssi, bounds)):
++            if np.isfinite(chunk).any():
++                med[s_idx] = np.nanmedian(chunk)
++    return med, fps
++
++
++def _nanmed(x: np.ndarray) -> float:
++    return float(np.nanmedian(x)) if np.isfinite(x).any() else float("nan")
++
++
++def _held_seconds(rssi: np.ndarray, s: int, base: float, step_db: float, calm: int = 5) -> float:
++    """Seconds from onset ``s`` until RSSI is back within step_db/2 of ``base`` for ``calm`` consecutive seconds (or the end)."""
++    back = np.isfinite(rssi) & (np.abs(rssi - base) < step_db / 2)
++    run = 0
++    for k in range(s, len(rssi)):
++        run = run + 1 if back[k] else 0
++        if run >= calm:
++            return float(k - calm + 1 - s)
++    return float(len(rssi) - s)
++
++
++def detect_events(rssi: np.ndarray, fps: np.ndarray, t0_ms: int, node: int, *, pre: int = PRE_S, hold: int = HOLD_S, step_db: float = STEP_DB) -> list[Event]:
++    """Held RSSI steps and frame-rate collapses inside one recording (onset = first second of the earliest qualifying window)."""
++    events: list[Event] = []
++    n = len(rssi)
++    quiet_until = {"rssi_up": 0, "rssi_down": 0, "rate_collapse": 0}  # per direction: a step and its REVERSAL are both real events
++    for s in range(pre, n - hold + 1):
++        before_r, after_r = rssi[s - pre:s], rssi[s:s + hold]
++        before_f, after_f = fps[s - pre:s], fps[s:s + hold]
++        base, new = _nanmed(before_r), _nanmed(after_r)
++        direction = "rssi_up" if new > base else "rssi_down"
++        if np.isfinite(base) and np.isfinite(new) and s >= quiet_until[direction]:
++            if abs(new - base) >= step_db:
++                beyond = np.sign(new - base) * (after_r - base) >= step_db
++                if np.isfinite(after_r).sum() >= 0.5 * hold and beyond.sum() / max(1, np.isfinite(after_r).sum()) >= HELD_FRACTION:
++                    events.append(Event(node, t0_ms + s * 1000, "rssi_step", new - base, float(np.median(before_f)), float(np.median(after_f)), base, new, held_s=_held_seconds(rssi, s, base, step_db)))
++                    quiet_until[direction] = s + pre
++        if s >= quiet_until["rate_collapse"]:
++            base_f, new_f = float(np.median(before_f)), float(np.median(after_f))
++            if base_f >= MIN_BASELINE_FPS and new_f <= COLLAPSE * base_f and (after_f <= 0.85 * base_f).mean() >= COLLAPSE_FRACTION:
++                events.append(Event(node, t0_ms + s * 1000, "rate_collapse", None, base_f, new_f, _nanmed(before_r), _nanmed(after_r)))
++                quiet_until["rate_collapse"] = s + pre
++    return _mark_reversals(sorted(events, key=lambda e: e.t_ms))
++
++
++def _mark_reversals(events: list[Event]) -> list[Event]:
++    out: list[Event] = []
++    for i, e in enumerate(events):
++        prev = next((p for p in reversed(events[:i]) if p.kind == "rssi_step"), None)
++        if (
++            e.kind == "rssi_step"
++            and prev is not None
++            and np.sign(e.delta_db) != np.sign(prev.delta_db)
++            and abs(e.rssi_after - prev.rssi_before) <= PERSIST_DB
++            and e.t_ms - prev.t_ms <= (PRE_S + HOLD_S) * 1000
++        ):
++            e = replace(e, reversal=True)
++        out.append(e)
++    return out
++
++
++def edge_stats(rssi: np.ndarray, fps: np.ndarray, *, last: bool, edge: int = EDGE_S) -> tuple[float, float]:
++    sl = slice(max(0, len(rssi) - edge), len(rssi)) if last else slice(0, min(len(rssi), edge))
++    return _nanmed(rssi[sl]), float(np.median(fps[sl]))
++
++
++@dataclass
++class RecordingLinks:
++    """Everything the epoch logic needs about one recording."""
++    rid: str
++    day: str
++    t_start_ms: int
++    t_end_ms: int
++    label: str = ""
++    events: dict[int, list[Event]] = field(default_factory=dict)             # node -> in-recording events
++    edges: dict[int, dict[str, tuple[float, float]]] = field(default_factory=dict)  # node -> {"first": (rssi, fps), "last": (...)}
++
++
++EMPTY_LABELS = ("empty", "empty_fan")
++PERSIST_DB = 3.0
++
++
++def analyze_recording(rid: str, day: str, nodes: dict[int, NodeSeries], t_start_ms: int, t_end_ms: int, label: str = "", *, step_db: float = STEP_DB, hold: int = HOLD_S) -> RecordingLinks:
++    n_sec = int((t_end_ms - t_start_ms) // 1000) + 1
++    out = RecordingLinks(rid, day, t_start_ms, t_end_ms, label)
++    for node, series in nodes.items():
++        rssi, fps = second_series(series, t_start_ms, n_sec)
++        out.events[node] = detect_events(rssi, fps, t_start_ms, node, hold=hold, step_db=step_db)
++        out.edges[node] = {"first": edge_stats(rssi, fps, last=False), "last": edge_stats(rssi, fps, last=True)}
++    return out
++
++
++def gap_events(prev: RecordingLinks, nxt: RecordingLinks, *, step_db: float = STEP_DB) -> list[Event]:
++    """Events between two consecutive recordings (same or different day). The change happened somewhere in the gap."""
++    ev: list[Event] = []
++    if prev.day != nxt.day:
++        return [Event(0, nxt.t_start_ms, "day_boundary", None, None, None, None, None, in_gap=True)]
++    for node in sorted(set(prev.edges) & set(nxt.edges)):
++        (r0, f0), (r1, f1) = prev.edges[node]["last"], nxt.edges[node]["first"]
++        if np.isfinite(r0) and np.isfinite(r1) and abs(r1 - r0) >= step_db:
++            ev.append(Event(node, nxt.t_start_ms, "gap_step", r1 - r0, f0, f1, r0, r1, in_gap=True))
++        elif f0 >= MIN_BASELINE_FPS and f1 <= COLLAPSE * f0:
++            ev.append(Event(node, nxt.t_start_ms, "gap_collapse", None, f0, f1, r0, r1, in_gap=True))
++    return ev
++
++
++def classify_persistence(links: list[RecordingLinks]) -> list[RecordingLinks]:
++    """Mark every in-recording event persistent or not (in place; returns the chronologically sorted list).
++
++    rssi_step: persistent iff the median of the recording's last EDGE_S seconds is within PERSIST_DB of the new level AND the
++    next recording of the same day (if any) starts within PERSIST_DB of it. rate_collapse: the same with frame rates (<= 0.85 x
++    the pre-event rate). With no next recording the event is persistent=None (cannot be confirmed)."""
++    links.sort(key=lambda r: r.t_start_ms)
++    for i, rec in enumerate(links):
++        nxt = links[i + 1] if i + 1 < len(links) and links[i + 1].day == rec.day else None
++        for node, evs in rec.events.items():
++            for k, e in enumerate(evs):
++                last_r, last_f = rec.edges[node]["last"]
++                nxt_r, nxt_f = nxt.edges[node]["first"] if nxt and node in nxt.edges else (float("nan"), float("nan"))
++                if e.kind == "rssi_step":
++                    here = bool(np.isfinite(last_r) and abs(last_r - e.rssi_after) <= PERSIST_DB)
++                    ahead = None if nxt is None else bool(np.isfinite(nxt_r) and abs(nxt_r - e.rssi_after) <= PERSIST_DB)
++                else:
++                    here = bool(last_f <= 0.85 * e.fps_before)
++                    ahead = None if nxt is None else bool(nxt_f <= 0.85 * e.fps_before)
++                verdict = None if ahead is None else (here and ahead)
++                evs[k] = replace(e, persistent=verdict)
++    return links
++
++
++MIN_EMPTY_BOUNDARY_HOLD_S = 60.0
++
++
++def is_boundary(rec: RecordingLinks, e: Event) -> bool:
++    """A persistent change always splits. In an EMPTY/fan recording a non-persistent change splits only if it HELD
++    >= MIN_EMPTY_BOUNDARY_HOLD_S (nobody legitimately changes the link there, but a 10-20 s flicker is an excursion, not a new
++    link state). In an occupied recording a non-persistent step may be the person's own body, so it only warns."""
++    if e.reversal:
++        return False
++    if e.persistent:
++        return True
++    return rec.label in EMPTY_LABELS and e.held_s is not None and e.held_s >= MIN_EMPTY_BOUNDARY_HOLD_S
++
++
++@dataclass
++class Timeline:
++    """Epoch boundaries for one node set."""
++    nodes: tuple[int, ...]
++    boundaries: list[tuple[int, str]]                     # (t_ms, reason), sorted
++    transitional: list[tuple[int, int, str]]              # (t_start_ms, t_end_ms, reason)
++    _times: list[int] = field(default_factory=list)
++
++    def __post_init__(self) -> None:
++        self._times = [b[0] for b in self.boundaries]
++
++    def epoch_index(self, t_ms: int) -> int:
++        return bisect.bisect_right(self._times, t_ms)
++
++    def is_transitional(self, t_ms: int) -> bool:
++        return any(a <= t_ms < b for a, b, _ in self.transitional)
++
++    def epoch_name(self, t_ms: int) -> str:
++        return f"E{self.epoch_index(t_ms) + 1:02d}"
++
++
++def build_timeline(links: list[RecordingLinks], nodes: tuple[int, ...], step_db: float = STEP_DB) -> Timeline:
++    """links must cover every recording of the study (any order); boundaries use only events of ``nodes``."""
++    links = sorted(links, key=lambda r: r.t_start_ms)
++    boundaries: list[tuple[int, str]] = []
++    transitional: list[tuple[int, int, str]] = []
++    for i, rec in enumerate(links):
++        for node in nodes:
++            for e in rec.events.get(node, []):
++                if not is_boundary(rec, e):
++                    continue  # ambiguous (possibly the occupant); reported, not used to split
++                boundaries.append((e.t_ms, e.label()))
++                transitional.append((e.t_ms - PRE_MARGIN_S * 1000, e.t_ms + SETTLE_S * 1000, e.label()))
++        if i > 0:
++            for e in gap_events(links[i - 1], rec, step_db=step_db):
++                if e.kind == "day_boundary" or e.node in nodes:
++                    boundaries.append((e.t_ms, e.label() if e.kind != "day_boundary" else "new calendar day"))
++    boundaries.sort()
++    return Timeline(tuple(nodes), boundaries, sorted(transitional))
++
++
++def iso(ms: int) -> str:
++    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\movement.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\movement.py"
+new file mode 100644
+index 0000000..f7afcbe
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\movement.py"	
+@@ -0,0 +1,227 @@
++"""MOVEMENT SCORE for the live movement view -- NOT a presence detector and NOT a detection candidate.
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.movement
++
++    score_n(t) = x_n(t) - P25( x_n over the same node's PREVIOUS L seconds )      (causal: only windows before t)
++    fused      = max over the chosen nodes, on windows where every chosen node has a score
++
++x is a per-window feature (perturb, perturb_agc, decor), L in {45, 90} s, node sets N1+N2 and all four. There is no training
++set, no reference recording and no threshold: the baseline is the node's own recent past. Consequences that MUST be shown
++wherever this is displayed: it fades under SUSTAINED motion (the baseline rises to meet the signal) and it reads ZERO for a
++MOTIONLESS person. So it can only say "something changed recently on this link", never "someone is here", never "the room is
++empty". It is evaluated within link-state epochs first (epochs.py), with session-blocked CIs where >= 2 recordings per class
++exist, the empty-vs-empty gate (C4) and the fan recording as a negative control. Windows closer than L s to a segment start are
++warm-up (no score), so a baseline never spans an epoch boundary.
++"""
++from __future__ import annotations
++
++import numpy as np
++
++from . import epoch_eval as ee
++from . import epochs as ep
++from .features import fuse_max
++from .jsonutil import dump_json
++from .provenance import default_out_dir, provenance
++from .stats import block_bootstrap_auc, empty_pair_control, session_block_auc
++from .tables import RecTables, load_all
++
++OUT_DIR = default_out_dir()
++WINDOW_S = 1.5
++LS = (45, 90)
++FEATS = ("perturb", "perturb_agc", "decor")
++NODE_SETS = ((1, 2), (1, 2, 3, 4))
++QUANTILE = 25.0
++MIN_PREVIOUS_FRACTION = 0.8
++N_BOOT = 300
++MIN_WIN = 60
++POSITIVE = ("walking", "still", "two_people")
++CAVEAT = ("movement score: relative to this node's own recent past; fades under sustained motion and is zero for a motionless person; "
++          "NOT presence, and never evidence that a room is empty")
++
++
++def causal_score(k: np.ndarray, x: np.ndarray, l_seconds: int, q: float = QUANTILE, min_fraction: float = MIN_PREVIOUS_FRACTION) -> np.ndarray:
++    """x_t minus the q-th percentile of x over the previous ``l_seconds`` (windows strictly before t). NaN when fewer than
++    ``min_fraction`` of the expected previous windows exist (warm-up, gaps) or x_t is not finite."""
++    span = int(round(l_seconds / WINDOW_S))
++    need = int(np.ceil(min_fraction * span))
++    out = np.full(len(k), np.nan)
++    for i in range(len(k)):
++        lo, hi = np.searchsorted(k, k[i] - span), np.searchsorted(k, k[i])  # windows with k in [k_i - span, k_i)
++        prev = x[lo:hi]
++        prev = prev[np.isfinite(prev)]
++        if len(prev) >= need and np.isfinite(x[i]):
++            out[i] = x[i] - np.percentile(prev, q)
++    return out
++
++
++def fused_scores(seg: RecTables, feat: str, l_seconds: int, nodes: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
++    """(window index, fused movement score) of one segment: per-node causal scores, then the max over ``nodes``."""
++    if any(n not in seg.nodes for n in nodes):
++        return np.zeros(0, dtype=np.int64), np.zeros(0)
++    tables = {n: {"k": seg.nodes[n]["k"], "move": causal_score(seg.nodes[n]["k"], seg.nodes[n][feat], l_seconds)} for n in nodes}
++    return fuse_max(tables, nodes, "move")
++
++
++def _ci(r) -> dict | str:
++    return r if isinstance(r, dict) else "insufficient data"
++
++
++def evaluate_group(scores: dict[str, tuple[str, np.ndarray]]) -> dict:
++    """scores: segment id -> (label, time-ordered fused scores). Reports each positive class and the fan control against the
++    EMPTY segments of this group, plus the empty-vs-empty gate. Cells are 'insufficient data' rather than invented numbers."""
++    by = lambda lab: {sid: v for sid, (l, v) in scores.items() if l == lab and len(v) >= MIN_WIN}
++    neg = by("empty")
++    negs = np.concatenate(list(neg.values())) if neg else np.zeros(0)
++    cell: dict = {"n_empty_segments": len(neg), "n_empty_windows": int(negs.size), "auc": {}, "auc_session_blocked": {}}
++    for cls in (*POSITIVE, "empty_fan"):
++        pos = by(cls)
++        ps = np.concatenate(list(pos.values())) if pos else np.zeros(0)
++        if ps.size < MIN_WIN or negs.size < MIN_WIN:
++            cell["auc"][cls] = cell["auc_session_blocked"][cls] = "insufficient data"
++            continue
++        cell["auc"][cls] = block_bootstrap_auc(ps, negs, n_boot=N_BOOT)
++        cell["auc_session_blocked"][cls] = session_block_auc(pos, neg, n_boot=N_BOOT)
++    cell["empty_vs_empty_control"] = empty_pair_control(neg, n_boot=N_BOOT)
++    cell["n_segments_per_class"] = {lab: len(by(lab)) for lab in (*POSITIVE, "empty_fan", "empty")}
++    return cell
++
++
++def median_by_third(v: np.ndarray) -> list[float] | None:
++    """Median score in the first, middle and last third of a segment (fading under sustained motion shows as a falling sequence)."""
++    if len(v) < 3 * 20:
++        return None
++    return [float(np.median(c)) for c in np.array_split(v, 3)]
++
++
++def run(tabs: dict[str, RecTables] | None = None, links: list[ep.RecordingLinks] | None = None) -> dict:
++    tabs = tabs or load_all()
++    links = links or ee.load_links()
++    out: dict = {"provenance": provenance("python -m scripts.presence_eval.movement", sorted(t.name for t in tabs.values())), "caveat": CAVEAT,
++                 "definition": {"quantile": QUANTILE, "L_seconds": LS, "features": FEATS, "node_sets": NODE_SETS, "min_previous_fraction": MIN_PREVIOUS_FRACTION},
++                 "not_a_detection_candidate": True, "variants": {}}
++    for nodes in NODE_SETS:
++        tl = ep.build_timeline(links, nodes)
++        usable = {rid: t for rid, t in tabs.items() if all(n in t.nodes for n in nodes)}
++        low = [rid for rid, t in usable.items() if min(len(t.nodes[n]["k"]) for n in nodes) / max(1.0, t.duration_s / WINDOW_S) < ee.MIN_GRID_COVERAGE]
++        segs, log = ee.make_segments({r: t for r, t in usable.items() if r not in low}, tl, need=nodes)
++        for feat in FEATS:
++            for l_s in LS:
++                scored = {sid: (seg.label, fused_scores(seg, feat, l_s, nodes)[1]) for sid, seg in segs.items()}
++                epochs = sorted({ee.epoch_of(s) for s in segs.values()})
++                variant = {
++                    "within_epoch": {e: evaluate_group({sid: v for sid, v in scored.items() if ee.epoch_of(segs[sid]) == e}) for e in epochs},
++                    "across_epochs": evaluate_group(scored),
++                    "median_score_by_third": {sid: median_by_third(v[1]) for sid, v in scored.items()},
++                    "warmup_windows_without_score": {sid: int(len(segs[sid].nodes[min(nodes)]["k"]) - len(v[1])) for sid, v in scored.items()},
++                }
++                out["variants"][f"{'+'.join(f'N{n}' for n in nodes)}/{feat}/L{l_s}"] = variant
++        out.setdefault("segments", {})["+".join(f"N{n}" for n in nodes)] = log
++        out.setdefault("excluded_low_coverage", {})["+".join(f"N{n}" for n in nodes)] = low
++    return out
++
++
++# ── Reproduction of the externally reported "pooled" protocol (RuView-vs-Phantom note, section 3) ───────────────────────
++# Pooled empties = s6 + first PART of s8 + first PART of s9 (last window of part 1 taken from the part files' own time range);
++# positives s7 walking, s10 and s1(27 Oct) still, s5 fan; first L seconds of each recording dropped; the drift control is
++# AUC(s8 part 1 vs s6). NO epochs here: this is the protocol as reported, kept only to check the reported numbers.
++POOLED = {
++    "empty": {"s6_empty_1027_1942": None, "s8_empty_1027_1953": 281, "s9_empty_1027_2047": 264},   # value = last window index kept
++    "walking": {"s7_walking_1027_1945": None},
++    "still": {"s10_still_1027_2121": None, "s1_still_1027_1936": None},
++    "fan": {"s5_empty_fan_1027_1938": None},
++}
++S7_HEAD_LAST_K = 125   # s7 windows before node 1's persistent step (+188 s): the variant without the transitional tail
++
++
++def truncate(rec: RecTables, last_k: int | None) -> RecTables:
++    if last_k is None:
++        return rec
++    nodes = {n: {c: v[t["k"] <= last_k] for c, v in t.items()} for n, t in rec.nodes.items()}
++    return RecTables(rec.rid, rec.name, rec.label, rec.subject, rec.day, rec.t0_ms, rec.duration_s, rec.parts, nodes)
++
++
++def _raw_fused(rec: RecTables, feat: str, nodes: tuple[int, ...]) -> np.ndarray:
++    if any(n not in rec.nodes for n in nodes):
++        return np.zeros(0)
++    return fuse_max(rec.nodes, nodes, feat)[1]
++
++
++def pooled_reproduction(tabs: dict[str, RecTables], pooled: dict | None = None, n_boot: int = N_BOOT, block: int = 7) -> dict:
++    pooled = pooled or POOLED
++    out: dict = {"protocol": "pooled empties s6 + s8 part 1 + s9 part 1, no epochs (as reported externally)", "configs": {}}
++    configs = [("decor", (1, 2, 3, 4), "raw", None), ("decor", (1, 2, 3, 4), "self", 90), ("perturb", (1, 2), "raw", None), ("perturb", (1, 2), "self", 90),
++               ("decor", (1, 2, 3, 4), "self", 45), ("perturb", (1, 2), "self", 45)]
++    for feat, nodes, mode, l_s in configs:
++        def score(rid: str, last_k: int | None) -> np.ndarray:
++            rec = truncate(tabs[rid], last_k)
++            return _raw_fused(rec, feat, nodes) if mode == "raw" else fused_scores(rec, feat, l_s, nodes)[1]
++
++        pos_by_class = {c: np.concatenate([score(r, k) for r, k in m.items()]) for c, m in pooled.items()}
++        neg = pos_by_class["empty"]
++        s8 = score("s8_empty_1027_1953", pooled["empty"]["s8_empty_1027_1953"])
++        s6 = score("s6_empty_1027_1942", None)
++        cell: dict = {}
++        for cls in ("walking", "still", "fan"):
++            cell[cls] = block_bootstrap_auc(pos_by_class[cls], neg, block=block, n_boot=n_boot)
++        cell["walking_head_only_no_tail"] = block_bootstrap_auc(score("s7_walking_1027_1945", S7_HEAD_LAST_K), neg, block=block, n_boot=n_boot)
++        for rid in pooled["still"]:
++            cell[f"still:{rid}"] = block_bootstrap_auc(score(rid, None), neg, block=block, n_boot=n_boot)
++        cell["drift_control_s8p1_vs_s6"] = block_bootstrap_auc(s8, s6, block=block, n_boot=n_boot)
++        out["configs"][f"{'+'.join(f'N{n}' for n in nodes)}/{feat}/{mode}" + (f"/L{l_s}" if l_s else "")] = cell
++    return out
++
++
++def render_pooled(res: dict) -> str:
++    L = ["# Reproduction of the externally reported pooled self-baseline table", "", res["protocol"], "",
++         "AUC [window-block 95 % CI]; 0.5 = chance. NOT a detection claim; one walking recording; the choice of two lookbacks and four configurations is in-sample.", "",
++         "| config | walking (s7 whole) | walking (head only, no step tail) | still s10 | still s1 | fan s5 | drift control s8p1 vs s6 |", "|--|--|--|--|--|--|--|"]
++    for name, c in res["configs"].items():
++        L.append(f"| {name} | {_c(c['walking'])} | {_c(c['walking_head_only_no_tail'])} | {_c(c['still:s10_still_1027_2121'])} | {_c(c['still:s1_still_1027_1936'])} | {_c(c['fan'])} | {_c(c['drift_control_s8p1_vs_s6'])} |")
++    return "\n".join(L) + "\n"
++
++
++def _c(v) -> str:
++    if not isinstance(v, dict):
++        return "n/a"
++    if v.get("auc") is None:
++        return "n/a"
++    lo = v.get("lo")
++    return f"{v['auc']:.2f}" + (f" [{lo:.2f}, {v['hi']:.2f}]" if lo is not None else " [no CI]")
++
++
++def render(res: dict) -> str:
++    L = ["# Movement score (not a presence detector)", "", f"**{res['caveat']}.**", "",
++         "AUC = movement score of the named class vs the EMPTY segments of the same group (an epoch, or all epochs). The first interval is a "
++         "window-block bootstrap (optimistic); `sb` is the session-blocked interval (needs ≥ 2 recordings in each class, otherwise `[no CI]`).", ""]
++    for name, v in res["variants"].items():
++        L += [f"## {name}", "", "| group | empties | walking | still | two_people | fan (negative control) | empty-vs-empty C4 |", "|--|--|--|--|--|--|--|"]
++        groups = {**{f"epoch {e}": c for e, c in v["within_epoch"].items()}, "ACROSS epochs": v["across_epochs"]}
++        for g, c in groups.items():
++            ctrl = c["empty_vs_empty_control"]
++            gate = "n/a (< 2 empties)" if ctrl.get("passes") is None else f"{'pass' if ctrl['passes'] else 'FAIL'} ({ctrl['worst_symmetric_upper_bound']:.2f})"
++            sb = {k: c["auc_session_blocked"].get(k) for k in (*POSITIVE, "empty_fan")}
++            cells = [f"{_c(c['auc'].get(k))}" + (f" sb {_c(sb[k])}" if isinstance(sb[k], dict) and sb[k].get("lo") is not None else "") for k in (*POSITIVE, "empty_fan")]
++            L.append(f"| {g} | {c['n_empty_segments']} seg / {c['n_empty_windows']} win | " + " | ".join(cells) + f" | {gate} |")
++        L.append("")
++    fade = res["variants"].get("N1+N2/decor/L45")
++    if fade:
++        L += ["## Does it fade? median score by third of each segment (N1+N2/decor/L45)", "", "| segment | first third | middle | last third |", "|--|--|--|--|"]
++        L += [f"| {sid} | {m[0]:.3g} | {m[1]:.3g} | {m[2]:.3g} |" for sid, m in fade["median_score_by_third"].items() if m]
++        L.append("")
++    return "\n".join(L)
++
++
++def main() -> None:
++    res = run()
++    (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
++    dump_json(OUT_DIR / "results" / "movement_score.json", res)
++    (OUT_DIR / "results" / "movement_score_tables.md").write_text(render(res), encoding="utf-8")
++    pooled = pooled_reproduction(load_all())
++    pooled["provenance"] = provenance("python -m scripts.presence_eval.movement (pooled reproduction)", [])
++    dump_json(OUT_DIR / "results" / "movement_pooled_reproduction.json", pooled)
++    (OUT_DIR / "results" / "movement_pooled_reproduction.md").write_text(render_pooled(pooled), encoding="utf-8")
++    print("wrote results/movement_score.json and results/movement_score_tables.md;", len(res["variants"]), "variants; plus the pooled reproduction")
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\audit\\logger.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\audit\\logger.ts"
+index 91978c2..29f5e38 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\audit\\logger.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\audit\\logger.ts"	
+@@ -1,6 +1,7 @@
+ import type { Request } from "express";
+ import fs from "fs";
+ import path from "path";
++import { dataDir } from "../lib/data-dir";
+ 
+ const ROTATED_PREFIX = "audit-";
+ const MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024;
+@@ -87,7 +88,7 @@ function safeParseLine(line: string): AuditRecord | null {
+ 
+ export class AuditLogger {
+   constructor(
+-    private readonly dir = process.env.PHANTOM_AUDIT_DIR || path.resolve("data", "audit"),
++    private readonly dir = process.env.PHANTOM_AUDIT_DIR || dataDir("audit"),
+   ) {}
+ 
+   async log(input: {
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\auth\\service.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\auth\\service.ts"
+index f309714..ca3270b 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\auth\\service.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\auth\\service.ts"	
+@@ -4,6 +4,7 @@ import createMemoryStore from "memorystore";
+ import { randomUUID, scryptSync, timingSafeEqual } from "crypto";
+ import fs from "fs";
+ import path from "path";
++import { dataDir } from "../lib/data-dir";
+ import z from "zod";
+ import { auditLogger, type AuditDetailsInput } from "../audit/logger";
+ 
+@@ -75,7 +76,7 @@ function isProduction() {
+ }
+ 
+ function getOperatorSeedPath() {
+-  return process.env.PHANTOM_OPERATOR_SEED_PATH || path.resolve("data", "operator.json");
++  return process.env.PHANTOM_OPERATOR_SEED_PATH || dataDir("operator.json");
+ }
+ 
+ function getSessionSecret() {
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\dataset-recorder.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.ts"
+index 7779bcb..abe005c 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\dataset-recorder.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.ts"	
+@@ -27,6 +27,7 @@
+ import crypto from "crypto";
+ import fs from "fs";
+ import path from "path";
++import { dataDir } from "./data-dir";
+ 
+ export const DATASET_LABELS = [
+   "empty",
+@@ -197,7 +198,7 @@ export class PartNodeStats {
+ 
+ export function buildPartSummary(info: { file: string; part: number; startedAtMs: number; partStartedAtMs: number; closedAtMs: number }, stats: Map<number, PartNodeStats>): Record<string, unknown> {
+   const perNode: Record<string, unknown> = {};
+-  for (const [node, s] of [...stats.entries()].sort((a, b) => a[0] - b[0])) if (s.frames > 0) perNode[String(node)] = s.summary();
++  for (const [node, s] of Array.from(stats.entries()).sort((a, b) => a[0] - b[0])) if (s.frames > 0) perNode[String(node)] = s.summary();
+   return {
+     type: "part_summary", schema: 1, file: path.basename(info.file), part: info.part, startedAtMs: info.startedAtMs,
+     partStartedAtMs: info.partStartedAtMs, closedAtMs: info.closedAtMs, windowSeconds: SUMMARY_WINDOW_MS / 1000,
+@@ -307,7 +308,7 @@ export class DatasetRecorder {
+   private partStartedAtMs = 0;
+ 
+   constructor(options: DatasetRecorderOptions = {}) {
+-    this.rootDir = options.rootDir ?? path.resolve("data", "datasets");
++    this.rootDir = options.rootDir ?? dataDir("datasets");
+     this.maxFramesPerFile = options.maxFramesPerFile ?? DEFAULT_MAX_FRAMES_PER_FILE;
+     this.now = options.now ?? Date.now;
+   }
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\phase-test-logger.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phase-test-logger.ts"
+index 1a48a83..18922b5 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\phase-test-logger.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phase-test-logger.ts"	
+@@ -8,9 +8,10 @@
+  */
+ import fs from "fs";
+ import path from "path";
++import { dataDir } from "./data-dir";
+ 
+ const ENABLED = process.env.PHANTOM_PHASE_TEST_LOG === "1";
+-const LOG_DIR = process.env.PHANTOM_PHASE_LOG_DIR || path.resolve("data", "phase-tests");
++const LOG_DIR = process.env.PHANTOM_PHASE_LOG_DIR || dataDir("phase-tests");
+ 
+ class PhaseTestLogger {
+   private stream: fs.WriteStream | null = null;
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\runtime-settings.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\runtime-settings.ts"
+index 820059a..b802a09 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\runtime-settings.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\runtime-settings.ts"	
+@@ -6,13 +6,14 @@
+  */
+ import * as fs from "fs";
+ import * as path from "path";
++import { dataDir } from "./data-dir";
+ 
+ export interface RuntimeSettings {
+   fusedTargetMotionThreshold?: number;
+   motionThreshold?: number;
+ }
+ 
+-const DATA_DIR = path.resolve("data");
++const DATA_DIR = dataDir();
+ const SETTINGS_FILE = path.join(DATA_DIR, "runtime-settings.json");
+ 
+ function ensureDir() {
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\session-store.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\session-store.ts"
+index d515911..04e74b0 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\session-store.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\session-store.ts"	
+@@ -7,6 +7,7 @@
+ 
+ import * as fs from "fs";
+ import * as path from "path";
++import { dataDir } from "./data-dir";
+ 
+ export interface SessionSummary {
+     id: string;
+@@ -43,7 +44,7 @@ export interface StoredSession extends SessionSummary {
+     }[];
+ }
+ 
+-const DATA_DIR = path.resolve("data", "sessions");
++const DATA_DIR = dataDir("sessions");
+ const INDEX_FILE = path.join(DATA_DIR, "_index.json");
+ 
+ function ensureDir() {
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\websocket.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\websocket.ts"
+index e6cb584..8997bd7 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\10-PS-FIX-27\\server\\lib\\websocket.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\websocket.ts"	
+@@ -125,6 +125,7 @@ import { spawn } from "child_process";
+ import type { AuthService } from "../auth/service";
+ import { authenticateWebSocketRequest } from "../auth/ws-auth";
+ import { auditLogger } from "../audit/logger";
++import { dataDir } from "./data-dir";
+ 
+ interface WSClient {
+   ws: WebSocket;
+@@ -188,7 +189,7 @@ export class SignalProcessingServer {
+     },
+     {
+       room: this.room,
+-      datasetDir: process.env.PHANTOM_DEMO_DATASET_DIR || path.join("data", "datasets", "room1"),
++      datasetDir: process.env.PHANTOM_DEMO_DATASET_DIR || path.join(process.env.PHANTOM_DATA_DIR || "data", "datasets", "room1"),
+     },
+   );
+   private datasetRecorder = new DatasetRecorder();
+@@ -1011,7 +1012,7 @@ export class SignalProcessingServer {
+   }
+ 
+   private serializeToCSV(): string {
+-    const dir = path.resolve("data", "sessions");
++    const dir = dataDir("sessions");
+     if (!fs.existsSync(dir)) {
+       fs.mkdirSync(dir, { recursive: true });
+     }
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\e2e_guard.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\e2e_guard.py"
+new file mode 100644
+index 0000000..6b92eb7
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\e2e_guard.py"	
+@@ -0,0 +1,43 @@
++"""Decide whether the live-server e2e tests may run, and against which URL.
++
++Those tests log in, ingest samples and create sessions on whatever server answers. Running them against an operator's
++dashboard pollutes its data/sessions (PS-FIX-23), so they require:
++  * explicit opt-in:  PHANTOM_E2E_LIVE_SERVER=1
++  * a throw-away LOCAL server on its own port (default http://127.0.0.1:5099; override PHANTOM_E2E_SERVER_URL)
++  * never the operator dashboard port 5000, and never a non-local host.
++
++Start such a server with its OWN data directory so it can never write into an operator's data/sessions (PS-FIX-27):
++
++    PHANTOM_DATA_DIR=<scratch dir> PORT=5099 npm run dev
++
++PHANTOM_DATA_DIR relocates sessions, audit log, operator seed, runtime settings, datasets and phase-test logs (default: ``data``).
++"""
++from __future__ import annotations
++
++from typing import Mapping
++from urllib.parse import urlparse
++
++OPERATOR_PORT = 5000
++DEFAULT_URL = "http://127.0.0.1:5099"
++LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
++
++
++def e2e_server_url(env: Mapping[str, str]) -> tuple[str | None, str]:
++    """(url, reason): url is None when the tests must not run; reason says why (or 'ok')."""
++    if env.get("PHANTOM_E2E_LIVE_SERVER") != "1":
++        return None, "opt-in required: set PHANTOM_E2E_LIVE_SERVER=1"
++    raw = env.get("PHANTOM_E2E_SERVER_URL") or DEFAULT_URL
++    try:
++        parsed = urlparse(raw)
++        port = parsed.port
++    except ValueError:
++        return None, f"invalid PHANTOM_E2E_SERVER_URL {raw!r}"
++    if parsed.scheme != "http" or not parsed.hostname:
++        return None, f"PHANTOM_E2E_SERVER_URL must be an http URL, got {raw!r}"
++    if parsed.hostname not in LOCAL_HOSTS:
++        return None, f"refusing non-local host {parsed.hostname!r}: use a throw-away local server"
++    if port is None:
++        return None, "PHANTOM_E2E_SERVER_URL must include an explicit port (not :5000)"
++    if port == OPERATOR_PORT:
++        return None, f"refusing port {OPERATOR_PORT}: that is the operator dashboard; start a throw-away server on another port"
++    return f"{parsed.scheme}://{parsed.hostname}:{port}", "ok"
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_epochs.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_epochs.py"
+new file mode 100644
+index 0000000..656499a
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_epochs.py"	
+@@ -0,0 +1,234 @@
++"""Addendum A: per-node link-state step detector, epochs, transitional exclusion, and no pooling of empties across epochs."""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from scripts.presence_eval import epoch_eval as ee
++from scripts.presence_eval import epochs as ep
++from scripts.presence_eval.features import COVARIATES, FEATURES
++from scripts.presence_eval.tables import RecTables
++
++T0 = 1_793_130_000_000
++
++
++def series(n: int, level: float = -36.0, fps: float = 66.0) -> tuple[np.ndarray, np.ndarray]:
++    return np.full(n, level), np.full(n, fps)
++
++
++def detect(r: np.ndarray, f: np.ndarray) -> list[ep.Event]:
++    return ep.detect_events(r, f, T0, node=1)
++
++
++# ---- detector -----------------------------------------------------------------------------------------------------
++
++def test_a_held_rssi_step_is_detected_near_its_onset_with_delta_and_hold() -> None:
++    r, f = series(300)
++    r[195:] = -47.0                                    # the s7 pattern: -36 -> -47 and it stays
++    ev = [e for e in detect(r, f) if e.kind == "rssi_step"]
++    assert len(ev) == 1
++    e = ev[0]
++    assert abs((e.t_ms - T0) / 1000 - 195) <= 2 and e.delta_db == pytest.approx(-11.0, abs=0.5)
++    assert e.rssi_before == pytest.approx(-36.0) and e.rssi_after == pytest.approx(-47.0) and e.held_s == pytest.approx(105.0, abs=1)
++
++
++def test_a_one_second_dip_and_a_short_excursion_are_not_steps() -> None:
++    r, f = series(300)
++    r[203] = -71.0                                     # node 4's one-second dip
++    r[120:127] = -43.0                                 # 7 dB for 7 s: shorter than HOLD_S
++    assert [e for e in detect(r, f) if e.kind == "rssi_step"] == []
++
++
++def test_a_steady_link_has_no_events_and_a_step_below_6_db_is_ignored() -> None:
++    r, f = series(300)
++    assert detect(r, f) == []
++    r[150:] = -41.0                                    # 5 dB
++    assert detect(r, f) == []
++
++
++def test_a_step_and_its_reversal_within_30_s_are_both_detected() -> None:
++    r, f = series(300)
++    r[100:125] = -47.0                                 # down 11 dB for 25 s, then back
++    ev = [e for e in detect(r, f) if e.kind == "rssi_step"]
++    assert [round(e.delta_db) for e in ev] == [-11, 11]
++    assert [e.reversal for e in ev] == [False, True]               # the return to the old level is not a new link state
++
++
++def test_a_held_excursion_reports_how_long_it_held() -> None:
++    r, f = series(300)
++    r[100:116] = -43.0                                 # the s5 flicker: 7 dB for 16 s
++    ev = [e for e in detect(r, f) if e.kind == "rssi_step"]
++    assert 14 <= ev[0].held_s <= 17 and ev[0].reversal is False
++    assert [e.reversal for e in ev[1:]] == [True] * (len(ev) - 1)   # the way back is flagged, never a boundary
++    empty = links("e", "empty", 0, 300, -36, -36)
++    assert not any(ep.is_boundary(empty, e) for e in ev)           # a 16 s flicker (and its return) never splits an empty recording
++
++
++def test_frame_rate_collapse_is_detected_and_a_low_baseline_is_not() -> None:
++    r, f = series(300)
++    f[200:215] = 20.0                                  # 66 -> 20 frames/s for 15 s
++    ev = [e for e in detect(r, f) if e.kind == "rate_collapse"]
++    assert len(ev) == 1 and ev[0].fps_before == pytest.approx(66.0) and ev[0].fps_after <= 25
++    r2, f2 = series(300, fps=11.0)                     # pre-fix recording: baseline below MIN_BASELINE_FPS
++    f2[200:215] = 2.0
++    assert detect(r2, f2) == []
++
++
++def test_missing_seconds_do_not_crash_and_count_as_zero_frames() -> None:
++    r, f = series(200)
++    r[80:100] = np.nan
++    f[80:100] = 0.0
++    assert all(isinstance(e, ep.Event) for e in detect(r, f))
++
++
++# ---- gaps, persistence, boundaries ----------------------------------------------------------------------------------
++
++def links(rid: str, label: str, start_s: int, dur_s: int, first: float, last: float, day: str = "20261027", fps: float = 66.0) -> ep.RecordingLinks:
++    rl = ep.RecordingLinks(rid, day, T0 + start_s * 1000, T0 + (start_s + dur_s) * 1000, label)
++    rl.events = {1: []}
++    rl.edges = {1: {"first": (first, fps), "last": (last, fps)}}
++    return rl
++
++
++def test_gap_step_day_boundary_and_no_event() -> None:
++    a, b = links("a", "empty", 0, 100, -36, -36), links("b", "empty", 400, 100, -47, -47)
++    assert [e.kind for e in ep.gap_events(a, b)] == ["gap_step"] and ep.gap_events(a, b)[0].delta_db == pytest.approx(-11.0)
++    assert ep.gap_events(a, links("c", "empty", 400, 100, -38, -38)) == []
++    assert [e.kind for e in ep.gap_events(a, links("d", "empty", 400, 100, -36, -36, day="20261028"))] == ["day_boundary"]
++
++
++def test_persistence_requires_the_new_level_to_hold_to_the_end_and_into_the_next_recording() -> None:
++    step = ep.Event(1, T0 + 50_000, "rssi_step", -11.0, 66, 44, -36.0, -47.0, held_s=20.0)
++    a = links("a", "walking", 0, 70, -36, -47)
++    a.events = {1: [step]}
++    b = links("b", "empty", 300, 100, -47, -47)
++    ep.classify_persistence([a, b])
++    assert a.events[1][0].persistent is True and ep.is_boundary(a, a.events[1][0])
++    b2 = links("b2", "empty", 300, 100, -36, -36)                  # the next recording is back at the old level
++    a2 = links("a", "walking", 0, 70, -36, -47)
++    a2.events = {1: [step]}
++    ep.classify_persistence([a2, b2])
++    assert a2.events[1][0].persistent is False
++    last = links("only", "walking", 0, 70, -36, -47)
++    last.events = {1: [step]}
++    ep.classify_persistence([last])
++    assert last.events[1][0].persistent is None                    # no next recording: cannot be confirmed
++
++
++def test_boundary_rules_depend_on_the_label_and_the_hold_time() -> None:
++    short = ep.Event(1, T0, "rssi_step", -7.0, 65, 60, -36.0, -43.0, persistent=False, held_s=16.0)
++    long_ = ep.Event(1, T0, "rssi_step", -7.0, 65, 60, -36.0, -43.0, persistent=False, held_s=120.0)
++    occupied, empty = links("o", "still", 0, 100, -36, -36), links("e", "empty", 0, 100, -36, -36)
++    assert not ep.is_boundary(occupied, long_)                     # may be the person's own body
++    assert not ep.is_boundary(empty, short)                        # a 16 s flicker is an excursion
++    assert ep.is_boundary(empty, long_)                            # long-held change in an EMPTY recording splits
++    assert ep.is_boundary(occupied, ep.Event(1, T0, "rssi_step", -12.0, 63, 44, -35.0, -48.0, persistent=True, held_s=20.0))
++
++
++def test_timeline_marks_the_transitional_interval_and_names_epochs() -> None:
++    a = links("a", "walking", 0, 220, -36, -47)
++    a.events = {1: [ep.Event(1, T0 + 195_000, "rssi_step", -11.0, 66, 44, -36.0, -47.0, persistent=True, held_s=20.0)]}
++    tl = ep.build_timeline([a], (1,))
++    assert tl.epoch_name(T0 + 100_000) == "E01" and tl.epoch_name(T0 + 200_000) == "E02"
++    assert tl.is_transitional(T0 + 191_000) and tl.is_transitional(T0 + 224_000)
++    assert not tl.is_transitional(T0 + 150_000) and not tl.is_transitional(T0 + 226_000)
++    assert ep.build_timeline([a], (2,)).boundaries == []           # events of OTHER nodes do not split this node set
++
++
++# ---- evaluation: no pooling across epochs -----------------------------------------------------------------------------
++
++def rec(rid: str, label: str, n_windows: int, mu: float, seed: int, start_k: int = 0) -> RecTables:
++    rng = np.random.default_rng(seed)
++    t = {f: mu + rng.standard_normal(n_windows) for f in FEATURES}
++    t.update({c: np.zeros(n_windows) for c in COVARIATES})
++    t["k"] = np.arange(start_k, start_k + n_windows, dtype=np.int64)
++    t["nframes"] = np.full(n_windows, 90, dtype=np.int64)
++    return RecTables(rid=rid, name=f"x__{rid}__{label}__20261027T000000Z.jsonl", label=label, subject=rid, day="20261027", t0_ms=T0,
++                     duration_s=n_windows * 1.5, parts=1, nodes={1: dict(t), 2: {k: v.copy() for k, v in t.items()}})
++
++
++def two_epoch_timeline(boundary_s: float) -> ep.Timeline:
++    return ep.Timeline((1, 2), [(T0 + int(boundary_s * 1000), "test boundary")], [])
++
++
++def test_segments_split_at_the_boundary_and_never_mix_epochs() -> None:
++    tabs = {"e1": rec("e1", "empty", 400, 0.0, 1)}                  # 600 s; boundary at 300 s
++    segs, log = ee.make_segments(tabs, two_epoch_timeline(300))
++    assert sorted(segs) == ["e1@E01", "e1@E02"]
++    assert {s["epoch"] for s in log} == {"E01", "E02"}
++    k1, k2 = segs["e1@E01"].nodes[1]["k"], segs["e1@E02"].nodes[1]["k"]
++    assert k1.max() < k2.min() and len(k1) + len(k2) == 400
++
++
++def test_transitional_windows_are_removed_from_the_evaluation_and_logged() -> None:
++    tabs = {"w": rec("w", "walking", 300, 0.0, 2)}                  # 450 s
++    tl = ep.Timeline((1, 2), [(T0 + 200_000, "step")], [(T0 + 195_000, T0 + 230_000, "step")])
++    segs, log = ee.make_segments(tabs, tl)
++    kept = np.concatenate([s.nodes[1]["k"] for s in segs.values()])
++    centre = T0 + ((kept + 0.5) * 1500).astype(np.int64)
++    assert not ((centre >= T0 + 195_000) & (centre < T0 + 230_000)).any()
++    assert sum(s["transitional_dropped"] for s in log) == 300 - len(kept)
++
++
++def test_within_epoch_models_train_only_on_empties_of_the_same_epoch_and_cross_uses_one_source_epoch() -> None:
++    tabs = {"eA1": rec("eA1", "empty", 100, 0, 1), "eA2": rec("eA2", "empty", 100, 0, 2, start_k=100),      # epoch E01
++            "eB": rec("eB", "empty", 100, 5, 3, start_k=300), "wB": rec("wB", "walking", 100, 9, 4, start_k=400)}  # epoch E02
++    segs, _ = ee.make_segments(tabs, two_epoch_timeline(300))      # k >= 200 -> after 300 s
++    for sp in ee.splits_within(segs):
++        e = ee.epoch_of(segs[sp.test_id])
++        assert sp.test_id not in sp.train_ids
++        assert all(ee.epoch_of(segs[t]) == e and segs[t].label == "empty" for t in sp.train_ids)
++    for sp in ee.splits_cross(segs):
++        a, b = sp.group.split("->")
++        assert all(ee.epoch_of(segs[t]) == a for t in sp.train_ids) and ee.epoch_of(segs[sp.test_id]) == b and a != b
++
++
++def test_an_epoch_with_a_single_empty_has_no_held_out_empty_so_the_cell_says_insufficient_data() -> None:
++    tabs = {"e": rec("e", "empty", 150, 0, 1), "w": rec("w", "walking", 150, 8, 2, start_k=150)}
++    segs, _ = ee.make_segments(tabs, ep.Timeline((1, 2), [], []))   # a single epoch
++    rows = [r for sp in [ee.splits_within(segs)] for r in ee.tn.run_candidate(segs, sp, "decor", "max")]
++    cell = ee.tn.aggregate(rows)["epoch_within/E01"]
++    assert cell["auc"]["walking"] == "insufficient data" and cell["n_empty_windows"] == 0
++    assert cell["empty_vs_empty_control"]["passes"] is None
++    assert cell["tpr"]["walking@1%"]["rate"] > 0.9                   # positives are still scored against the epoch's empty
++
++
++def test_low_coverage_recordings_are_excluded_not_evaluated_on_chance_bursts() -> None:
++    sparse = rec("old", "walking", 40, 0.0, 5)
++    sparse.duration_s = 400.0                                       # 40 windows on a 267-window grid
++    res = ee.run(nodes=(1, 2), tabs={"old": sparse, "e": rec("e", "empty", 200, 0, 1)}, links=[])
++    assert "old" in res["excluded_low_coverage"] and all("old" not in s["segment"] for s in res["segments"])
++    assert "UNCONFIRMED" in res["cause_of_link_changes"]
++
++
++# ---- PS-FIX-32: post-hoc rule labelling and the ambiguity list ---------------------------------------------------------------
++
++from scripts.presence_eval import epoch_sensitivity as es  # noqa: E402
++
++
++def test_every_non_boundary_event_gets_a_specific_reason_and_boundaries_get_none() -> None:
++    occ, emp = links("o", "still", 0, 300, -36, -36), links("e", "empty", 0, 300, -36, -36)
++    persistent = ep.Event(1, T0, "rssi_step", -12.0, 63, 44, -35.0, -48.0, persistent=True, held_s=20.0)
++    local = ep.Event(1, T0, "rssi_step", -7.0, 65, 60, -36.0, -43.0, persistent=False, held_s=19.0)
++    unknown = ep.Event(1, T0, "rate_collapse", None, 57, 38, -33.0, -45.0, persistent=None)
++    flicker = ep.Event(1, T0, "rssi_step", -7.0, 65, 60, -36.0, -43.0, persistent=False, held_s=16.0)
++    back = ep.Event(1, T0, "rssi_step", 7.0, 60, 65, -43.0, -36.0, persistent=False, held_s=100.0, reversal=True)
++    assert es.ambiguity_reason(occ, persistent) is None
++    assert "own body" in es.ambiguity_reason(occ, local)
++    assert "cannot be confirmed" in es.ambiguity_reason(occ, unknown)
++    assert "excursion" in es.ambiguity_reason(emp, flicker)
++    assert "reversal" in es.ambiguity_reason(emp, back)
++
++
++def test_the_boundary_rule_is_labelled_post_hoc_in_code_and_results() -> None:
++    assert "POST HOC" in ep.__doc__ and "4/6/8 dB" in ep.__doc__
++    res = {"rule_status": "POST HOC (chosen after inspecting these recordings; not pre-registered)", "grid": {"min_empty_boundary_hold_s_fixed": 60.0}, "configs": {}}
++    assert "post-hoc" in es.render(res).lower()
++    assert es.STEPS_DB == (4.0, 6.0, 8.0) and es.HOLDS_S == (10, 30, 60)
++
++
++def test_a_step_detected_with_a_short_hold_is_not_seen_by_a_hold_longer_than_the_recording_tail() -> None:
++    r, f = series(213)
++    r[193:] = -48.0                                    # the s7 case: only ~19 s of the new level remain before the recording ends
++    assert [e for e in ep.detect_events(r, f, T0, 1, hold=10) if e.kind == "rssi_step"]
++    assert [e for e in ep.detect_events(r, f, T0, 1, hold=30) if e.kind == "rssi_step"] == []
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_movement.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_movement.py"
+new file mode 100644
+index 0000000..4d3ee3a
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_movement.py"	
+@@ -0,0 +1,169 @@
++"""Addendum B: the movement score is causal, baseline-free, fades under sustained motion, is zero for a motionless person,
++never spans an epoch boundary, and is labelled as NOT presence."""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from scripts.presence_eval import epoch_eval as ee
++from scripts.presence_eval import epochs as ep
++from scripts.presence_eval import movement as mv
++from scripts.presence_eval.features import COVARIATES, FEATURES
++from scripts.presence_eval.tables import RecTables
++
++T0 = 1_793_130_000_000
++L45 = 45
++SPAN45 = 30  # windows of 1.5 s in 45 s
++
++
++def ks(n: int) -> np.ndarray:
++    return np.arange(n, dtype=np.int64)
++
++
++# ---- causality and baseline ---------------------------------------------------------------------------------------
++
++def test_the_score_is_causal_future_values_never_change_past_scores() -> None:
++    rng = np.random.default_rng(1)
++    x = rng.standard_normal(200)
++    k = ks(200)
++    full = mv.causal_score(k, x, L45)
++    changed = x.copy()
++    changed[120:] += 50.0                                   # rewrite the future
++    after = mv.causal_score(k, changed, L45)
++    assert np.array_equal(full[:120], after[:120], equal_nan=True)
++    assert not np.array_equal(full[120:], after[120:], equal_nan=True)
++
++
++def test_score_is_the_window_minus_the_25th_percentile_of_the_previous_L_seconds() -> None:
++    x = np.arange(100, dtype=float)
++    k = ks(100)
++    s = mv.causal_score(k, x, L45)
++    i = 60
++    prev = x[i - SPAN45:i]
++    assert s[i] == pytest.approx(x[i] - np.percentile(prev, 25))
++
++
++def test_warmup_has_no_score_and_gaps_below_the_required_history_give_none() -> None:
++    x = np.zeros(100)
++    s = mv.causal_score(ks(100), x, L45)
++    assert np.isnan(s[:int(np.ceil(0.8 * SPAN45))]).all() and np.isfinite(s[SPAN45 + 5])
++    k = np.concatenate([ks(40), ks(40) + 200])               # a long gap: the history before the gap is too old
++    g = mv.causal_score(k, np.zeros(80), L45)
++    assert np.isfinite(g[39]) and np.isnan(g[40])
++
++
++# ---- what it can and cannot say -------------------------------------------------------------------------------------
++
++def test_a_motionless_person_reads_zero_once_the_baseline_has_settled() -> None:
++    x = np.full(200, 5.0)                                    # elevated from the start and constant: nothing is CHANGING
++    s = mv.causal_score(ks(200), x, L45)
++    assert np.allclose(s[SPAN45:], 0.0)
++
++
++def test_sustained_motion_fades_as_the_baseline_catches_up() -> None:
++    x = np.concatenate([np.zeros(100), np.full(200, 5.0)])  # onset of motion at window 100 that then simply continues
++    s = mv.causal_score(ks(300), x, L45)
++    assert s[100] == pytest.approx(5.0) and s[105] == pytest.approx(5.0)   # the change is visible at first
++    assert s[100 + SPAN45 + 5] == pytest.approx(0.0)                       # ... and is gone after ~L seconds
++    assert np.allclose(s[100 + SPAN45:], 0.0)
++
++
++def test_a_new_burst_after_quiet_is_visible_again() -> None:
++    x = np.zeros(300)
++    x[200:210] = 4.0
++    s = mv.causal_score(ks(300), x, L45)
++    assert s[205] == pytest.approx(4.0) and s[250] == pytest.approx(0.0)
++
++
++# ---- fusion --------------------------------------------------------------------------------------------------------
++
++def seg(rid: str, label: str, n: int, series: dict[int, np.ndarray], start_k: int = 0) -> RecTables:
++    nodes = {}
++    for node, x in series.items():
++        t = {f: x.copy() for f in FEATURES}
++        t.update({c: np.zeros(n) for c in COVARIATES})
++        t["k"] = np.arange(start_k, start_k + n, dtype=np.int64)
++        t["nframes"] = np.full(n, 90, dtype=np.int64)
++        nodes[node] = t
++    return RecTables(rid=rid, name=f"x__{rid}__{label}__20261027T000000Z.jsonl", label=label, subject=rid, day="20261027", t0_ms=T0,
++                     duration_s=n * 1.5, parts=1, nodes=nodes)
++
++
++def test_fusion_is_the_max_over_the_chosen_nodes_on_windows_where_all_have_a_score() -> None:
++    n = 120
++    a, b = np.zeros(n), np.zeros(n)
++    a[80] = 1.0
++    b[80] = 3.0
++    b[90] = 2.0
++    s = seg("s", "walking", n, {1: a, 2: b})
++    k, v = mv.fused_scores(s, "decor", L45, (1, 2))
++    assert v[list(k).index(80)] == pytest.approx(3.0) and v[list(k).index(90)] == pytest.approx(2.0)
++    only1 = mv.fused_scores(s, "decor", L45, (1,))[1]
++    assert only1[list(k).index(80)] == pytest.approx(1.0)
++    assert mv.fused_scores(s, "decor", L45, (1, 2, 3))[1].size == 0     # node 3 absent -> nothing, not zero-filled
++
++
++def test_the_baseline_never_spans_an_epoch_boundary() -> None:
++    n = 200
++    x = np.concatenate([np.zeros(100), np.full(100, 9.0)])          # the link-state level changes at window 100
++    s = seg("r", "empty", n, {1: x, 2: x})
++    tl = ep.Timeline((1, 2), [(T0 + int(100 * 1500), "boundary")], [])
++    segs, _ = ee.make_segments({"r": s}, tl)
++    after = segs["r@E02"]
++    k, v = mv.fused_scores(after, "decor", L45, (1, 2))
++    assert k.min() >= 100 + int(np.ceil(0.8 * SPAN45))               # warm-up restarts at the boundary
++    assert np.allclose(v, 0.0)                                       # the +9 level change is NOT reported as movement
++
++
++# ---- evaluation and labelling -----------------------------------------------------------------------------------------
++
++def test_a_class_with_too_few_windows_or_recordings_is_insufficient_not_a_number() -> None:
++    rng = np.random.default_rng(3)
++    sc = {"w": ("walking", rng.normal(1, 1, 200)), "e1": ("empty", rng.normal(0, 1, 200)), "e2": ("empty", rng.normal(0, 1, 200))}
++    cell = mv.evaluate_group(sc)
++    assert cell["auc"]["walking"]["auc"] > 0.6
++    assert cell["auc_session_blocked"]["walking"]["lo"] is None                 # one walking recording: no session-blocked CI
++    assert "insufficient" in cell["auc_session_blocked"]["walking"]["reason"]
++    assert cell["auc"]["still"] == "insufficient data" and cell["auc"]["empty_fan"] == "insufficient data"
++    assert cell["empty_vs_empty_control"]["passes"] is True
++    shifted = {**sc, "e3": ("empty", rng.normal(1.5, 1, 200))}
++    assert mv.evaluate_group(shifted)["empty_vs_empty_control"]["passes"] is False
++
++
++def test_the_result_is_labelled_a_movement_score_and_never_presence() -> None:
++    rng = np.random.default_rng(4)
++    res = {"caveat": mv.CAVEAT, "variants": {"v": {"within_epoch": {"E01": mv.evaluate_group({"e1": ("empty", rng.normal(0, 1, 100)), "e2": ("empty", rng.normal(0, 1, 100))})},
++                                                   "across_epochs": mv.evaluate_group({}), "median_score_by_third": {}}}}
++    text = mv.render(res)
++    assert "NOT presence" in mv.CAVEAT and "empty" in mv.CAVEAT and "not a presence detector" in text.lower()
++    assert mv.POSITIVE == ("walking", "still", "two_people")
++
++
++def test_median_by_third_shows_a_fade() -> None:
++    fading = np.concatenate([np.full(40, 3.0), np.full(40, 1.0), np.full(40, 0.1)])
++    assert mv.median_by_third(fading) == [3.0, 1.0, 0.1] and mv.median_by_third(np.ones(30)) is None
++
++
++# ---- reproduction of the externally reported pooled protocol -------------------------------------------------------------
++
++def test_truncate_keeps_only_windows_up_to_the_last_index() -> None:
++    s = seg("r", "empty", 100, {1: np.arange(100.0), 2: np.arange(100.0)})
++    t = mv.truncate(s, 40)
++    assert t.nodes[1]["k"].max() == 40 and len(t.nodes[1]["decor"]) == 41 and mv.truncate(s, None) is s
++
++
++def test_pooled_reproduction_runs_with_a_custom_mapping_and_reports_every_cell() -> None:
++    rng = np.random.default_rng(11)
++
++    def make(rid: str, label: str, level: float, n: int = 260) -> RecTables:
++        return seg(rid, label, n, {k: level + rng.standard_normal(n) * 0.1 for k in (1, 2, 3, 4)})
++
++    tabs = {r: make(r, l, lv) for r, l, lv in [("s6_empty_1027_1942", "empty", 0.0), ("s8_empty_1027_1953", "empty", 0.0), ("s9_empty_1027_2047", "empty", 0.0),
++                                                ("s7_walking_1027_1945", "walking", 0.0), ("s10_still_1027_2121", "still", 0.0), ("s1_still_1027_1936", "still", 0.0),
++                                                ("s5_empty_fan_1027_1938", "empty_fan", 0.0)]}
++    res = mv.pooled_reproduction(tabs, n_boot=20)
++    assert len(res["configs"]) == 6
++    for cell in res["configs"].values():
++        for key in ("walking", "walking_head_only_no_tail", "fan", "drift_control_s8p1_vs_s6", "still:s10_still_1027_2121", "still:s1_still_1027_1936"):
++            assert key in cell and cell[key]["auc"] is not None
++    assert "drift control" in mv.render_pooled(res) and "NOT a detection claim" in mv.render_pooled(res)
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_sensitivity.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_sensitivity.py"
+new file mode 100644
+index 0000000..6c1c2c6
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_sensitivity.py"	
+@@ -0,0 +1,108 @@
++"""Sensitivity of the (POST-HOC) epoch boundary rule to the step threshold and the hold time, and a list of every ambiguous step.
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.epoch_sensitivity
++
++For every combination of step threshold in {4, 6, 8} dB and hold time in {10, 30, 60} s the whole pipeline is re-run (detector,
++persistence, boundary rule, epochs for N1+N2) and four things are reported: how many in-recording events there are, how many of them
++become boundaries, whether node 1's persistent step in s7 is still a boundary (and its onset), and the structural facts the
++evaluation depends on (epochs with >= 2 empty segments; whether any epoch has >= 2 empties AND a positive recording).
++"""
++from __future__ import annotations
++
++from . import epoch_eval as ee
++from . import epochs as ep
++from .jsonutil import dump_json
++from .provenance import default_out_dir, provenance
++from .tables import RecTables, load_all
++
++OUT_DIR = default_out_dir()
++STEPS_DB = (4.0, 6.0, 8.0)
++HOLDS_S = (10, 30, 60)
++DETECTION_POSITIVES = ("walking", "still")   # what walking/still-vs-empty needs; two_people is reported separately
++NODES = (1, 2)
++LOW_COVERAGE_RECORDING = "s1_walking_1017_2046"   # 11 frames/s pre-fix capture, excluded by the evaluation as well
++
++
++def ambiguity_reason(rec: ep.RecordingLinks, e: ep.Event) -> str | None:
++    """Why an event is NOT used as a boundary (None if it is one)."""
++    if ep.is_boundary(rec, e):
++        return None
++    if e.reversal:
++        return "reversal of the previous step (end of an excursion)"
++    if rec.label in ep.EMPTY_LABELS:
++        return f"empty/fan recording but held only {e.held_s:.0f} s (< {ep.MIN_EMPTY_BOUNDARY_HOLD_S:.0f} s): excursion" if e.held_s is not None else "empty/fan recording, hold unknown"
++    if e.persistent is None:
++        return "occupied recording, last recording of its day: persistence cannot be confirmed"
++    return "occupied recording, not persistent: may be the person's own body"
++
++
++def one_config(tabs: dict[str, RecTables], step_db: float, hold: int) -> dict:
++    links = ee.load_links(step_db=step_db, hold=hold)
++    tl = ep.build_timeline(links, NODES, step_db=step_db)
++    events = [(r, n, e) for r in links for n in NODES for e in r.events.get(n, [])]
++    ambiguous = [
++        {"recording": r.rid, "label": r.label, "node": n, "kind": e.kind, "time_utc": ep.iso(e.t_ms), "offset_s": (e.t_ms - r.t_start_ms) / 1000.0,
++         "delta_db": e.delta_db, "fps_before": e.fps_before, "fps_after": e.fps_after, "held_s": e.held_s, "persistent": e.persistent, "reversal": e.reversal,
++         "why_not_a_boundary": ambiguity_reason(r, e)}
++        for r, n, e in events if not ep.is_boundary(r, e)
++    ]
++    s7 = next(((r, e) for r, n, e in events if r.rid.startswith("s7__walking") and n == 1 and e.kind == "rssi_step" and ep.is_boundary(r, e)), None)
++    segs, _ = ee.make_segments({k: t for k, t in tabs.items() if k != LOW_COVERAGE_RECORDING}, tl)
++    by_epoch: dict[str, dict[str, int]] = {}
++    for s in segs.values():
++        counts = by_epoch.setdefault(ee.epoch_of(s), {})
++        counts[s.label] = counts.get(s.label, 0) + 1
++    two_empties = sorted(e for e, c in by_epoch.items() if c.get("empty", 0) >= 2)
++    both = [e for e in two_empties if any(by_epoch[e].get(p, 0) for p in DETECTION_POSITIVES)]
++    with_two_people = [e for e in two_empties if by_epoch[e].get("two_people", 0)]
++    return {
++        "step_db": step_db, "hold_s": hold, "in_recording_events": len(events), "boundaries_total": len(tl.boundaries),
++        "boundaries_from_in_recording_events": sum(1 for r, n, e in events if ep.is_boundary(r, e)), "ambiguous_events": len(ambiguous),
++        "s7_node1_step_is_boundary": s7 is not None, "s7_onset_offset_s": None if s7 is None else round((s7[1].t_ms - s7[0].t_start_ms) / 1000.0, 1),
++        "epochs_with_two_or_more_empty_segments": two_empties, "epochs_with_two_empties_and_walking_or_still": both, "epochs_with_two_empties_and_two_people": with_two_people,
++        "segments_by_epoch": by_epoch, "ambiguous": ambiguous,
++    }
++
++
++def run(tabs: dict[str, RecTables] | None = None) -> dict:
++    tabs = tabs or load_all()
++    out: dict = {
++        "provenance": provenance("python -m scripts.presence_eval.epoch_sensitivity", sorted(t.name for t in tabs.values())),
++        "rule_status": "POST HOC (chosen after inspecting these recordings; not pre-registered)",
++        "grid": {"step_db": STEPS_DB, "hold_s": HOLDS_S, "node_set": NODES, "min_empty_boundary_hold_s_fixed": ep.MIN_EMPTY_BOUNDARY_HOLD_S},
++        "configs": {},
++    }
++    for step in STEPS_DB:
++        for hold in HOLDS_S:
++            out["configs"][f"{step:g}dB/{hold}s"] = one_config(tabs, step, hold)
++    return out
++
++
++def render(res: dict) -> str:
++    L = ["# Sensitivity of the post-hoc epoch boundary rule", "", f"**Rule status: {res['rule_status']}.** Node set N1+N2. The empty-recording hold limit stays at {res['grid']['min_empty_boundary_hold_s_fixed']:.0f} s in every row.", "",
++         "| step | hold | in-recording events | boundaries from them | ambiguous | s7 N1 step is a boundary (onset) | epochs with ≥ 2 empties | … and walking or still | … and two_people |", "|--|--|--|--|--|--|--|--|--|"]
++    for c in res["configs"].values():
++        s7 = f"yes (+{c['s7_onset_offset_s']:.0f} s)" if c["s7_node1_step_is_boundary"] else "NO"
++        L.append(f"| {c['step_db']:g} dB | {c['hold_s']} s | {c['in_recording_events']} | {c['boundaries_from_in_recording_events']} | {c['ambiguous_events']} | "
++                 f"{s7} | {', '.join(c['epochs_with_two_or_more_empty_segments']) or '–'} | {', '.join(c['epochs_with_two_empties_and_walking_or_still']) or 'none'} | {', '.join(c['epochs_with_two_empties_and_two_people']) or 'none'} |")
++    base = res["configs"].get("6dB/10s")
++    if base:
++        L += ["", "## Every ambiguous step at the default setting (6 dB, 10 s)", "", "| recording | label | node | event | at | Δ dB | fps | held s | persistent | why it is not a boundary |", "|--|--|--|--|--|--|--|--|--|--|"]
++        for a in base["ambiguous"]:
++            d = "" if a["delta_db"] is None else f"{a['delta_db']:+.0f}"
++            f = "" if a["fps_before"] is None else f"{a['fps_before']:.0f}→{a['fps_after']:.0f}"
++            h = "" if a["held_s"] is None else f"{a['held_s']:.0f}"
++            L.append(f"| {a['recording'][:26]} | {a['label']} | N{a['node']} | {a['kind']} | {a['time_utc'][5:]} (+{a['offset_s']:.0f} s) | {d} | {f} | {h} | {a['persistent']} | {a['why_not_a_boundary']} |")
++    return "\n".join(L) + "\n"
++
++
++def main() -> None:
++    res = run()
++    (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
++    dump_json(OUT_DIR / "results" / "epoch_sensitivity.json", res)
++    (OUT_DIR / "results" / "epoch_sensitivity.md").write_text(render(res), encoding="utf-8")
++    print("wrote results/epoch_sensitivity.json and .md;", len(res["configs"]), "configurations")
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\data-dir.test.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\data-dir.test.ts"
+new file mode 100644
+index 0000000..b62c44b
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\data-dir.test.ts"	
+@@ -0,0 +1,60 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import fs from "fs";
++import os from "os";
++import path from "path";
++import { spawnSync } from "node:child_process";
++import { pathToFileURL } from "node:url";
++import { dataDir } from "./data-dir";
++
++function withEnv<T>(value: string | undefined, fn: () => T): T {
++  const before = process.env.PHANTOM_DATA_DIR;
++  if (value === undefined) delete process.env.PHANTOM_DATA_DIR;
++  else process.env.PHANTOM_DATA_DIR = value;
++  try {
++    return fn();
++  } finally {
++    if (before === undefined) delete process.env.PHANTOM_DATA_DIR;
++    else process.env.PHANTOM_DATA_DIR = before;
++  }
++}
++
++test("default is unchanged: no variable gives exactly path.resolve('data', ...)", () => {
++  withEnv(undefined, () => {
++    assert.equal(dataDir(), path.resolve("data"));
++    assert.equal(dataDir("sessions"), path.resolve("data", "sessions"));
++    assert.equal(dataDir("datasets", "room1"), path.resolve("data", "datasets", "room1"));
++  });
++});
++
++test("an empty value is treated as unset (default unchanged)", () => {
++  withEnv("", () => assert.equal(dataDir("audit"), path.resolve("data", "audit")));
++});
++
++test("PHANTOM_DATA_DIR replaces the base for every subdirectory", () => {
++  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "phantom-data-"));
++  withEnv(tmp, () => {
++    assert.equal(dataDir(), path.resolve(tmp));
++    assert.equal(dataDir("sessions"), path.join(path.resolve(tmp), "sessions"));
++    assert.equal(dataDir("operator.json"), path.join(path.resolve(tmp), "operator.json"));
++  });
++});
++
++test("a server module started with PHANTOM_DATA_DIR writes only there, never into data/sessions", () => {
++  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "phantom-data-"));
++  const realSessions = path.resolve("data", "sessions");
++  const before = fs.existsSync(realSessions) ? fs.readdirSync(realSessions).length : 0;
++  const code = `
++    import { sessionStore } from ${JSON.stringify(pathToFileURL(path.resolve("server/lib/session-store.ts")).href)};
++    sessionStore.save({ id: "x", startTime: Date.UTC(2026, 10, 3), endTime: Date.UTC(2026, 10, 3) + 1000, durationS: 1, totalFrames: 3,
++      targetClassification: "none", classificationConfidence: 0, avgDistanceCm: 0, avgSpeedMs: 0, dataSource: "esp32",
++      classificationBreakdown: {}, spatialMetrics: { minDistanceCm: 0, maxDistanceCm: 0, avgDistanceCm: 0, boundingBox: { xMin: 0, xMax: 0, zMin: 0, zMax: 0 } },
++      kinematicData: { avgSpeedMs: 0, maxSpeedMs: 0 }, eventTimeline: [] }, "data-dir-test");
++  `;
++  const r = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], { env: { ...process.env, PHANTOM_DATA_DIR: tmp }, encoding: "utf-8" });
++  assert.equal(r.status, 0, r.stderr);
++  const written = fs.readdirSync(path.join(tmp, "sessions")).sort();
++  assert.ok(written.includes("_index.json") && written.some((f) => f.endsWith("2026-11-03.json")), `got ${written}`);
++  const after = fs.existsSync(realSessions) ? fs.readdirSync(realSessions).length : 0;
++  assert.equal(after, before, "the repo's data/sessions must not change");
++});
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\data-dir.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\data-dir.ts"
+new file mode 100644
+index 0000000..49e0ceb
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\data-dir.ts"	
+@@ -0,0 +1,14 @@
++/**
++ * Base directory for ALL runtime data the server reads or writes (sessions, audit log, operator seed, runtime settings, datasets,
++ * phase-test logs). Default is the repo-relative `data/`, exactly as before; set PHANTOM_DATA_DIR to point a throw-away server
++ * (e.g. the opt-in e2e tests, see tests/e2e_guard.py) at its own directory so it can never write into an operator's data/sessions.
++ *
++ * Read when called: modules that compute a constant at import time (session store, runtime settings) see the variable as it was
++ * when they were first loaded, as before. Narrower overrides (PHANTOM_AUDIT_DIR, PHANTOM_OPERATOR_SEED_PATH,
++ * PHANTOM_PHASE_LOG_DIR) still take precedence over this base.
++ */
++import path from "path";
++
++export function dataDir(...parts: string[]): string {
++  return path.resolve(process.env.PHANTOM_DATA_DIR || "data", ...parts);
++}

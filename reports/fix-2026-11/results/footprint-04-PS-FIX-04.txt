@@ -1,0 +1,15 @@
+# footprint 04-PS-FIX-04
+changed (7):
+  M scripts/eval-presence-on-datasets.ts
+  M scripts/presence_eval/drift.py
+  M scripts/presence_eval/inventory.py
+  M scripts/presence_eval/provenance.py
+  M scripts/presence_eval/repro.py
+  M scripts/presence_eval/stats.py
+  M scripts/presence_eval/twonode.py
+added (4):
+  A scripts/accuracy/__tests__/auc-bootstrap.test.ts
+  A scripts/accuracy/auc-bootstrap.ts
+  A scripts/presence_eval/jsonutil.py
+  A tests/test_presence_eval_controls.py
+removed (0):

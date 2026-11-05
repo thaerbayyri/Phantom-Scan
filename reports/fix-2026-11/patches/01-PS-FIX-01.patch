@@ -1,0 +1,125 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\01-PS-FIX-01\\package.json" "b/D:\\WIFI csi\\phanotm\\phantom scan\\package.json"
+index e75f3e4..2909e81 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\01-PS-FIX-01\\package.json"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\package.json"	
+@@ -11,8 +11,8 @@
+     "check": "tsc",
+     "db:push": "drizzle-kit push",
+     "auth:seed": "tsx scripts/generate-operator-seed.ts",
+-    "test": "tsx --test server/**/*.test.ts client/src/lib/**/*.test.ts tests/behavioral/**/*.test.ts scripts/accuracy/__tests__/**/*.test.ts",
+-    "test:dashboard-auth": "tsx --test server/**/*.test.ts",
++    "test": "tsx --import ./server/test-setup.ts --test server/**/*.test.ts client/src/lib/**/*.test.ts tests/behavioral/**/*.test.ts scripts/accuracy/__tests__/**/*.test.ts",
++    "test:dashboard-auth": "tsx --import ./server/test-setup.ts --test server/**/*.test.ts",
+     "test:py": "python -m pytest tests/ -q"
+   },
+   "dependencies": {
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\01-PS-FIX-01\\pyproject.toml" "b/D:\\WIFI csi\\phanotm\\phantom scan\\pyproject.toml"
+index f80a483..9957f13 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\01-PS-FIX-01\\pyproject.toml"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\pyproject.toml"	
+@@ -6,3 +6,11 @@ requires-python = ">=3.11"
+ dependencies = [
+     "pyserial>=3.5",
+ ]
++
++[project.optional-dependencies]
++# Offline training/evaluation (phantom/activity_train.py, phantom/count_train.py, scripts/train/*, tests/test_train_activity.py,
++# tests/test_count_model.py). Without scikit-learn those modules fail at import. Verified with scikit-learn 1.9.1 on
++# Python 3.13 (PS-FIX-00); no other version was tested, so none is pinned.
++train = [
++    "scikit-learn",
++]
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\01-PS-FIX-01\\tests\\test_esp_capture_e2e.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_esp_capture_e2e.py"
+index f7f2f77..7ab00fb 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\01-PS-FIX-01\\tests\\test_esp_capture_e2e.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_esp_capture_e2e.py"	
+@@ -322,7 +322,14 @@ class TestServerIngestion:
+     PASSWORD = os.environ.get("PHANTOM_TEST_PASSWORD", "thaer")
+ 
+     def _server_available(self):
+-        """Check if the dev server is running."""
++        """Check if the dev server is running.
++
++        Opt-in only (PS-EVAL-019/PS-FIX-01): these tests log in, ingest samples and create sessions on
++        whatever server answers on :5000 -- including an operator's live dashboard and its data/sessions.
++        Set PHANTOM_E2E_LIVE_SERVER=1 to run them against a throw-away dev server.
++        """
++        if os.environ.get("PHANTOM_E2E_LIVE_SERVER") != "1":
++            return False
+         try:
+             import urllib.request
+             resp = urllib.request.urlopen(f"{self.SERVER_URL}/api/health", timeout=2)
+@@ -353,7 +360,7 @@ class TestServerIngestion:
+     def test_health_endpoint(self):
+         """Server health endpoint should respond."""
+         if not self._server_available():
+-            pytest.skip("Dev server not running on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
+ 
+         import urllib.request
+         import json
+@@ -365,7 +372,7 @@ class TestServerIngestion:
+     def test_ingest_single_sample(self):
+         """Server should accept a single CSI sample via REST."""
+         if not self._server_available():
+-            pytest.skip("Dev server not running on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
+ 
+         import urllib.request
+         import json
+@@ -389,7 +396,7 @@ class TestServerIngestion:
+     def test_ingest_batch_from_recording(self):
+         """Server should accept a batch of real recorded CSI samples."""
+         if not self._server_available():
+-            pytest.skip("Dev server not running on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
+ 
+         recordings = _load_all_recordings(max_per_file=10)
+         if not recordings:
+@@ -427,7 +434,7 @@ class TestServerIngestion:
+     def test_queue_status(self):
+         """Server should report queue status."""
+         if not self._server_available():
+-            pytest.skip("Dev server not running on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
+ 
+         import urllib.request
+         import json
+@@ -440,7 +447,7 @@ class TestServerIngestion:
+     def test_status_endpoint(self):
+         """Server status endpoint should return processing state."""
+         if not self._server_available():
+-            pytest.skip("Dev server not running on port 5000")
++            pytest.skip("Live-server e2e is opt-in: set PHANTOM_E2E_LIVE_SERVER=1 and run a throw-away dev server on port 5000")
+ 
+         import urllib.request
+         import json
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\server\\test-setup.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\test-setup.ts"
+new file mode 100644
+index 0000000..3e705c1
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\test-setup.ts"	
+@@ -0,0 +1,23 @@
++/**
++ * Test-runner setup (loaded with `tsx --import ./server/test-setup.ts --test ...`).
++ *
++ * The audit logger singleton (server/audit/logger.ts) reads PHANTOM_AUDIT_DIR when its module is
++ * first loaded and otherwise appends to data/audit/audit-current.jsonl. Without this, running the
++ * test suite writes auth events into the operator's real audit log (PS-EVAL-019). Each test process
++ * gets its own temp directory, removed on exit. An explicit PHANTOM_AUDIT_DIR is respected.
++ */
++import { mkdtempSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import path from "node:path";
++
++if (!process.env.PHANTOM_AUDIT_DIR) {
++  const dir = mkdtempSync(path.join(tmpdir(), "phantom-audit-test-"));
++  process.env.PHANTOM_AUDIT_DIR = dir;
++  process.on("exit", () => {
++    try {
++      rmSync(dir, { recursive: true, force: true });
++    } catch {
++      /* best effort: a leftover temp directory is harmless */
++    }
++  });
++}

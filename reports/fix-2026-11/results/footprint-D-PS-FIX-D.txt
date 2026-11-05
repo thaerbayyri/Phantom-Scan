@@ -1,0 +1,6 @@
+Item D footprint (2026-11-04)
+changed (untracked/uncommitted Wave 2 PS-FIX-08 files; backups in .tmp/fix-backups/D-PS-FIX-D):
+  M server/lib/udp-server.ts (try/catch around phyGuard.observe, fault counter, close hook)
+  M server/lib/phy-guard.ts (shouldLogPhyGuardFault)
+added:
+  A server/lib/udp-server-phy-guard-fault.test.ts

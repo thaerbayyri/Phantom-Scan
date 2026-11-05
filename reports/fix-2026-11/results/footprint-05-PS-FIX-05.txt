@@ -1,0 +1,22 @@
+# footprint 05-PS-FIX-05
+changed (15):
+  M .agents/AGENTS.md
+  M DETECTION_REPORT.md
+  M JODDB_PHASE2_TECHNICAL_PROPOSAL.md
+  M MEASUREMENT_PLAN.md
+  M Phantom-Scan-Final-Project-Report-4Node.md
+  M README.md
+  M docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
+  M docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md
+  M docs/WIFI_DENSEPOSE_INTEGRATION.md
+  M docs/presentations/JODDB-Sponsorship-Pitch-Script.md
+  M docs/system_architecture_methodology.md
+  M firmware/esp32-csi-node/README.md
+  M generated_reports/Appendix.md
+  M generated_reports/Section-1.2-WiFi-Frequency-vs-CSI.md
+  M scripts/build_academic_reports.py
+added (0):
+removed (0):
+
+nested repository (gitlink 160000, pinned 39a01a1; invisible to the superproject guard), edited by hand:
+  M ai model and densepose/model/README.md  (+2 lines: upstream-text banner; the file already had earlier uncommitted edits in that nested repo)

@@ -1,0 +1,508 @@
+--- a/MEASUREMENT_PLAN.md
++++ b/MEASUREMENT_PLAN.md
+@@ -35,7 +35,7 @@
+ 5. Pass criterion for the synthetic unit test is `balance ~= 0.5 -> x ~= 0 m` (midpoint is
+    ~1.5 m from each node); live hardware tolerance is `[TO BE MEASURED]`.
+    Negative control: an empty room / on-axis fan must yield **no target** (motion below the
+-   calibrated `PHANTOM_MOTION_THRESHOLD`), not a centered ghost.
++   provisional `PHANTOM_MOTION_THRESHOLD`, 0.6; false-alarm rate `[TO BE MEASURED]`), not a centered ghost.
+ 6. Distance-readout accuracy (per trial): at 3+ tape-marked points on the axis, record
+    **displayed per-node `distanceM` vs actual tape-measured distance** to each node, so the
+    readout has an error figure instead of "looks right". Same trial logs whether the per-node
+--- a/Phantom-Scan-Final-Project-Report-4Node.md
++++ b/Phantom-Scan-Final-Project-Report-4Node.md
+@@ -67,7 +67,7 @@
+ 
+ - **Fusion is not RF multilateration at any node count.** With exactly two nodes live, the target is still placed on the 1-D line between them (as in the original rig). With three or four nodes live, `fuseNodeTargets` computes a perturbation-weighted centroid over the active anchors — a genuine 2-D estimate, but still a proxy derived from relative signal perturbation, not true time-of-flight or phase-based ranging [12], [15].
+ - Each node still uses a single antenna, so classical multi-antenna Angle-of-Arrival techniques run only on synthetic or replay inputs, never on the live path, at any node count [12].
+-- The detection gate threshold (`PHANTOM_MOTION_THRESHOLD`, default **0.6**) was calibrated against the original two-node rig's empty-room baseline. **A currently open, actively investigated issue**: repeated real four-node empty-room recordings taken in September 2026 show persistent false-positive presence detection, with the per-node motion metric pinned at its saturation ceiling on roughly half of all ticks — meaning existing four-node recordings are too *censored* (clamped) to safely re-derive the threshold as-is. An unclamped `raw_perturbation_n1..n4` export was added specifically to unblock this diagnosis; the leading unconfirmed hypothesis is RF self-interference among four same-channel, same-AP nodes each self-pinging at ~50 Hz, as an alternative to a genuinely elevated real noise floor.
++- The detection gate threshold (`PHANTOM_MOTION_THRESHOLD`, default **0.6**) was set from a single 60 s empty-room recording on the original two-node rig (provisional). **A currently open, actively investigated issue**: repeated real four-node empty-room recordings taken in September 2026 show persistent false-positive presence detection, with the per-node motion metric pinned at its saturation ceiling on roughly half of all ticks — meaning existing four-node recordings are too *censored* (clamped) to safely re-derive the threshold as-is. An unclamped `raw_perturbation_n1..n4` export was added specifically to unblock this diagnosis; the leading unconfirmed hypothesis is RF self-interference among four same-channel, same-AP nodes each self-pinging at ~50 Hz, as an alternative to a genuinely elevated real noise floor.
+ - Headline live metrics — detection rate, false-positive rate, and localization error — are defined in measurement protocols but not yet populated from repeated four-node live campaigns [20], [21], and the false-positive investigation above means the four-node false-positive rate is *known to be unresolved*, not merely unmeasured.
+ - Two people in the sensing area still blend into a single fused estimate at any node count; multi-target separation remains out of scope [20].
+ - A **known historical defect**, since fixed, is worth recording for engineering-process honesty: an earlier revision of the two-node fusion branch, exercised only against the fixed pair {N1, N2}, silently produced a false "no target" state whenever exactly two *other* nodes (e.g., N3+N4) were the ones actually live, because the fusion call still read node 1/2's motion windows regardless of which two nodes `resolveLiveNodeMode()` had identified as active. The current code path resolves this generically — `computeFusedTarget` reads `activeHardwareNodeIds()` and fuses whichever two node IDs are actually live — but this is flagged here because it demonstrates the class of bug the project's own honesty testing exists to catch, and because it is exactly the kind of regression a future geometry or ID-mapping change could reintroduce.
+@@ -327,7 +327,7 @@
+ | Honesty / Integrity | Synthetic, replayed, or single-node data can never be presented as fused live truth at any node count; the currently open four-node false-positive investigation is itself documented as a limitation rather than smoothed over in this report or the README. |
+ | Maintainability | Strict layer boundaries retained; shared zod schemas remain the single geometry/message contract; **256 TypeScript + 91 Python** automated tests at time of writing [19]. |
+ | Portability | Host stack still runs on Windows and Ubuntu; firmware still builds under ESP-IDF, with provisioning documented per node ID via `esp-flash.py`. |
+-| Configurability | Detection parameters remain environment-tunable; `PHANTOM_MOTION_THRESHOLD` default is now **0.6** (recalibrated from the original **0.12** against the two-node rig's own empty-room baseline — see the open four-node caveat above), alongside `PHANTOM_MOTION_WINDOW_MS`, `PHANTOM_BALANCE_CONTRAST`, `PHANTOM_BALANCE_BIAS_EXPONENT`, and `PHANTOM_TREND_DEADBAND_MPS`. |
++| Configurability | Detection parameters remain environment-tunable; `PHANTOM_MOTION_THRESHOLD` default is now **0.6** (provisional: re-set from the original **0.12** using a single 60 s two-node empty-room recording — see the open four-node caveat above), alongside `PHANTOM_MOTION_WINDOW_MS`, `PHANTOM_BALANCE_CONTRAST`, `PHANTOM_BALANCE_BIAS_EXPONENT`, and `PHANTOM_TREND_DEADBAND_MPS`. |
+ 
+ *Table 4.1 — Non-functional requirements with current evidence, updated for the 1–4-node system.*
+ 
+@@ -349,7 +349,7 @@
+ | FR12 | The dashboard shall render one node beacon per currently-configured anchor (up to four), the fused target, motion vectors, temporal spectral views, and Board-DSP cards, gated by presentation-honesty helpers shared across all fusion modes. | `client/src/components/dashboard/` |
+ | FR13 | Operators shall authenticate before accessing the dashboard or privileged actions; security-relevant events shall be audit-logged. | `server/auth/`, `server/audit/` |
+ | FR14 | The system shall support per-session CSV recording (with a JSON session index) and deterministic replay, including unclamped `raw_perturbation_n1..n4` columns added specifically to diagnose the four-node calibration question. | `recording-export.ts`, `session-store.ts`, `phantom/` package |
+-| FR15 | The system shall provide an empty-room calibration tool that derives the motion gate from a recorded baseline (mean + k·σ), understood to require re-validation specifically at four-node room-mode operation before the current threshold can be trusted there. | `scripts/calibrate-threshold.ts` |
++| FR15 | The system shall provide an empty-room and negative-control calibration tool. A single short run yields descriptive statistics only; a candidate threshold is produced only from an empty soak of at least 60 min plus a fan control of at least 5 min in one link state with the empty-vs-empty drift check passing. The current gate (0.6) is provisional and requires re-validation at four-node room-mode operation; its false-alarm and detection rates are `[TO BE MEASURED]`. | `scripts/calibrate-threshold.ts` |
+ 
+ *Table 4.2 — Functional requirements traced to implementing modules, updated for 1–4-node operation.*
+ 
+@@ -487,7 +487,7 @@
+ ```
+ *Listing 6.1 — Per-node turbulence detector (unchanged mathematics; now instantiated once per live node, 1–4).*
+ 
+-The empty-room gate itself has been recalibrated since the two-node edition: `DEFAULT_MOTION_THRESHOLD` is now **0.6** (env `PHANTOM_MOTION_THRESHOLD`), derived 2026-07-20 from the two-node rig's measured empty-room baseline (`max(motion1, motion2)` over 296 samples: mean 0.49, σ 0.027, max 0.58), up from the original placeholder of 0.12. This is the threshold currently under active re-investigation for four-node operation (§1.4, §8.3) — the two-node calibration does not automatically transfer to four simultaneously self-pinging nodes.
++The empty-room gate itself has been recalibrated since the two-node edition: `DEFAULT_MOTION_THRESHOLD` is now **0.6** (env `PHANTOM_MOTION_THRESHOLD`), set 2026-07-20 from the two-node rig's measured empty-room baseline — a single 60 s recording (`max(motion1, motion2)` over 296 samples: mean 0.49, σ 0.027, max 0.58; 0.6 sits just above that recording's maximum, it is **provisional** and not a mean + k·σ result) — up from the original placeholder of 0.12. This is the threshold currently under active re-investigation for four-node operation (§1.4, §8.3) — the two-node calibration does not automatically transfer to four simultaneously self-pinging nodes.
+ 
+ ### 6.3.4 Gain Normalization, Two-Node Balance, and N-Node Room Fusion
+ 
+--- a/README.md
++++ b/README.md
+@@ -191,7 +191,7 @@
+ 
+ Each broadcast node also carries `distanceM` (on-axis distance in 2-node mode, true straight-line distance to the anchor in 3–4-node mode) and `trend` (`approaching` / `receding` / `stable`, from the sign of `d(balance)/dt` with a `PHANTOM_TREND_DEADBAND_MPS` deadband, default 0.05 m/s). The radar renders each active node's beacon, connector lines to the target, and a travel arrow toward the node being approached.
+ 
+-> **Calibration caveat (active investigation):** `PHANTOM_MOTION_THRESHOLD` (0.6) was calibrated 2026-07-20 against a 2-node rig's empty-room baseline. Repeated real 4-node empty-room recordings in September 2026 show persistent false-positive presence detection, with the `motion_nX` metric pinned at its 1.0 saturation ceiling on roughly half of all ticks — meaning the recorded data is **censored** (clamped) and cannot honestly support re-deriving the threshold as-is. `raw_perturbation_n1..n4` (see [Recording & Replay](#recording--replay)) now exports the unclamped ratio specifically to unblock this diagnosis. Do not change `MOTION_SATURATION_SCALE` or `DEFAULT_MOTION_THRESHOLD` independently — the code comment on `MOTION_SATURATION_SCALE` is explicit that they must be re-derived together, from real uncensored data, never guessed.
++> **Calibration caveat (active investigation):** `PHANTOM_MOTION_THRESHOLD` (0.6) was set on 2026-07-20 from a single 60 s empty-room recording on a 2-node rig (296 samples: mean 0.49, σ 0.027, max 0.58) and is **provisional**. Repeated real 4-node empty-room recordings in September 2026 show persistent false-positive presence detection, with the `motion_nX` metric pinned at its 1.0 saturation ceiling on roughly half of all ticks — meaning the recorded data is **censored** (clamped) and cannot honestly support re-deriving the threshold as-is. `raw_perturbation_n1..n4` (see [Recording & Replay](#recording--replay)) now exports the unclamped ratio specifically to unblock this diagnosis. Do not change `MOTION_SATURATION_SCALE` or `DEFAULT_MOTION_THRESHOLD` independently — the code comment on `MOTION_SATURATION_SCALE` is explicit that they must be re-derived together, from real uncensored data, never guessed. A mean + k·σ rule over a window that short is not supported: recordings of the same empty room separate from each other (symmetric AUC upper bounds 0.68–0.91 against a 0.65 limit, `reports/fix-2026-11/13-PS-FIX-11.md`). Real recalibration needs a live empty-room soak of at least 60 minutes with an entry log, plus a negative control with a fan or vibration source in the same link state, evaluated with `scripts/calibrate-threshold.ts --evaluate`; the resulting false-alarm and detection rates are `[TO BE MEASURED]`.
+ 
+ ---
+ 
+@@ -231,7 +231,7 @@
+ | `PORT` / `HOST` | `5000` / all interfaces | Dashboard HTTP/WebSocket bind |
+ | `UDP_PORT` | `5005` | CSI ingest bind port (shared by all 1–4 nodes) |
+ | `PHANTOM_MOTION_WINDOW_MS` | `1500` | Fusion motion-energy time window |
+-| `PHANTOM_MOTION_THRESHOLD` | `0.6` | Empty-room detection gate — calibrated on a 2-node rig; see the calibration caveat under [Phantom Balance Fusion](#phantom-balance-fusion) |
++| `PHANTOM_MOTION_THRESHOLD` | `0.6` | Empty-room detection gate — provisional: set from one 60 s empty recording on a 2-node rig; see the calibration caveat under [Phantom Balance Fusion](#phantom-balance-fusion) |
+ | `PHANTOM_BALANCE_CONTRAST` | `2.0` | Contrast exponent (both 2-node balance and N-node centroid weighting) |
+ | `PHANTOM_BALANCE_BIAS_EXPONENT` | `0.72` | Nearest-node display bias exponent (2-node mode only) |
+ | `PHANTOM_TREND_DEADBAND_MPS` | `0.05` | Approach/recede trend deadband |
+--- a/docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
++++ b/docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
+@@ -441,7 +441,7 @@
+ | Biquad IIR bandpass | Butterworth, Respiration: 0.1–0.5 Hz; Cardiac: 0.8–2.0 Hz | 28 bytes per filter |
+ | Welford running variance | Numerically stable online algorithm | 12 bytes per subcarrier |
+ | Top-K subcarrier selection | Variance-ranked partial sort | K=8, refresh every 300 frames |
+-| Presence detection | Adaptive threshold: μ + 3σ (60-second sliding window) | 1,200-sample calibration |
++| Presence detection | Adaptive threshold: μ + 3σ over a 60-second sliding window (firmware edge-tier design target, **provisional**; false-alarm and detection rates `[TO BE MEASURED]`) | 1,200-sample calibration |
+ | Fall detection | Phase acceleration spike > 2.0 rad/s² | < 200 ms latency |
+ | Multi-person vitals | Subcarrier group clustering (up to 4 persons) | Concurrent BPM/RPM per person |
+ | Delta compression | XOR + RLE for bandwidth reduction | 40–60% payload reduction |
+--- a/docs/SPATIAL_CALIBRATION.md
++++ b/docs/SPATIAL_CALIBRATION.md
+@@ -22,15 +22,18 @@
+ ## What changed (this session)
+ 
+ 1. `server/lib/tracking.ts` — new pure `calibrateEnergyThreshold(samples, k)`
+-   (mean + k·σ, the same statistical method `scripts/calibrate-threshold.ts`
+-   uses for the motion gate), plus `DEFAULT_SPATIAL_ENERGY_THRESHOLD`
++   (mean + k·σ over whatever samples it is given — a **provisional**,
++   descriptive helper: it is not drift- or pooling-checked, and since PS-FIX-11
++   `scripts/calibrate-threshold.ts` no longer derives the motion gate this way), plus `DEFAULT_SPATIAL_ENERGY_THRESHOLD`
+    (env `PHANTOM_SPATIAL_ENERGY_THRESHOLD`, default **10 — identical to the old
+    hardcoded literal**, so behavior is unchanged until an operator applies a
+    real calibration). `TrackingProcessor` now accepts the threshold as a
+    constructor parameter instead of a buried literal.
+ 2. `scripts/calibrate-threshold.ts` — new `--spatial` flag: alongside the
+    motion-gate calibration it samples per-packet total amplitude energy and
+-   prints a suggested `PHANTOM_SPATIAL_ENERGY_THRESHOLD` (mean+3σ / mean+4σ).
++   prints a **provisional**, descriptive `PHANTOM_SPATIAL_ENERGY_THRESHOLD`
++   suggestion (mean+3σ / mean+4σ over that one run). It is not drift- or
++   pooling-checked: do not apply it from a single run.
+ 3. `server/lib/tracking.test.ts` — unit tests for the calibration math
+    (synthetic samples, clearly labeled) and regression tests pinning the
+    default threshold to the historical value.
+@@ -53,12 +56,27 @@
+ cloud and DBSCAN membership). Treat its suggestion as a starting point, then
+ validate behaviorally.
+ 
+-## Procedure (hardware session, ~15 min)
++## Procedure (hardware session: hours, not minutes)
++
++A 5-minute run cannot support a threshold. The committed 0.6 motion gate came from a
++single 60 s empty recording, and recordings of the same empty room separate from each
++other (symmetric AUC upper bounds 0.68–0.91 against a 0.65 limit, `reports/fix-2026-11/13-PS-FIX-11.md`).
++The procedure below is **provisional** until it has been run; the resulting false-alarm
++and detection figures stay `[TO BE MEASURED]`.
+ 
+ 1. Stop the dashboard (the calibration tool must own UDP :5005).
+-2. Empty the room completely. Run:
+-   `npx tsx scripts/calibrate-threshold.ts --seconds 300 --spatial`
+-3. Note both suggestions (motion threshold and spatial energy threshold).
++2. Empty the room completely and keep an entry log (time, who, door). Collect an
++   **empty soak of at least 60 minutes**, nodes not moved (add `--spatial` to also
++   sample spatial energy):
++   `npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600 --out .tmp/cal/empty1.json`
++   Then, in the **same link state**, a **fan negative control of at least 5 minutes**
++   (fan or other vibration source, no person):
++   `npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --out .tmp/cal/fan.json`
++3. Evaluate offline (no socket):
++   `npx tsx scripts/calibrate-threshold.ts --evaluate --empty .tmp/cal/empty1.json --fan .tmp/cal/fan.json`
++   The tool refuses to print a candidate when the soak is too short, the negative
++   control is missing, the runs span a link-state change, or the empty-vs-empty control
++   shows drift. A refusal is a valid outcome. The spatial-energy figure is descriptive only.
+ 4. Restart the dashboard with the candidate value:
+    `PHANTOM_SPATIAL_ENERGY_THRESHOLD=<suggested> npm run dev`
+ 5. Validate per ADR-057's own recommendation: leave the room empty >5 s in
+--- a/scripts/build_academic_reports.py
++++ b/scripts/build_academic_reports.py
+@@ -769,7 +769,7 @@
+             ["FR11", "The dashboard shall render node beacons, the fused target, motion vectors, spectral views, and Board-DSP cards, gated by presentation-honesty helpers.", "client/src/components/dashboard/"],
+             ["FR12", "Operators shall authenticate before accessing the dashboard or privileged actions; security-relevant events shall be audit-logged.", "server/auth/, server/audit/"],
+             ["FR13", "The system shall support session recording (JSONL/CSV) and deterministic replay for offline analysis and testing.", "recording-export.ts, phantom/ package"],
+-            ["FR14", "The system shall provide an empty-room calibration tool that derives the motion gate from a recorded baseline (mean + k*sigma).", "scripts/calibrate-threshold.ts"],
++            ["FR14", "The system shall provide an empty-room and negative-control calibration tool: a single short run yields descriptive statistics only, and a candidate threshold requires an empty soak of at least 60 min plus a fan control of at least 5 min in one link state with the drift check passing. The current gate is provisional.", "scripts/calibrate-threshold.ts"],
+         ],
+         widths=[0.5, 4.0, 2.0],
+     )
+@@ -1446,7 +1446,7 @@
+     add_text_paragraph(doc, "Recommendations for future work, in priority order:")
+     add_numbered_list(doc, [
+         "Execute the full positional-fidelity campaign (stages P0-S8) and the measurement plan, populating the results ledger with defensible live numbers [20], [21].",
+-        "Run the empty-room calibration tool in each deployment room and replace the placeholder gate with a mean + k*sigma calibrated threshold, validated against fan/curtain negative controls.",
++        "Recalibrate the placeholder gate in each deployment room from a live empty-room soak of at least 60 minutes (with an entry log) plus a fan/vibration negative control in the same link state, using the calibration tool's --evaluate mode; the current gate is provisional and its false-alarm and detection rates are [TO BE MEASURED].",
+         "Extend the geometry beyond one dimension: a third node (the firmware's channel-hop and multistatic decision records already sketch this path) would resolve off-axis position and front/back ambiguity [12].",
+         "Promote the firmware edge-DSP tier so board-side presence/respiration estimates can cross-check host fusion, with the host remaining authoritative.",
+         "Investigate multi-antenna ESP32-S3 configurations or a hybrid node to enable live AoA and reduce the single-target limitation.",
+--- a/scripts/calibrate-threshold.ts
++++ b/scripts/calibrate-threshold.ts
+@@ -7,7 +7,8 @@
+  * window -> computeNodeMotionFromMatrix), sampling max(motion1, motion2).
+  * With --spatial it ALSO samples per-packet total amplitude energy (the same
+  * magnitude quantity TrackingProcessor's cluster-energy gate sums) and
+- * reports a mean+k*sigma suggestion for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
++ * reports a descriptive, provisional mean+k*sigma figure (not drift- or pooling-checked;
++ * never apply it from a single run) for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
+  * calibrateEnergyThreshold (server/lib/tracking.ts).
+  *
+  * PS-FIX-11 — a single short run can no longer produce a recommendation. This tool COLLECTS runs and EVALUATES them offline; it never
+@@ -98,7 +99,7 @@
+ const packetCounts = new Map<number, number>();
+ /** --spatial: per-packet total amplitude energy (sum of per-subcarrier
+  * amplitudes) — the magnitude quantity the TrackingProcessor cluster gate
+- * sums. Collected raw here; mean+k*sigma computed by calibrateEnergyThreshold. */
++ * sums. Collected raw here; a descriptive, provisional mean+k*sigma is computed by calibrateEnergyThreshold. */
+ const energySamples: number[] = [];
+ 
+ const sock = dgram.createSocket("udp4");
+--- a/server/lib/node-fusion.ts
++++ b/server/lib/node-fusion.ts
+@@ -31,12 +31,16 @@
+ /**
+  * Presence/motion gate for emitting a fused target. THIS IS THE DETECTOR.
+  *
+- * Calibrated 2026-07-20 against this rig's measured empty-room baseline
++ * PROVISIONAL. Set 2026-07-20 from a single 60 s empty-room recording on this rig
+  * (`max(motion1, motion2)` over 296 samples: mean 0.49, sigma 0.027, max 0.58 —
+- * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that noise ceiling.
+- * Re-calibrate via scripts/calibrate-threshold.ts (and re-validate against a
+- * negative control: a fan/curtain must be REJECTED while a still, breathing-only
+- * person is still detected) if the room or hardware setup changes materially.
++ * see LIVE_HARDWARE_TEST_REPORT.md). 0.6 sits just above that recording's maximum;
++ * it is not a mean + k*sigma result and does not account for empty-vs-empty drift
++ * between recordings. Real recalibration needs a live empty-room soak of >= 60 min
++ * (with an entry log) plus a fan/vibration negative control in the same link state,
++ * evaluated with `scripts/calibrate-threshold.ts --evaluate`. False-alarm and
++ * detection rates: [TO BE MEASURED]. Re-validate against a negative control (a
++ * fan/curtain must be REJECTED while a still, breathing-only person is still
++ * detected) if the room or hardware setup changes materially.
+  * Override at runtime via PHANTOM_MOTION_THRESHOLD, or persistently via the
+  * "Fused Target Presence Threshold" slider (server/lib/runtime-settings.ts).
+  */
+--- a/server/lib/tracking.test.ts
++++ b/server/lib/tracking.test.ts
+@@ -10,8 +10,8 @@
+ import type { PointCloudPoint } from "@shared/schema";
+ 
+ // ── calibrateEnergyThreshold (Item 4) ──────────────────────────────────────
+-// Same mean+k*sigma statistical method as scripts/calibrate-threshold.ts's
+-// motion-gate calibration; here applied to a pure array of synthetic
++// mean+k*sigma over given samples (a descriptive helper; scripts/calibrate-threshold.ts
++// no longer derives the motion gate this way); here applied to a pure array of synthetic
+ // empty-room energy samples (no live UDP capture — that's the real,
+ // hardware-gated calibration run, tracked as [TO BE MEASURED]).
+ 
+--- a/server/lib/tracking.ts
++++ b/server/lib/tracking.ts
+@@ -24,9 +24,9 @@
+ 
+ /**
+  * Empty-room / negative-control calibration for a magnitude-only energy
+- * threshold — same mean+k*sigma statistical method as
+- * scripts/calibrate-threshold.ts's PHANTOM_MOTION_THRESHOLD calibration,
+- * applied here to cluster energy (or raw MUSIC spectrum power) samples
++ * threshold — mean+k*sigma over the samples given: a provisional, descriptive
++ * helper, not drift- or pooling-checked (scripts/calibrate-threshold.ts no longer
++ * derives PHANTOM_MOTION_THRESHOLD this way; PS-FIX-11), applied here to cluster energy (or raw MUSIC spectrum power) samples
+  * instead of temporal motion variance. Pure and unit-testable with
+  * synthetic OR real recorded empty-room samples — this function itself
+  * makes no live/network calls.
+--- /dev/null
++++ b/tests/test_doc_lint_threshold_rule.py
+@@ -0,0 +1,180 @@
++"""Doc lint (PS-FIX-38): never document a "mean + k*sigma" presence threshold rule unqualified.
++
++The committed motion gate (0.6) came from ONE 60 s empty recording (mean 0.49, sigma 0.027, max 0.58).
++A k*sigma rule cannot be supported by a window that short: recordings of the same empty room separate
++from each other more than that (see reports/fix-2026-11/13-PS-FIX-11.md). So any living document or
++exported-report template that states such a rule must say, in the SAME paragraph, that it is
++"provisional" or that the figures are "[TO BE MEASURED]".
++
++Scope: living docs (root *.md, docs/*.md, docs/presentations, generated_reports, .agents), the
++exported-report builders (scripts/build_*.py) and the dashboard client sources (help text).
++Out of scope on purpose: dated session records listed in DATED_RECORDS (history is not rewritten),
++reports/ (dated evidence), docs/adr and docs/research (third-party design notes). Source comments in
++server/ and scripts/ are handled by review, not by this lint.
++
++This test only reads files. It changes no threshold.
++"""
++from __future__ import annotations
++
++import re
++from pathlib import Path
++
++import pytest
++
++REPO = Path(__file__).resolve().parents[1]
++
++# mean/mu/baseline + k, or + N sigma (sigma, std, a bare "s" as in "mean+3s"), or "k*sigma" on its own.
++RULE_RE = re.compile(
++    r"(?:mean|μ|baseline)\s*\+\s*(?:k\b|\d+(?:\.\d+)?\s*[·*×x]?\s*(?:σ|sigma|std\w*|s(?![a-z])))"
++    r"|\bk\s*[·*×]\s*(?:σ|sigma)",
++    re.IGNORECASE,
++)
++QUALIFIER_RE = re.compile(r"\[TO BE MEASURED\]|provisional", re.IGNORECASE)
++PARAGRAPH_SPLIT = re.compile(r"\r?\n[ \t]*\r?\n")
++WINDOW_LINES = 2  # for source files (no paragraphs): the match line +/- this many lines
++
++# Dated session records that state the old rule as history. They are NOT edited; each entry must still
++# violate the rule (test_dated_records_allowlist_is_not_stale), so the list cannot grow silently.
++DATED_RECORDS = frozenset(
++    {
++        "LIVE_HARDWARE_TEST_REPORT.md",
++        "PhantomScan_FixAll_Session_Report.md",
++        "PhantomScan_FixAll_RuViewAudit_Session_Report.md",
++        "PhantomScan_HardwareReality_Alignment_Report.md",
++    }
++)
++
++
++def find_unqualified(text: str, *, source_file: bool = False) -> list[str]:
++    """Return one snippet per rule hit that has no qualifier in its paragraph (or +/- window for source files)."""
++    bad: list[str] = []
++    if source_file:
++        lines = text.splitlines()
++        for i, line in enumerate(lines):
++            m = RULE_RE.search(line)
++            if not m:
++                continue
++            lo, hi = max(0, i - WINDOW_LINES), min(len(lines), i + WINDOW_LINES + 1)
++            if not QUALIFIER_RE.search("\n".join(lines[lo:hi])):
++                bad.append(f"line {i + 1}: {line.strip()[:120]}")
++        return bad
++    offset = 0
++    for para in PARAGRAPH_SPLIT.split(text):
++        start = text.find(para, offset)
++        offset = max(offset, start + len(para))
++        # A Markdown table is one blank-line block, but each row is its own statement: judge rows separately,
++        # so a "provisional" in one row cannot excuse a rule stated in another.
++        lines = [ln for ln in para.splitlines() if ln.strip()]
++        units = lines if lines and all(ln.lstrip().startswith("|") for ln in lines) else [para]
++        for unit in units:
++            if RULE_RE.search(unit) and not QUALIFIER_RE.search(unit):
++                line_no = text.count("\n", 0, start) + 1
++                bad.append(f"line {line_no}: {unit.strip()[:120]!r}")
++    return bad
++
++
++def _scan_files() -> list[Path]:
++    files: list[Path] = []
++    files += sorted(REPO.glob("*.md"))
++    files += sorted((REPO / "docs").glob("*.md"))
++    files += sorted((REPO / "docs" / "presentations").glob("*.md"))
++    files += sorted((REPO / "generated_reports").glob("*.md"))
++    files += sorted((REPO / ".agents").glob("*.md"))
++    files += sorted((REPO / "scripts").glob("build_*.py"))
++    for ext in ("*.ts", "*.tsx"):
++        files += sorted((REPO / "client" / "src").rglob(ext))
++    return [f for f in files if f.is_file()]
++
++
++def _is_source(path: Path) -> bool:
++    return path.suffix in {".py", ".ts", ".tsx"}
++
++
++def _violations(path: Path) -> list[str]:
++    return find_unqualified(path.read_text(encoding="utf-8", errors="replace"), source_file=_is_source(path))
++
++
++# ---- the lint itself ---------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize(
++    "text",
++    [
++        "Pick mean + k·σ from the empty run.",
++        "threshold = mean + k*sigma",
++        "use MEAN+K·SIGMA",
++        "suggested: mean+3σ / mean+4σ",
++        "gate = μ + 3σ over a minute",
++        "mean +   4 · sigma margin",
++        "suggested mean+3s=0.0608",
++        "the k × σ rule",
++        "baseline + k std",
++    ],
++)
++def test_lint_flags_unqualified_rule(text: str) -> None:
++    assert find_unqualified(text), text
++
++
++@pytest.mark.parametrize(
++    "text",
++    [
++        "A mean + k·σ rule is not supported; the gate is provisional.",
++        "threshold = mean + k*sigma (false alarms [TO BE MEASURED])",
++        "mean 0.49, σ 0.027, max 0.58 over 296 samples",  # descriptive statistics are fine
++        "the mean + 3 seconds window",  # not a sigma rule
++        "Everything is Provisional here.\nmean + k·σ is the old rule.",  # same paragraph, case-insensitive
++    ],
++)
++def test_lint_accepts_qualified_or_unrelated(text: str) -> None:
++    assert find_unqualified(text) == [], text
++
++
++def test_qualifier_in_a_different_paragraph_does_not_count() -> None:
++    text = "The old rule was mean + k·σ.\n\nThe gate is provisional."
++    assert len(find_unqualified(text)) == 1
++
++
++def test_table_rows_are_judged_separately() -> None:
++    table = "| ID | text |\n|---|---|\n| FR1 | gate is provisional |\n| FR2 | derive it from mean + k·σ |\n"
++    assert len(find_unqualified(table)) == 1
++    ok = "| ID | text |\n|---|---|\n| FR1 | gate is provisional |\n| FR2 | mean + k·σ, provisional |\n"
++    assert find_unqualified(ok) == []
++
++
++def test_source_files_use_a_line_window_not_the_whole_file() -> None:
++    far = "x\n" * (WINDOW_LINES + 3)
++    text = "# provisional\n" + far + 'FR = "derives the gate (mean + k*sigma)."\n'
++    assert len(find_unqualified(text, source_file=True)) == 1
++    near = 'FR = "derives the gate (mean + k*sigma)."\n# provisional\n'
++    assert find_unqualified(near, source_file=True) == []
++
++
++# ---- the repository ----------------------------------------------------------------------------
++
++
++def test_scope_is_not_empty() -> None:
++    names = {p.relative_to(REPO).as_posix() for p in _scan_files()}
++    assert "README.md" in names
++    assert "docs/SPATIAL_CALIBRATION.md" in names
++    assert "scripts/build_academic_reports.py" in names
++
++
++def test_no_living_doc_or_template_states_the_rule_unqualified() -> None:
++    failures: dict[str, list[str]] = {}
++    for path in _scan_files():
++        rel = path.relative_to(REPO).as_posix()
++        if rel in DATED_RECORDS:
++            continue
++        found = _violations(path)
++        if found:
++            failures[rel] = found
++    assert not failures, "unqualified 'mean + k*sigma' rule (add 'provisional' or '[TO BE MEASURED]' in the same paragraph):\n" + "\n".join(
++        f"  {f}: {v}" for f, vs in failures.items() for v in vs
++    )
++
++
++def test_dated_records_allowlist_is_not_stale() -> None:
++    for rel in sorted(DATED_RECORDS):
++        path = REPO / rel
++        assert path.is_file(), f"{rel} is allow-listed but missing: remove it from DATED_RECORDS"
++        assert _violations(path), f"{rel} no longer states the rule unqualified: remove it from DATED_RECORDS"
+--- /dev/null
++++ b/reports/fix-2026-11/09-WAVE3-addendum.md
+@@ -0,0 +1,93 @@
++# 09 — Wave 3 addendum (running record; one section per item)
++
++**Provenance.** 2026-11-04. Branch `feat/two-node-radar-live-detection`, HEAD `744ce43`, dirty tree. Nothing committed, pushed, flashed or deleted so far. Python tests run in the scratch venv `D:\WIFI csi\phanotm\_scratch_venv_fulltest` (3.13.15). Verbatim suite outputs: `90-test-report.md` (sections "Wave 3 — baseline before Item A" and "Wave 3 — after Item A").
++
++## 0. Session-state hashes (rule 5, as amended by the owner)
++
++| | `_index.json` sha256 prefix | `data/sessions` entries | quarantine |
++|--|--|--|--|
++| Wave-2 baseline (rule text, **not edited**) | `0261130fef4cfed9` | 730 | 5 |
++| Currently observed | `b3c571e291c55326` | 734 | 5 |
++
++The 4 extra entries are `000000205 - 2026-11-03.json` and `test_21_2026-11-03T20-26-17-824Z.{csv,json,pdf}` (written 2026-11-03 23:26 local, ~11 min after Wave 2 work ended). **Origin unknown**; it looks like a dashboard run (69–76 s, 1,257 frames) but that is not proven. The owner decided (option 3): leave it in place, do not quarantine, do not declare it his or pollution. A dry run of `scripts/restore_session_pollution.py --ids "000000205 - 2026-11-03"` (no `--apply`) shows that removing that one index entry reproduces `0261130fef4cfed9…` exactly, so the observed state differs from the Wave-2 baseline by that single session and nothing else.
++
++For Wave 3 only, `b3c571e291c55326` / 734 is the **provisional drift check**, verified before and after every run (`drift-before` / `drift-after` blocks in `90-test-report.md`). Nothing in Wave 3 writes to `data/sessions/`; no Wave 3 test starts anything on 5000 or 5005 (nothing was listening on 5000, 5005 or 5099 before the baseline).
++
++## 1. The 11-versus-46 question (answered; executed, not only title-matched)
++
++* **11** = `server/lib/websocket.test.ts` run with the name filter `F1|AI|advisory|firewall` (`npx tsx --import ./server/test-setup.ts --test --test-name-pattern="F1|AI|advisory|firewall" server/lib/websocket.test.ts`). Origin of the filter: `reports/presence-eval-2026-11/06-test-report.md:13`. Executed now: **11 tests, 11 pass, 0 fail, 0 skipped**.
++* **46** = the same file run whole, no filter. Executed now: **46 tests, 46 pass, 0 fail, 0 skipped**.
++* The 11 are a **strict subset** of the 46: matching the filter against the 46 test titles gives exactly 11 (static check), and the executed filtered run reports 11.
++* No test was added, removed, renamed or skipped by Waves 0–2: `server/lib/websocket.test.ts` has the same sha256 as in the Wave 0 baseline manifest (`44f7b410f19d19e708a594ad852f33c2c97cbaddd0aacbea3fc449c0fcb06367`). **No firewall test that existed before has stopped running.** Not a blocking finding.
++* **Corrections made** (backups in `.tmp/fix-backups/W3-corrections/`): `00-summary.md:13`, `89-merge-gate.md:9` (the "11/11" lines now say "filtered run"), and `99-final-report.md:26` (the wrong claim "the file gained tests in later items" is replaced). The other item reports (`01`–`06`, `09-DECISIONS.md`, `90-test-report.md`) also say "AI-firewall 11/11"; those are dated records of the filtered run and were left untouched.
++* **Weakness to know about:** the filtered selection depends on test titles containing one of four words. A firewall-relevant test whose title lacks them would be excluded from the 11. The whole-file 46 is the safer number to cite.
++
++### 1.1 Uncommitted 46th test — for the owner's decision (not touched, not committed)
++
++HEAD has 45 tests in that file; the working tree has 46. The extra one is `Calibrate Empty Room is acknowledged by the server itself, so it works with no AI sidecar` (`server/lib/websocket.test.ts:839`). `server/lib/websocket.ts` is also modified in the working tree and was already modified when this task started (it appears in the initial `git status`). It was in the working tree before Wave 0 (the file's sha256 equals the Wave 0 baseline). It is **not** part of any Wave 3 item and will not be committed as one.
++
++## 2. Status table (updated after each item)
++
++| item | status | commit | tests added | blocking? | failure direction checked |
++|--|--|--|--|--|--|
++| A PS-FIX-38 | **done** | not committed yet (see §3.6) | 20 Python (doc lint) | non-blocking | neither (no detection code path changed; comment-only edits to 4 code files, proven by diff) |
++| B–I, section 4 | not started | | | | |
++
++## 3. Item A — PS-FIX-38: stop documenting an unsafe threshold rule
++
++### 3.1 What the evidence says (re-verified this session)
++
++* `DEFAULT_MOTION_THRESHOLD` is `process.env.PHANTOM_MOTION_THRESHOLD ?? "0.6"` (`server/lib/node-fusion.ts:48`, unchanged).
++* The 0.6 came from **one 60 s empty-room recording** on the two-node rig: 296 samples of `max(motion1, motion2)`, mean 0.49, sigma 0.027, max 0.58 (`LIVE_HARDWARE_TEST_REPORT.md:90`, "not separately saved to a file").
++* Recordings of the same empty room separate from each other: the calibration tool's empty-vs-empty control refuses with symmetric AUC upper bounds 0.68–0.90 on the default combination and 0.75–0.91 on s8 alone, against a 0.65 limit (`13-PS-FIX-11.md:26-27`). So a k·sigma rule over a 60 s window is not supported.
++
++### 3.2 Every hit, with its disposition
++
++Search patterns: `mean + k`, `k·σ`/`k*sigma`, `μ + Nσ`, `mean+Ns`, "N sigma", "standard deviation", "suggested/derived/calibrated … motion threshold", over `*.md`, `docs/`, `generated_reports/`, `client/src`, `scripts/build_academic_reports.py` and code comments. The client has **no** hit (no dashboard help text states the rule).
++
++| where | what it said | disposition |
++|--|--|--|
++| `docs/SPATIAL_CALIBRATION.md:24-26, 33` | "mean + k·σ, the same method calibrate-threshold.ts uses for the motion gate"; "prints a suggested … (mean+3σ / mean+4σ)" | **rewritten**: provisional, descriptive, not drift/pooling-checked; no longer the motion-gate method |
++| `docs/SPATIAL_CALIBRATION.md` procedure (old steps 1–3) | "Procedure (hardware session, ~15 min)", a 300 s run, "note both suggestions" | **rewritten**: ≥ 60 min empty soak with entry log, ≥ 5 min fan control in the same link state, `--evaluate`; refusal is a valid outcome; figures `[TO BE MEASURED]` |
++| `Phantom-Scan-Final-Project-Report-4Node.md:352` (FR15) | "derives the motion gate from a recorded baseline (mean + k·σ)" | **rewritten** (tool refuses single runs; gate provisional; rates `[TO BE MEASURED]`) |
++| same, `:490`, `:330`, `:70` | "derived/recalibrated/calibrated against the two-node rig's empty-room baseline" | **reworded**: a single 60 s recording, provisional, "not a mean + k·σ result" |
++| `README.md:194` caveat, `:234` table | "was calibrated 2026-07-20 against a 2-node rig's empty-room baseline"; "calibrated on a 2-node rig" | **reworded** + one added sentence: why k·σ is unsupported (drift figures above) and what real recalibration requires |
++| `MEASUREMENT_PLAN.md:37-38` | "the calibrated `PHANTOM_MOTION_THRESHOLD`" | **reworded**: provisional, 0.6, false-alarm rate `[TO BE MEASURED]` |
++| `docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md:444` | "Presence detection: adaptive threshold μ + 3σ (60-second sliding window)" | **qualified**: firmware edge-tier design target, provisional, rates `[TO BE MEASURED]`. The "sliding window / 1,200-sample" details were **not** checked against firmware `[UNVERIFIED]` |
++| `scripts/build_academic_reports.py:772` (FR14), `:1449` (recommendation) | exported-report template: "derives the motion gate … (mean + k*sigma)"; "replace the placeholder gate with a mean + k*sigma calibrated threshold" | **rewritten** (60 min soak + fan control + `--evaluate`; gate provisional; rates `[TO BE MEASURED]`). The docx was **not** rebuilt (see §3.5) |
++| `server/lib/node-fusion.ts:34-36` | "Calibrated … 0.6 sits just above that noise ceiling" | **comment rewritten** (PROVISIONAL, single recording, not a k·sigma result, what recalibration needs). **Value unchanged** |
++| `scripts/calibrate-threshold.ts:10, 101`, `server/lib/tracking.ts:27-29`, `server/lib/tracking.test.ts:13` | comments claiming the motion gate uses the same mean+k*sigma method / calling the figure a "suggestion" | **comments corrected** (descriptive, provisional) |
++| `LIVE_HARDWARE_TEST_REPORT.md:30, 90`, `PhantomScan_FixAll_Session_Report.md:32`, `PhantomScan_FixAll_RuViewAudit_Session_Report.md:117-118`, `PhantomScan_HardwareReality_Alignment_Report.md:99` | dated session records quoting the old rule or old tool output | **left as history**; allow-listed in the lint (and the lint fails if an entry stops matching) |
++| `shared/schema.ts:133, 165`, `server/lib/signal-processing.ts:799`, `server/lib/websocket.ts:2001` | "auto-calibrated 3σ" floor of the legacy `MotionGate` | **left**: accurate description of existing code; this is the PS-EVAL-013 legacy gate, which stays with the owner |
++| `server/lib/tracking.ts:39, 55` (`suggestedThreshold: mean + kSigma*sigma`), `scripts/calibrate-threshold.ts:240` (prints the spatial figure) | code behaviour | **left** (not a documentation hit; behaviour change is out of scope) |
++| `firmware/esp32-csi-node/main/edge_dsp_pure.h:240-247`, `edge_processing.h:43` (`EDGE_CALIB_SIGMA_MULT 3.0f`), `edge_processing.c:799` | firmware comments/constants describing its on-board baseline | **left** (accurate; firmware is Item F only) |
++| `docs/adr/*`, `docs/research/*`, `README.md:187, 405` | sigma in the DSP/statistics sense, or the 8σ calibration-sample reject | **not about the threshold rule**; left |
++
++### 3.3 The doc-lint test
++
++`tests/test_doc_lint_threshold_rule.py` (20 tests). It fails if `mean + k`, `μ + Nσ`, `mean+Ns`, `k·σ` (any spacing; σ / sigma / std / bare s; `·`, `*`, `×`) appears in a living doc, a report builder or client source **without** `[TO BE MEASURED]` or "provisional" in the same paragraph (Markdown table rows are judged one by one; source files use a ±2-line window). Scope: root `*.md`, `docs/*.md`, `docs/presentations`, `generated_reports`, `.agents`, `scripts/build_*.py`, `client/src`. Excluded on purpose: the four dated records above, `reports/`, `docs/adr`, `docs/research`, and source comments in `server/` and `scripts/`. It also self-tests (9 flagged phrases, 5 accepted ones, cross-paragraph and table-row cases) and checks that the allow-list is not stale.
++
++**It can fail.** Run over the pre-edit backups (`.tmp/fix-backups/A-PS-FIX-38/`) it flags 5 unqualified statements in 4 files (SPATIAL_CALIBRATION.md, the Final Report FR table, the Preliminary Technical Deliverable, and 2 in `build_academic_reports.py`). It passes on the edited tree. **Limit:** the lint catches the rule *phrase*; the wording-only edits (README "calibrated", MEASUREMENT_PLAN, Final Report lines 70/330/490) are not protected by it (README and MEASUREMENT_PLAN had 0 pre-edit lint hits).
++
++### 3.4 Tests, before and after (verbatim in `90-test-report.md`)
++
++| suite | before | after |
++|--|--|--|
++| TS `npm test` | 444 / 444 | 444 / 444 |
++| `npx tsc --noEmit` | 0 errors (no output) | 0 errors (no output) |
++| Python (scratch venv) | 342 passed, 5 skipped | **362 passed**, 5 skipped (+20 doc-lint tests) |
++| F1/F2 (`test_f1_*` ×2, `test_f2_*` ×1) | 3 / 3 | 3 / 3 |
++| AI-firewall, whole file / filtered | 46 / 46 and 11 / 11 | 46 / 46 and 11 / 11 |
++| drift check | `b3c571e291c55326` / 734 | `b3c571e291c55326` / 734 |
++
++### 3.5 Not done / limits
++
++* **No threshold, tier constant or runtime setting changed.** Proof: `diff` of the four edited code files against their backups shows only comment lines changed (`node-fusion.ts` +9/−5, `tracking.ts` +3/−3, `tracking.test.ts` +2/−2, `calibrate-threshold.ts` +3/−2); the literal `"0.6"` is still at `server/lib/node-fusion.ts:48`.
++* **Failure direction:** neither. No detection decision, gate or display path changed, so there is nothing to replay for under-detection or ghost targets.
++* The exported `.docx` reports and `generated_reports/*.md` were **not** regenerated, so existing exports still carry the old text until `build_academic_reports.py` is run again.
++* **Drifted claim found, not edited (out of Item A's scope):** the default gate is stated as **0.12** in `scripts/build_academic_reports.py:441, 764, 819, 1003, 1122, 1442`, `generated_reports/Appendix.md:294`, `generated_reports/Section-1.2-WiFi-Frequency-vs-CSI.md:104` and `PhantomScan_Component_Inventory_Report.md:212`. The code default is 0.6 (0.12 was the original placeholder). Listed as PS-FIX-41 in the ledger.
++* The new live-recalibration wording is a **procedure**, not a result: no soak, fan control or `--evaluate` run has been done. All false-alarm and detection figures are `[TO BE MEASURED]`.
++
++### 3.6 Commit
++
++Not committed yet. Item A's files overlap with files that already carried the owner's uncommitted edits (`README.md`, `scripts/calibrate-threshold.ts`, `server/lib/*`, `Phantom-Scan-Final-Project-Report-4Node.md`, and others in the initial `git status`), so a commit of those files would also include his edits. See the question in the chat message.

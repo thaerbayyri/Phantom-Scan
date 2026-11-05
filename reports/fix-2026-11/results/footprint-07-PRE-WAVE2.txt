@@ -1,0 +1,11 @@
+# footprint 07-PRE-WAVE2
+changed (3):
+  M tests/test_count_model.py
+  M tests/test_esp_capture_e2e.py
+  M tests/test_train_activity.py
+added (4):
+  A scripts/restore_session_pollution.py
+  A tests/e2e_guard.py
+  A tests/test_e2e_guard.py
+  A tests/test_restore_session_pollution.py
+removed (0):

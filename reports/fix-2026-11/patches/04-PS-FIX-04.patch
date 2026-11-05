@@ -1,0 +1,781 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\eval-presence-on-datasets.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\eval-presence-on-datasets.ts"
+index 2493e1b..925526b 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\eval-presence-on-datasets.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\eval-presence-on-datasets.ts"	
+@@ -14,14 +14,36 @@
+ import { readFileSync, readdirSync } from "node:fs";
+ import { computeAgcNormalizedPerturbation } from "../server/lib/node-fusion";
+ import { NodeBaselineTracker, RoomPresence, tierAtLeast } from "../server/lib/node-baseline";
++import { blockBootstrapAuc } from "./accuracy/auc-bootstrap";
+ 
+-const WINDOW_MS = Number(process.env.PHANTOM_MOTION_WINDOW_MS ?? 800);
++// Flags (PS-FIX-04): --nodes 1,2   restrict to these node ids (default 1,2,3,4; the others see no frames)
++//                    --window-ms N perturbation window (default env PHANTOM_MOTION_WINDOW_MS or 800;
++//                                  scripts/calibrate-threshold.ts defaults to 1500 -- numbers do not transfer)
++const rawArgs = process.argv.slice(2);
++const flagValue = (name: string): string | undefined => {
++  const i = rawArgs.indexOf(name);
++  return i >= 0 ? rawArgs[i + 1] : undefined;
++};
++const FLAGS_WITH_VALUE = new Set(["--nodes", "--window-ms"]);
++const positional = rawArgs.filter((a, i) => !a.startsWith("--") && !FLAGS_WITH_VALUE.has(rawArgs[i - 1]));
++const NODES = (flagValue("--nodes") ?? "1,2,3,4").split(",").map(Number);
++if (NODES.some((n) => !Number.isInteger(n) || n < 1 || n > 4)) {
++  console.error("--nodes must be a comma list of node ids 1-4, e.g. --nodes 1,2");
++  process.exit(1);
++}
++const WINDOW_MS = Number(flagValue("--window-ms") ?? process.env.PHANTOM_MOTION_WINDOW_MS ?? 800);
++if (!Number.isFinite(WINDOW_MS) || WINDOW_MS <= 0) {
++  console.error("--window-ms must be a positive number");
++  process.exit(1);
++}
+ const TICK_MS = 50;
+-const [room, ...labels] = process.argv.slice(2);
++const BLOCK_TICKS = Math.ceil(10_000 / TICK_MS); // >= 10 s blocks for the bootstrap
++const [room, ...labels] = positional;
+ if (!room || labels.length === 0) {
+-  console.error("usage: eval-presence-on-datasets.ts <room> <label> [<label> ...]");
++  console.error("usage: eval-presence-on-datasets.ts <room> <label> [<label> ...] [--nodes 1,2] [--window-ms 800]");
+   process.exit(1);
+ }
++console.log(`nodes ${NODES.join(",")}  window ${WINDOW_MS} ms  tick ${TICK_MS} ms`);
+ 
+ interface Frame { t: number; amps: number[] }
+ const dir = `data/datasets/${room}/`;
+@@ -36,7 +58,7 @@ function loadRecordings(label: string): Frame[][][] {
+       for (const line of readFileSync(dir + f, "utf8").split("\n")) {
+         if (!line) continue;
+         const o = JSON.parse(line);
+-        if (o.type === "frame" && o.n >= 1 && o.n <= 4) byNode[o.n - 1].push({ t: o.t, amps: o.a });
++        if (o.type === "frame" && NODES.includes(o.n)) byNode[o.n - 1].push({ t: o.t, amps: o.a });
+       }
+     }
+     byNode.forEach((a) => a.sort((x, y) => x.t - y.t));
+@@ -83,22 +105,21 @@ for (const label of labels) {
+   }
+ }
+ 
+-// Separation of the strongest-node z between each occupied recording and the LAST empty one.
++// Separation of the strongest-node z between each recording and the LAST empty one.
++// Rank-based AUC over ALL ticks (no subsampling) with a 95 % moving-block bootstrap CI (>= 10 s blocks, fixed seed).
++// Empty recordings are included on purpose: their AUC against the reference is the empty-vs-empty negative control
++// (a score that separates two empties is drifting, not detecting; the CI covers within-recording variability only).
+ const quantile = (a: number[], q: number) => [...a].sort((x, y) => x - y)[Math.floor(q * (a.length - 1))] ?? 0;
+-function auc(positive: number[], negative: number[]): number {
+-  const step = (a: number[]) => a.filter((_, i) => i % Math.max(1, Math.floor(a.length / 1500)) === 0);
+-  const pos = step(positive);
+-  const neg = step(negative);
+-  let wins = 0;
+-  for (const p of pos) for (const n of neg) wins += p > n ? 1 : p === n ? 0.5 : 0;
+-  return wins / (pos.length * neg.length);
++function aucText(positive: number[], negative: number[]): string {
++  const r = blockBootstrapAuc(positive, negative, { block: BLOCK_TICKS, nBoot: 300 });
++  return r.auc === null ? "n/a (empty class)" : `${r.auc.toFixed(2)} [${(r.lo as number).toFixed(2)}, ${(r.hi as number).toFixed(2)}]`;
+ }
+ const emptyRuns = results.filter((r) => r.label === "empty");
+ const reference = emptyRuns[emptyRuns.length - 1];
+ if (reference) {
+-  console.log("\nstrongest-node z (after 20 s):  p50 / p90 / p99    AUC vs last empty");
++  console.log("\nstrongest-node z (after 20 s):  p50 / p90 / p99    AUC vs last empty [95% block-bootstrap CI]");
+   for (const r of results) {
+-    const a = r === reference ? "  -  " : auc(r.maxZs, reference.maxZs).toFixed(2);
++    const a = r === reference ? "  -  " : aucText(r.maxZs, reference.maxZs);
+     console.log(`${r.label.padEnd(11)}#${r.idx}  ${[0.5, 0.9, 0.99].map((q) => quantile(r.maxZs, q).toFixed(1).padStart(5)).join(" / ")}        ${a}`);
+   }
+ }
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\drift.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\drift.py"
+index c354308..9d61afa 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\drift.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\drift.py"	
+@@ -17,11 +17,12 @@ import numpy as np
+ from scipy.stats import spearmanr
+ 
+ from .features import COVARIATES, FEATURES
+-from .provenance import REPO_ROOT, provenance
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
+ from .stats import auc
+ from .tables import RecTables, load_all, pick
+ 
+-OUT_DIR = REPO_ROOT / "reports" / "presence-eval-2026-11"
++OUT_DIR = default_out_dir()
+ SEG_S = 300
+ WIN_PER_SEG = int(SEG_S / 1.5)
+ MIN_SEG_WINDOWS = 60
+@@ -238,7 +239,7 @@ def render(res: dict) -> str:
+ def main() -> None:
+     res = run()
+     (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
+-    (OUT_DIR / "results" / "drift.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
++    dump_json(OUT_DIR / "results" / "drift.json", res)
+     (OUT_DIR / "results" / "drift_tables.md").write_text(render(res), encoding="utf-8")
+     print("wrote results/drift.json and results/drift_tables.md")
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\inventory.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\inventory.py"
+index 70782d8..2439b26 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\inventory.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\inventory.py"	
+@@ -11,12 +11,13 @@ from pathlib import Path
+ 
+ import numpy as np
+ 
+-from .provenance import REPO_ROOT, provenance
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
+ from .recordings import NodeSeries, Recording, group_recordings, load_recording
+ 
+ RSSI_STEP_DB = 6.0
+ RSSI_BIN_S = 300
+-OUT_DIR = REPO_ROOT / "reports" / "presence-eval-2026-11"
++OUT_DIR = default_out_dir()
+ CACHE_DIR = REPO_ROOT / ".tmp" / "presence_eval_cache" / "recordings"
+ 
+ 
+@@ -145,7 +146,7 @@ def main() -> None:
+     args = ap.parse_args()
+     inv = build_inventory(args.room_dir)
+     args.out.parent.mkdir(parents=True, exist_ok=True)
+-    args.out.write_text(json.dumps(inv, indent=1), encoding="utf-8")
++    dump_json(args.out, inv)
+     print(f"wrote {args.out} ({len(inv['recordings'])} recordings, {len(inv['rssi_step_flags'])} RSSI step flags)")
+ 
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\provenance.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\provenance.py"
+new file mode 100644
+index 0000000..cccba48
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\provenance.py"	
+@@ -0,0 +1,51 @@
++"""Provenance stamp attached to every results JSON (command, commit, code hash, date)."""
++from __future__ import annotations
++
++import hashlib
++import subprocess
++import sys
++from datetime import datetime, timezone
++from pathlib import Path
++
++import numpy as np
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++PACKAGE_DIR = Path(__file__).resolve().parent
++
++
++def default_out_dir() -> Path:
++    """Report folder; override with PRESENCE_EVAL_OUT (e.g. reports/fix-2026-11) to keep earlier results intact."""
++    import os
++
++    return Path(os.environ.get("PRESENCE_EVAL_OUT") or REPO_ROOT / "reports" / "presence-eval-2026-11")
++
++
++def _git(*args: str) -> str:
++    try:
++        out = subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30, check=False)
++    except (OSError, subprocess.SubprocessError):
++        return ""
++    return out.stdout.strip()
++
++
++def code_sha256() -> str:
++    """Hash of this package's sources: the code is untracked, so the commit hash alone does not identify it."""
++    h = hashlib.sha256()
++    for p in sorted(PACKAGE_DIR.glob("*.py")):
++        h.update(p.name.encode())
++        h.update(p.read_bytes())
++    return h.hexdigest()[:16]
++
++
++def provenance(command: str, inputs: list[str] | None = None) -> dict:
++    return {
++        "command": command,
++        "commit": _git("rev-parse", "HEAD") or "[UNVERIFIED]",
++        "branch": _git("branch", "--show-current") or "[UNVERIFIED]",
++        "working_tree_dirty": bool(_git("status", "--porcelain")),
++        "eval_code_sha256_16": code_sha256(),
++        "date_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
++        "python": sys.version.split()[0],
++        "numpy": np.__version__,
++        "inputs": inputs or [],
++    }
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\repro.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\repro.py"
+index 5b48f60..3cce754 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\repro.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\repro.py"	
+@@ -13,11 +13,12 @@ from pathlib import Path
+ import numpy as np
+ 
+ from .features import FEATURES, fuse_max
+-from .provenance import REPO_ROOT, provenance
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
+ from .stats import block_bootstrap_auc
+ from .tables import RecTables, load_all, pick
+ 
+-OUT_DIR = REPO_ROOT / "reports" / "presence-eval-2026-11"
++OUT_DIR = default_out_dir()
+ TOL_OK, TOL_APPROX = 0.05, 0.10
+ 
+ # (subject, label, day) specs
+@@ -129,7 +130,7 @@ def render(res: dict) -> str:
+ def main() -> None:
+     res = run()
+     (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
+-    (OUT_DIR / "results" / "reproduction.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
++    dump_json(OUT_DIR / "results" / "reproduction.json", res)
+     Path(OUT_DIR / "results" / "reproduction_tables.md").write_text(render(res), encoding="utf-8")
+     print("wrote results/reproduction.json and results/reproduction_tables.md")
+ 
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\stats.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\stats.py"
+index 5d1d860..d05eb3d 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\stats.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\stats.py"	
+@@ -56,6 +56,61 @@ def block_bootstrap_rate(
+     return {"rate": float(x.mean()), "lo": float(lo), "hi": float(hi), "n": int(x.size)}
+ 
+ 
++def session_block_auc(
++    pos_by_rec: dict[str, np.ndarray],
++    neg_by_rec: dict[str, np.ndarray],
++    block: int = DEFAULT_BLOCK,
++    n_boot: int = DEFAULT_BOOT,
++    seed: int = DEFAULT_SEED,
++    min_windows: int = 20,
++) -> dict:
++    """AUC with a CI that resamples whole RECORDINGS (sessions) with replacement, then blocks inside each.
++
++    This is the honest interval when windows come from few recordings: it includes between-recording variance.
++    Needs >= 2 recordings per class; otherwise the interval is null with a reason (never a fabricated one).
++    """
++    pos_by_rec = {k: np.asarray(v, dtype=np.float64) for k, v in pos_by_rec.items() if len(v) >= min_windows}
++    neg_by_rec = {k: np.asarray(v, dtype=np.float64) for k, v in neg_by_rec.items() if len(v) >= min_windows}
++    pos = np.concatenate(list(pos_by_rec.values())) if pos_by_rec else np.zeros(0)
++    neg = np.concatenate(list(neg_by_rec.values())) if neg_by_rec else np.zeros(0)
++    out = {"auc": auc(pos, neg), "lo": None, "hi": None, "n_pos_recordings": len(pos_by_rec), "n_neg_recordings": len(neg_by_rec)}
++    if len(pos_by_rec) < 2 or len(neg_by_rec) < 2:
++        out["reason"] = "insufficient data: session-blocked CI needs >= 2 recordings in each class"
++        return out
++    rng = np.random.default_rng(seed)
++    pk, nk = list(pos_by_rec), list(neg_by_rec)
++    vals = np.empty(n_boot)
++    for i in range(n_boot):
++        ps = np.concatenate([_block_resample(pos_by_rec[pk[j]], block, rng) for j in rng.integers(0, len(pk), len(pk))])
++        ns = np.concatenate([_block_resample(neg_by_rec[nk[j]], block, rng) for j in rng.integers(0, len(nk), len(nk))])
++        vals[i] = auc(ps, ns)
++    out["lo"], out["hi"] = (float(x) for x in np.percentile(vals, [2.5, 97.5]))
++    return out
++
++
++EMPTY_PAIR_UPPER_BOUND = 0.65
++
++
++def empty_pair_control(by_rec: dict[str, np.ndarray], block: int = DEFAULT_BLOCK, n_boot: int = DEFAULT_BOOT, seed: int = DEFAULT_SEED, min_windows: int = 60) -> dict:
++    """Negative control: a score that separates two EMPTY recordings is drifting, not detecting.
++
++    For every pair the AUC is symmetrised (max(AUC, 1-AUC) with the matching CI bound); the control passes only if
++    the symmetric UPPER bound is <= EMPTY_PAIR_UPPER_BOUND for every pair. Fewer than 2 usable empties -> null.
++    """
++    usable = {k: np.asarray(v, dtype=np.float64) for k, v in by_rec.items() if len(v) >= min_windows}
++    names = sorted(usable)
++    if len(names) < 2:
++        return {"passes": None, "reason": "insufficient data: needs >= 2 empty recordings", "pairs": []}
++    pairs = []
++    for i, a in enumerate(names):
++        for b in names[i + 1:]:
++            r = block_bootstrap_auc(usable[a], usable[b], block=block, n_boot=n_boot, seed=seed)
++            sym_hi = max(r["hi"], 1.0 - r["lo"])
++            pairs.append({"a": a, "b": b, "auc": r["auc"], "lo": r["lo"], "hi": r["hi"], "symmetric_upper_bound": sym_hi, "ok": bool(sym_hi <= EMPTY_PAIR_UPPER_BOUND)})
++    worst = max(p["symmetric_upper_bound"] for p in pairs)
++    return {"passes": bool(all(p["ok"] for p in pairs)), "worst_symmetric_upper_bound": worst, "threshold": EMPTY_PAIR_UPPER_BOUND, "pairs": pairs}
++
++
+ def block_bootstrap_auc(
+     pos: np.ndarray, neg: np.ndarray, block: int = DEFAULT_BLOCK, n_boot: int = DEFAULT_BOOT, seed: int = DEFAULT_SEED
+ ) -> dict:
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\twonode.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\twonode.py"
+index 977674d..efe8d9f 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\04-PS-FIX-04\\scripts\\presence_eval\\twonode.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\twonode.py"	
+@@ -12,16 +12,18 @@ from __future__ import annotations
+ 
+ import argparse
+ import json
++from pathlib import Path
+ from dataclasses import dataclass
+ from typing import Sequence
+ 
+ import numpy as np
+ 
+-from .provenance import REPO_ROOT, provenance
+-from .stats import DEFAULT_BLOCK, auc, block_bootstrap_auc, block_bootstrap_rate
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
++from .stats import DEFAULT_BLOCK, EMPTY_PAIR_UPPER_BOUND, auc, block_bootstrap_auc, block_bootstrap_rate, empty_pair_control, session_block_auc
+ from .tables import RecTables, load_all
+ 
+-OUT_DIR = REPO_ROOT / "reports" / "presence-eval-2026-11"
++OUT_DIR = default_out_dir()
+ NODES = (1, 2)
+ FEATS = ("perturb", "perturb_agc", "decor")
+ RULES = ("n1", "n2", "max", "mean", "and")  # "or" is identical to "max" for a threshold on max(z1, z2)
+@@ -33,9 +35,11 @@ CRITERIA = {
+     "C1": "lower 95% block-bootstrap CI bound of walking-vs-empty AUC >= 0.80 in protocol (b) AND in every applicable train session of protocol (c)",
+     "C2": "fan false-positive rate not above empty false-positive rate (pooled, at both alpha = 1% and 5%) in protocols (b) and (c)",
+     "C3": "no held-out empty recording flagged occupied in more than 5% of windows at the alpha = 1% threshold, in protocols (b) and (c)",
++    "C4": "(added in fix-2026-11, stricter; C1-C3 unchanged) empty-vs-empty negative control: for every pair of held-out empty recordings the symmetric AUC upper 95% bound is <= 0.65, in protocols (b) and (c)",
+     "C1_auc_lower_bound": 0.80,
+     "C3_max_flag_share": 0.05,
+-    "verdict_rule": "a candidate (feature, rule) meets the criteria only if C1, C2 and C3 all hold; if none does, the report says so and stops",
++    "C4_max_empty_pair_upper_bound": EMPTY_PAIR_UPPER_BOUND,
++    "verdict_rule": "a candidate (feature, rule) meets the criteria only if C1, C2, C3 and C4 all hold; if none does, the report says so and stops",
+ }
+ 
+ 
+@@ -168,7 +172,9 @@ def run_candidate(recs: dict[str, RecTables], splits: Sequence[Split], feature:
+             continue
+         t = recs[sp.test_id]
+         k, s = score(model, t)
+-        row = {"protocol": sp.protocol, "group": sp.group, "test": sp.test_id, "label": t.label, "k": k, "s": s, "model": model}
++        ks = [tab["k"].max() for n, tab in t.nodes.items() if n in NODES and tab["k"].size]
++        n_grid = int(max(ks)) + 1 if ks else 0  # windows on the recording's time grid; those without a joint N1+N2 score are abstentions
++        row = {"protocol": sp.protocol, "group": sp.group, "test": sp.test_id, "label": t.label, "k": k, "s": s, "model": model, "n_grid": n_grid}
+         if sp.protocol == "adjacent":  # in-sample reference: the baseline scored by its own model
+             bk, bs = score(model, recs[sp.train_ids[0]])
+             row["baseline_scores"] = bs
+@@ -180,6 +186,29 @@ def _flags(rows: list[dict], alpha: float) -> np.ndarray:
+     return np.concatenate([r["s"] >= r["model"].threshold(alpha) for r in rows]) if rows else np.zeros(0, dtype=bool)
+ 
+ 
++def _grid_flags(rows: list[dict], alpha: float) -> np.ndarray:
++    """Detections on the full time grid: windows without a score (abstentions) are counted as NOT detected (misses)."""
++    parts = []
++    for r in rows:
++        arr = np.zeros(r["n_grid"], dtype=bool)
++        arr[r["k"]] = r["s"] >= r["model"].threshold(alpha)
++        parts.append(arr)
++    return np.concatenate(parts) if parts else np.zeros(0, dtype=bool)
++
++
++def sensitivity_control(recs: dict[str, RecTables]) -> dict:
++    """An always-'absent' scorer must be REJECTED by the harness (a model that never fires cannot pass)."""
++    walk = [t for t in recs.values() if t.label == "walking" and all(n in t.nodes for n in NODES)]
++    emp = [t for t in recs.values() if t.label == "empty" and all(n in t.nodes for n in NODES)]
++    n_pos = sum(len(pair_series(t, "decor")[0]) for t in walk)
++    n_neg = sum(len(pair_series(t, "decor")[0]) for t in emp)
++    if n_pos < MIN_WIN or n_neg < MIN_WIN:
++        return {"evaluable": False, "reason": "insufficient data"}
++    r = block_bootstrap_auc(np.zeros(n_pos), np.zeros(n_neg), n_boot=N_BOOT)
++    tpr = block_bootstrap_rate(np.zeros(n_pos, dtype=bool), n_boot=N_BOOT)  # threshold above every score: never fires
++    return {"evaluable": True, "constant_scorer_auc": r, "never_fires_tpr": tpr, "rejected_by_C1": bool(r["lo"] < CRITERIA["C1_auc_lower_bound"])}
++
++
+ def aggregate(rows: list[dict]) -> dict:
+     """Per (protocol, group) metrics with block-bootstrap CIs; 'insufficient data' instead of a number when thin."""
+     out: dict = {}
+@@ -188,7 +217,8 @@ def aggregate(rows: list[dict]) -> dict:
+         by = lambda lab: [r for r in g if r["label"] == lab and len(r["s"]) >= MIN_WIN]
+         neg = by("empty")
+         negs = np.concatenate([r["s"] for r in neg]) if neg else np.zeros(0)
+-        cell: dict = {"n_empty_windows": int(negs.size), "auc": {}, "tpr": {}, "fpr": {}, "ttfd_s": {}}
++        cell: dict = {"n_empty_windows": int(negs.size), "auc": {}, "auc_session_blocked": {}, "tpr": {}, "tpr_abstain_as_miss": {}, "abstention_share": {}, "fpr": {}, "ttfd_s": {},
++                      "empty_vs_empty_control": empty_pair_control({r["test"]: r["s"] for r in neg})}
+         for cls in ("walking", "still", "two_people"):
+             pos = by(cls)
+             ps = np.concatenate([r["s"] for r in pos]) if pos else np.zeros(0)
+@@ -196,6 +226,11 @@ def aggregate(rows: list[dict]) -> dict:
+                 cell["auc"][cls] = "insufficient data"
+             else:
+                 cell["auc"][cls] = block_bootstrap_auc(ps, negs, n_boot=N_BOOT)
++            cell["auc_session_blocked"][cls] = session_block_auc({r["test"]: r["s"] for r in pos}, {r["test"]: r["s"] for r in neg}, n_boot=N_BOOT) if pos and neg else "insufficient data"
++            grid = sum(r["n_grid"] for r in pos)
++            cell["abstention_share"][cls] = (1.0 - sum(len(r["s"]) for r in pos) / grid) if grid else None
++            for a in ALPHAS:
++                cell["tpr_abstain_as_miss"][f"{cls}@{int(a * 100)}%"] = block_bootstrap_rate(_grid_flags(pos, a), n_boot=N_BOOT) if pos else "insufficient data"
+             if key[0] == "adjacent" and pos:
+                 bl = np.concatenate([r["baseline_scores"] for r in pos])
+                 cell["auc"][cls + "_vs_baseline_in_sample"] = block_bootstrap_auc(ps, bl, n_boot=N_BOOT) if bl.size >= MIN_WIN else "insufficient data"
+@@ -239,7 +274,16 @@ def criteria(per_protocol: dict[str, dict]) -> dict:
+             for rid, r in v["fpr"].get("per_empty_recording@1%", {}).items():
+                 if r["rate"] > CRITERIA["C3_max_flag_share"]:
+                     res["C3"] = False
+-    res["meets_all"] = bool(res["C1"] and res["C2"] and res["C3"])
++    res["C4"] = True
++    for proto in ("loro", "cross_session"):
++        controls = [v["empty_vs_empty_control"] for k, v in per_protocol.items() if k.startswith(proto + "/")]
++        evaluable = [c for c in controls if c.get("passes") is not None]
++        if not evaluable:
++            res["C4"] = False
++            res["notes"].append(f"{proto}: empty-vs-empty control not evaluable")
++        elif not all(c["passes"] for c in evaluable):
++            res["C4"] = False
++    res["meets_all"] = bool(res["C1"] and res["C2"] and res["C3"] and res["C4"])
+     return res
+ 
+ 
+@@ -257,6 +301,7 @@ def run(recs: dict[str, RecTables] | None = None) -> dict:
+         "preregistered_criteria": CRITERIA,
+         "params": {"nodes": NODES, "features": FEATS, "rules": RULES, "alphas": ALPHAS, "min_windows": MIN_WIN, "n_boot": N_BOOT, "block_windows": DEFAULT_BLOCK},
+         "splits": {k: [{"test": s.test_id, "train": list(s.train_ids)} for s in v] for k, v in sp.items()},
++        "occupied_sensitivity_control": sensitivity_control(recs),
+         "candidates": cands,
+         "any_candidate_meets_criteria": any(c["criteria"]["meets_all"] for c in cands.values()),
+     }
+@@ -307,16 +352,19 @@ def _json_default(o):  # numpy scalars
+ def main() -> None:
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--write-prereg", action="store_true")
++    ap.add_argument("--prereg-out", type=Path, default=OUT_DIR / "results" / "preregistered_criteria.json")
+     args = ap.parse_args()
++    prereg_out = args.prereg_out
++    prereg_out.parent.mkdir(parents=True, exist_ok=True)
+     (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
+     if args.write_prereg:
+         doc = {"provenance": provenance("python -m scripts.presence_eval.twonode --write-prereg"), "criteria": CRITERIA,
+                "status": "PROPOSAL for Thaer to confirm or change; frozen before the final numbers were computed"}
+-        (OUT_DIR / "results" / "preregistered_criteria.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
+-        print("wrote results/preregistered_criteria.json")
++        dump_json(prereg_out, doc)
++        print(f"wrote {prereg_out}")
+         return
+     res = run()
+-    (OUT_DIR / "results" / "two_node_eval.json").write_text(json.dumps(res, indent=1, default=_json_default), encoding="utf-8")
++    dump_json(OUT_DIR / "results" / "two_node_eval.json", res)
+     (OUT_DIR / "results" / "two_node_tables.md").write_text(
+         "## Candidates\n\n" + render(res) + "\n## Repo reference (TypeScript, nodes 1+2)\n\n" + render_reference(OUT_DIR / "results" / "ref_two_node.json"), encoding="utf-8")
+     print("wrote results/two_node_eval.json; any candidate meets criteria:", res["any_candidate_meets_criteria"])
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\__tests__\\auc-bootstrap.test.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\__tests__\\auc-bootstrap.test.ts"
+new file mode 100644
+index 0000000..15086fd
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\__tests__\\auc-bootstrap.test.ts"	
+@@ -0,0 +1,55 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { blockBootstrapAuc, mulberry32, rankAuc } from "../auc-bootstrap";
++
++test("rankAuc matches hand-computed values, ties and the extremes", () => {
++  assert.equal(rankAuc([1, 2, 3], [0, 2]), 0.75); // 4 wins + 1 tie (0.5) of 6 pairs, 1 loss
++  assert.equal(rankAuc([2, 2, 2], [2, 2]), 0.5);
++  assert.equal(rankAuc([5, 6], [1, 2, 3]), 1);
++  assert.equal(rankAuc([1, 2, 3], [5, 6]), 0);
++});
++
++test("rankAuc equals the Python implementation on a vector with many ties (parity pinned)", () => {
++  // scripts/presence_eval/stats.py auc([3,1,4,1,5,9,2,6],[2,7,1,8,2,8,1,8]) == 0.453125
++  assert.equal(rankAuc([3, 1, 4, 1, 5, 9, 2, 6], [2, 7, 1, 8, 2, 8, 1, 8]), 0.453125);
++});
++
++test("rankAuc matches brute force on random data with forced ties", () => {
++  const rand = mulberry32(7);
++  const pos = Array.from({ length: 60 }, () => Math.round((rand() * 3 + 0.3) * 10) / 10);
++  const neg = Array.from({ length: 80 }, () => Math.round(rand() * 3 * 10) / 10);
++  let wins = 0;
++  for (const p of pos) for (const n of neg) wins += p > n ? 1 : p === n ? 0.5 : 0;
++  assert.ok(Math.abs((rankAuc(pos, neg) as number) - wins / (pos.length * neg.length)) < 1e-12);
++});
++
++test("an empty class gives null, never a fabricated number", () => {
++  assert.equal(rankAuc([], [1]), null);
++  assert.equal(rankAuc([1], []), null);
++  assert.deepEqual(blockBootstrapAuc([], [1, 2], { block: 7 }), { auc: null, lo: null, hi: null, nPos: 0, nNeg: 2 });
++});
++
++test("bootstrap is deterministic for a fixed seed, differs across seeds, and brackets the point estimate", () => {
++  const rand = mulberry32(5);
++  const pos = Array.from({ length: 200 }, () => rand() + 0.4);
++  const neg = Array.from({ length: 200 }, () => rand());
++  const a = blockBootstrapAuc(pos, neg, { block: 7, nBoot: 200, seed: 42 });
++  assert.deepEqual(a, blockBootstrapAuc(pos, neg, { block: 7, nBoot: 200, seed: 42 }));
++  const c = blockBootstrapAuc(pos, neg, { block: 7, nBoot: 200, seed: 43 });
++  assert.notDeepEqual([a.lo, a.hi], [c.lo, c.hi]);
++  assert.ok((a.lo as number) <= (a.auc as number) && (a.auc as number) <= (a.hi as number));
++});
++
++test("block bootstrap is wider than an iid bootstrap on an autocorrelated series", () => {
++  const rand = mulberry32(9);
++  // stationary AR(1), phi = 0.95: strongly autocorrelated but the two classes overlap
++  const walk = (n: number, shift: number) => {
++    let s = 0;
++    return Array.from({ length: n }, () => (s = 0.95 * s + (rand() - 0.5)) + shift);
++  };
++  const pos = walk(400, 0.3);
++  const neg = walk(400, 0);
++  const wide = blockBootstrapAuc(pos, neg, { block: 28, nBoot: 300, seed: 1 });
++  const iid = blockBootstrapAuc(pos, neg, { block: 1, nBoot: 300, seed: 1 });
++  assert.ok((wide.hi as number) - (wide.lo as number) > (iid.hi as number) - (iid.lo as number));
++});
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\auc-bootstrap.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\auc-bootstrap.ts"
+new file mode 100644
+index 0000000..719382b
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\auc-bootstrap.ts"	
+@@ -0,0 +1,84 @@
++/**
++ * Rank-based AUC and moving-block bootstrap confidence intervals (offline evaluation only).
++ *
++ * AUC = P(pos > neg) + 0.5 P(pos == neg); 0.5 is chance. Windows of one recording are strongly
++ * autocorrelated, so the CI resamples contiguous BLOCKS (>= 10 s) separately inside each class with a
++ * seeded PRNG: deterministic. A class with no samples gives `null`, never a fabricated 0 or 0.5.
++ * Mirrors scripts/presence_eval/stats.py (same definitions; a parity vector is pinned in the test).
++ */
++
++/** Deterministic PRNG (mulberry32). */
++export function mulberry32(seed: number): () => number {
++  let a = seed >>> 0;
++  return () => {
++    a = (a + 0x6d2b79f5) >>> 0;
++    let t = a;
++    t = Math.imul(t ^ (t >>> 15), t | 1);
++    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
++    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
++  };
++}
++
++/** Mann-Whitney AUC with average ranks for ties, O(n log n). null if either class is empty. */
++export function rankAuc(pos: readonly number[], neg: readonly number[]): number | null {
++  const nP = pos.length;
++  const nN = neg.length;
++  if (nP === 0 || nN === 0) return null;
++  const all = new Float64Array(nP + nN);
++  const isPos = new Uint8Array(nP + nN);
++  for (let i = 0; i < nP; i++) {
++    all[i] = pos[i];
++    isPos[i] = 1;
++  }
++  for (let i = 0; i < nN; i++) all[nP + i] = neg[i];
++  const order = Array.from({ length: nP + nN }, (_, i) => i).sort((x, y) => all[x] - all[y]);
++  let rankSumPos = 0;
++  let i = 0;
++  while (i < order.length) {
++    let j = i;
++    while (j + 1 < order.length && all[order[j + 1]] === all[order[i]]) j++;
++    const avgRank = (i + j) / 2 + 1;
++    for (let k = i; k <= j; k++) if (isPos[order[k]]) rankSumPos += avgRank;
++    i = j + 1;
++  }
++  return (rankSumPos - (nP * (nP + 1)) / 2) / (nP * nN);
++}
++
++function blockResample(x: readonly number[], block: number, rand: () => number): number[] {
++  const m = x.length;
++  const b = Math.max(1, Math.min(block, m));
++  const out: number[] = [];
++  while (out.length < m) {
++    const start = Math.floor(rand() * (m - b + 1));
++    for (let k = 0; k < b && out.length < m; k++) out.push(x[start + k]);
++  }
++  return out;
++}
++
++export interface AucCi {
++  auc: number | null;
++  lo: number | null;
++  hi: number | null;
++  nPos: number;
++  nNeg: number;
++}
++
++export function blockBootstrapAuc(
++  pos: readonly number[],
++  neg: readonly number[],
++  opts: { block: number; nBoot?: number; seed?: number },
++): AucCi {
++  const auc = rankAuc(pos, neg);
++  const base = { auc, nPos: pos.length, nNeg: neg.length };
++  if (auc === null) return { ...base, lo: null, hi: null };
++  const rand = mulberry32(opts.seed ?? 20261102);
++  const nBoot = opts.nBoot ?? 500;
++  const vals: number[] = [];
++  for (let i = 0; i < nBoot; i++) {
++    const a = rankAuc(blockResample(pos, opts.block, rand), blockResample(neg, opts.block, rand));
++    if (a !== null) vals.push(a);
++  }
++  vals.sort((p, q) => p - q);
++  const at = (q: number) => vals[Math.min(vals.length - 1, Math.max(0, Math.floor(q * (vals.length - 1))))];
++  return { ...base, lo: at(0.025), hi: at(0.975) };
++}
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\jsonutil.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\jsonutil.py"
+new file mode 100644
+index 0000000..d5352b1
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\jsonutil.py"	
+@@ -0,0 +1,34 @@
++"""JSON output helpers: undefined metrics are written as null, never as NaN/Infinity (which are not valid JSON)."""
++from __future__ import annotations
++
++import json
++import math
++from pathlib import Path
++from typing import Any
++
++import numpy as np
++
++
++def clean(obj: Any) -> Any:
++    """Recursively convert numpy scalars/arrays to Python and non-finite floats to None."""
++    if isinstance(obj, dict):
++        return {str(k): clean(v) for k, v in obj.items()}
++    if isinstance(obj, (list, tuple)):
++        return [clean(v) for v in obj]
++    if isinstance(obj, np.ndarray):
++        return clean(obj.tolist())
++    if isinstance(obj, (np.floating, float)):
++        return None if not math.isfinite(float(obj)) else float(obj)
++    if isinstance(obj, np.integer):
++        return int(obj)
++    if isinstance(obj, np.bool_):
++        return bool(obj)
++    return obj
++
++
++def dumps(obj: Any, indent: int | None = 1) -> str:
++    return json.dumps(clean(obj), indent=indent, allow_nan=False)
++
++
++def dump_json(path: Path, obj: Any) -> None:
++    Path(path).write_text(dumps(obj), encoding="utf-8")
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_controls.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_controls.py"
+new file mode 100644
+index 0000000..3b4e661
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_controls.py"	
+@@ -0,0 +1,140 @@
++"""PS-FIX-04: harness controls -- session-blocked AUC, empty-vs-empty control (C4), occupied-sensitivity control,
++abstentions counted as misses, null for undefined metrics."""
++from __future__ import annotations
++
++import json
++
++import numpy as np
++import pytest
++
++from scripts.presence_eval import twonode
++from scripts.presence_eval.features import COVARIATES, FEATURES
++from scripts.presence_eval.jsonutil import clean, dumps
++from scripts.presence_eval.stats import block_bootstrap_auc, empty_pair_control, session_block_auc
++from scripts.presence_eval.tables import RecTables
++from scripts.presence_eval.twonode import aggregate, criteria, run_candidate, sensitivity_control, splits_loro, splits_cross_session
++
++DAY = "20261027"
++
++
++def table(n: int, mu: float, seed: int, drop: set[int] | None = None) -> dict[str, np.ndarray]:
++    rng = np.random.default_rng(seed)
++    t = {f: mu + rng.standard_normal(n) for f in FEATURES}
++    t.update({c: np.zeros(n) for c in COVARIATES})
++    t["k"] = np.arange(n, dtype=np.int64)
++    t["nframes"] = np.full(n, 90, dtype=np.int64)
++    if drop:
++        keep = np.array([i not in drop for i in range(n)])
++        t = {c: v[keep] for c, v in t.items()}
++    return t
++
++
++def rec(subject: str, label: str, mu1: float, mu2: float, seed: int, day: str = DAY, n: int = 300, t0: int = 0, drop: set[int] | None = None) -> RecTables:
++    return RecTables(rid=f"{subject}_{label}_{day[4:]}_{t0:04d}", name=f"x__{subject}__{label}__{day}T000000Z.jsonl", label=label, subject=subject,
++                     day=day, t0_ms=t0, duration_s=n * 1.5, parts=1, nodes={1: table(n, mu1, seed + 1, drop), 2: table(n, mu2, seed + 2, drop)})
++
++
++def world(shift_e4: float = 0.0) -> dict[str, RecTables]:
++    recs = [rec("e1", "empty", 0, 0, 10, "20261018", t0=1), rec("e2", "empty", 0, 0, 20, "20261018", t0=2),
++            rec("e3", "empty", 0, 0, 30, t0=3), rec("e4", "empty", shift_e4, shift_e4, 40, t0=4),
++            rec("w1", "walking", 10, 10, 50, t0=5), rec("w2", "walking", 10, 10, 55, t0=6)]
++    return {r.rid: r for r in recs}
++
++
++# ---- session-blocked AUC ---------------------------------------------------------------------------------------
++
++def test_session_block_auc_needs_two_recordings_per_class_else_null_with_reason() -> None:
++    rng = np.random.default_rng(1)
++    one = session_block_auc({"w": rng.normal(1, 1, 200)}, {"a": rng.normal(0, 1, 200), "b": rng.normal(0, 1, 200)}, n_boot=50)
++    assert one["lo"] is None and one["hi"] is None and "insufficient" in one["reason"] and one["auc"] is not None
++    two = session_block_auc({"w1": rng.normal(1, 1, 200), "w2": rng.normal(1, 1, 200)}, {"a": rng.normal(0, 1, 200), "b": rng.normal(0, 1, 200)}, n_boot=50)
++    assert two["lo"] is not None and two["lo"] <= two["auc"] <= two["hi"]
++
++
++def test_session_block_auc_is_deterministic_and_wider_when_recordings_differ_in_level() -> None:
++    rng = np.random.default_rng(2)
++    pos = {f"w{i}": rng.normal(0.5 + 0.8 * (i % 2), 1, 200) for i in range(4)}       # recordings differ in level
++    neg = {f"e{i}": rng.normal(0.9 * (i % 2), 1, 200) for i in range(4)}
++    a = session_block_auc(pos, neg, n_boot=200, seed=3)
++    assert a == session_block_auc(pos, neg, n_boot=200, seed=3)
++    windows = block_bootstrap_auc(np.concatenate(list(pos.values())), np.concatenate(list(neg.values())), n_boot=200, seed=3)
++    assert (a["hi"] - a["lo"]) > (windows["hi"] - windows["lo"])
++
++
++# ---- empty-vs-empty control ---------------------------------------------------------------------------------------
++
++def test_empty_pair_control_passes_for_matched_empties_and_fails_for_a_baseline_shift() -> None:
++    rng = np.random.default_rng(4)
++    same = {f"e{i}": rng.normal(0, 1, 300) for i in range(3)}
++    assert empty_pair_control(same, n_boot=100)["passes"] is True
++    drift = {**same, "e_shifted": rng.normal(1.0, 1, 300)}
++    res = empty_pair_control(drift, n_boot=100)
++    assert res["passes"] is False and res["worst_symmetric_upper_bound"] > 0.65
++    assert any(not p["ok"] and "e_shifted" in (p["a"] + p["b"]) for p in res["pairs"])
++
++
++def test_empty_pair_control_is_null_with_fewer_than_two_usable_empties() -> None:
++    assert empty_pair_control({"only": np.zeros(300)})["passes"] is None
++    assert empty_pair_control({"a": np.zeros(300), "short": np.zeros(10)})["passes"] is None
++
++
++def test_c4_is_reported_and_fails_when_an_empty_recording_drifts() -> None:
++    def c4(shift: float) -> bool:
++        w = world(shift)
++        rows = [r for sp in (splits_loro(w), splits_cross_session(w)) for r in run_candidate(w, sp, "decor", "max")]
++        return criteria(aggregate(rows))["C4"]
++
++    assert c4(0.0) is True
++    assert c4(3.0) is False
++
++
++# ---- occupied-sensitivity control ----------------------------------------------------------------------------------
++
++def test_a_model_that_never_fires_is_rejected_by_the_harness() -> None:
++    res = sensitivity_control(world())
++    assert res["evaluable"] is True and res["rejected_by_C1"] is True
++    assert res["constant_scorer_auc"]["auc"] == pytest.approx(0.5) and res["never_fires_tpr"]["rate"] == 0.0
++
++
++def test_sensitivity_control_reports_insufficient_data_instead_of_a_number() -> None:
++    assert sensitivity_control({"e": rec("e1", "empty", 0, 0, 1)})["evaluable"] is False
++
++
++# ---- abstentions count as misses ------------------------------------------------------------------------------------
++
++def test_abstentions_on_a_positive_recording_are_misses_not_ignored() -> None:
++    w = world()
++    drop = set(range(0, 300, 2))                                         # half of the walking windows have no joint score
++    gappy = rec("w3", "walking", 10, 10, 60, t0=7, drop=drop)
++    w[gappy.rid] = gappy
++    cell = aggregate([r for r in run_candidate(w, splits_loro(w), "decor", "max") if r["test"] == gappy.rid])["loro/pooled"]
++    assert cell["abstention_share"]["walking"] == pytest.approx(0.5, abs=0.02)
++    scored = cell["tpr"]["walking@5%"]["rate"]
++    with_misses = cell["tpr_abstain_as_miss"]["walking@5%"]["rate"]
++    assert scored > 0.9 and with_misses == pytest.approx(scored * 0.5, abs=0.03)
++
++
++# ---- null, never NaN -----------------------------------------------------------------------------------------------
++
++def test_undefined_metrics_serialise_as_null_not_nan() -> None:
++    obj = {"a": float("nan"), "b": np.float64("inf"), "c": [np.float32("nan"), 1.5], "d": np.int64(3), "e": np.bool_(True), "f": np.array([1.0, np.nan])}
++    text = dumps(obj)
++    assert "NaN" not in text and "Infinity" not in text
++    back = json.loads(text, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
++    assert back == {"a": None, "b": None, "c": [None, 1.5], "d": 3, "e": True, "f": [1.0, None]}
++    assert clean(float("-inf")) is None
++
++
++def test_block_bootstrap_of_an_empty_class_serialises_with_nulls() -> None:
++    res = block_bootstrap_auc(np.zeros(0), np.ones(5))
++    assert json.loads(dumps(res))["auc"] is None
++
++
++def test_twonode_result_json_is_strictly_valid_json() -> None:
++    old = (twonode.N_BOOT, twonode.FEATS, twonode.RULES)
++    try:
++        twonode.N_BOOT, twonode.FEATS, twonode.RULES = 20, ("decor",), ("max",)
++        text = dumps(twonode.run(world()))
++    finally:
++        twonode.N_BOOT, twonode.FEATS, twonode.RULES = old
++    json.loads(text, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))

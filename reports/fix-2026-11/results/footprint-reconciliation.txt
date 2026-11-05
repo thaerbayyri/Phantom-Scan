@@ -1,0 +1,70 @@
+# Footprint reconciliation (computed from results/footprint-01..06-*.txt and git HEAD)
+
+01-PS-FIX-01: changed 3, added 1
+02-PS-FIX-02: changed 1, added 1
+03-PS-FIX-03: changed 6, added 0
+04-PS-FIX-04: changed 7, added 4
+05-PS-FIX-05: changed 16, added 0
+06-PS-FIX-06: changed 1, added 2
+
+Distinct files listed as changed (M) across items 01-06 : 33
+  of which tracked in git HEAD (real edits to repo files)  : 25
+  of which untracked files from the previous evaluation task: 8
+Distinct files added (A) by items 01-06                    : 8
+Nested-repo file edited by hand (not in the guard)         : 1  (ai model and densepose/model/README.md)
+
+## tracked files edited (HEAD)
+  .agents/AGENTS.md
+  DETECTION_REPORT.md
+  JODDB_PHASE2_TECHNICAL_PROPOSAL.md
+  MEASUREMENT_PLAN.md
+  Phantom-Scan-Final-Project-Report-4Node.md
+  README.md
+  docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
+  docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md
+  docs/WIFI_DENSEPOSE_INTEGRATION.md
+  docs/presentations/JODDB-Sponsorship-Pitch-Script.md
+  docs/system_architecture_methodology.md
+  firmware/esp32-csi-node/README.md
+  generated_reports/Appendix.md
+  generated_reports/Section-1.2-WiFi-Frequency-vs-CSI.md
+  package.json
+  phantom/dataset.py
+  pyproject.toml
+  scripts/ai_inference.py
+  scripts/build_academic_reports.py
+  scripts/eval-presence-on-datasets.ts
+  scripts/record_dataset.py
+  server/lib/dataset-recorder.test.ts
+  server/lib/dataset-recorder.ts
+  tests/test_esp_capture_e2e.py
+  tests/test_record_dataset.py
+
+## previous-task untracked files modified again
+  ai model and densepose/model/README.md
+  scripts/presence_eval/drift.py
+  scripts/presence_eval/inventory.py
+  scripts/presence_eval/provenance.py
+  scripts/presence_eval/repro.py
+  scripts/presence_eval/stats.py
+  scripts/presence_eval/twonode.py
+  tests/test_dataset_loader.py
+
+## new files
+  phantom/presence_guard.py
+  scripts/accuracy/__tests__/auc-bootstrap.test.ts
+  scripts/accuracy/auc-bootstrap.ts
+  scripts/presence_eval/jsonutil.py
+  server/test-setup.ts
+  tests/test_dataset_loader.py
+  tests/test_presence_eval_controls.py
+  tests/test_presence_guard.py
+
+## backups vs footprint, per item
+01-PS-FIX-01: backed up 3; footprint-changed 3; backed up but not changed: []; changed but not backed up: []
+02-PS-FIX-02: backed up 2; footprint-changed 1; backed up but not changed: ['phantom/__pycache__/dataset.cpython-313.pyc']; changed but not backed up: []
+03-PS-FIX-03: backed up 6; footprint-changed 6; backed up but not changed: []; changed but not backed up: []
+04-PS-FIX-04: backed up 7; footprint-changed 7; backed up but not changed: ['tests/test_presence_eval_twonode.py']; changed but not backed up: ['scripts/presence_eval/provenance.py']
+05-PS-FIX-05: backed up 16; footprint-changed 16; backed up but not changed: []; changed but not backed up: []
+06-PS-FIX-06: backed up 1; footprint-changed 1; backed up but not changed: []; changed but not backed up: []
+07-PRE-WAVE2: backed up 3; footprint-changed 0; backed up but not changed: ['tests/test_count_model.py', 'tests/test_esp_capture_e2e.py', 'tests/test_train_activity.py']; changed but not backed up: []

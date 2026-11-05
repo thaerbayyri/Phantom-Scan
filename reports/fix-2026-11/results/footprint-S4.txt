@@ -1,0 +1,3 @@
+Section 4 footprint (2026-11-04)
+new code: scripts/presence_eval/campaign.py, validate_campaign.py, run_campaign.py; tests/test_campaign_validator.py, tests/test_run_campaign.py
+new documents (untracked reports/): reports/presence-eval-2026-11/PREREG-2026-11-recording-campaign.md (draft sha256 c3283b4b13af08ca8c772e99e29f3f794fede49fc8b4ecab308b0bab47aa831f), RECORDING-DATA-SPEC.md

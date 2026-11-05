@@ -1,0 +1,14 @@
+$ s8 alone as the empty soak + the s5 fan run, lengths relaxed (--min-soak-minutes 30 --min-fan-minutes 0): isolates the drift and link-state rules
+=== Calibration evaluation (offline; nothing is written, no setting is changed) ===
+
+REFUSED — no recommended value is printed:
+  [pooled-epochs] node 1: median RSSI -36.0 -> -47.0 dBm between consecutive runs; node 1: frame rate 61.4 -> 41.0 fps between consecutive runs
+  [drift] empty-vs-empty control separates the two halves: motion.fused (symmetric upper bound 0.76), motion.n1 (symmetric upper bound 0.76), motion.n2 (symmetric upper bound 0.79), motion.n3 (symmetric upper bound 0.75), motion.n4 (symmetric upper bound 0.91)
+
+metric | calib blocks | held-out blocks | held-out p50 / p90 / p95 / p99 | drift AUC (sym. upper bound) | candidate | held-out FA/h | fan FA/h | occupied miss rate
+motion.fused | 160 | 160 | 0.475 / 0.558 / 0.593 / 0.674 | 0.33 (0.76) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n1 | 160 | 160 | 0.468 / 0.558 / 0.593 / 0.674 | 0.33 (0.76) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n2 | 160 | 160 | 0.417 / 0.474 / 0.498 / 0.524 | 0.30 (0.79) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n3 | 160 | 160 | 0.764 / 0.812 / 0.823 / 0.870 | 0.36 (0.75) | refused | n/a | n/a | [TO BE MEASURED]
+motion.n4 | 160 | 160 | 0.940 / 1.000 / 1.000 / 1.000 | 0.17 (0.91) | refused | n/a | n/a | [TO BE MEASURED]
+exit=3

@@ -1,0 +1,831 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\calibrate-threshold.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\calibrate-threshold.ts"
+new file mode 100644
+index 0000000..9ec8b36
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\calibrate-threshold.ts"	
+@@ -0,0 +1,250 @@
++/**
++ * Empty-room / negative-control calibration for PHANTOM_MOTION_THRESHOLD,
++ * and (Item 4) for the spatial energy threshold PHANTOM_SPATIAL_ENERGY_THRESHOLD.
++ *
++ * Listens directly on UDP :5005 (STOP the dashboard first — single owner!) and
++ * runs the exact production motion pipeline (parseCsiPacket -> per-node 3 s
++ * window -> computeNodeMotionFromMatrix), sampling max(motion1, motion2).
++ * With --spatial it ALSO samples per-packet total amplitude energy (the same
++ * magnitude quantity TrackingProcessor's cluster-energy gate sums) and
++ * reports a mean+k*sigma suggestion for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
++ * calibrateEnergyThreshold (server/lib/tracking.ts).
++ *
++ * PS-FIX-11 — a single short run can no longer produce a recommendation. This tool COLLECTS runs and EVALUATES them offline; it never
++ * writes a setting (the rules and their tests are in scripts/accuracy/calibration-soak.ts):
++ *   1. EMPTY soak  >= 60 min (--min-soak-minutes, shorter is refused), room genuinely empty, nodes not moved:
++ *        npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600 --out .tmp/cal/empty1.json
++ *   2. FAN negative control >= 5 min (--min-fan-minutes), same link state:
++ *        npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --out .tmp/cal/fan.json
++ *   3. optional OCCUPIED run (walking) for misses:  --label occupied --seconds 300 --out .tmp/cal/walk.json
++ *   4. evaluate (no socket): npx tsx scripts/calibrate-threshold.ts --evaluate --empty .tmp/cal/empty1.json[,more] --fan .tmp/cal/fan.json
++ *        [--occupied .tmp/cal/walk.json] [--target-fa-per-hour 1]
++ * Evaluation uses per-node/fused 10 s BLOCK MAXIMA on HELD-OUT empty blocks, reports false alarms/hour and misses separately, and
++ * REFUSES to print a candidate when the soak is too short, the fan control is missing, the runs span a link-state change or calendar
++ * day (pooling), or the empty-vs-empty control shows drift.
++ *
++ * Other usage (legacy options still work for the descriptive statistics):
++ *   npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --spatial
++ *   PHANTOM_ALLOW_LEGACY_CSI=1 npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600
++ */
++import dgram from "dgram";
++import fs from "fs";
++import path from "path";
++import {
++  BlockAccumulator,
++  DEFAULT_MIN_FAN_MIN,
++  DEFAULT_MIN_SOAK_MIN,
++  DEFAULT_TARGET_FALSE_ALARMS_PER_HOUR,
++  evaluateCalibration,
++  renderEvaluation,
++  type CalibrationRun,
++  type RunLabel,
++} from "./accuracy/calibration-soak";
++import { parseCsiPacket } from "../server/lib/udp-server";
++import { computeAgcNormalizedPerturbation, computeNodeMotionFromMatrix } from "../server/lib/node-fusion";
++import { reduceCsiFrame } from "../server/lib/csi-subcarriers";
++import { DEFAULT_TIER_THRESHOLDS, NodeBaselineTracker } from "../server/lib/node-baseline";
++import { calibrateEnergyThreshold } from "../server/lib/tracking";
++
++const secondsArg = process.argv.indexOf("--seconds");
++const SECONDS = secondsArg >= 0 ? parseInt(process.argv[secondsArg + 1], 10) : 120;
++const PORT = parseInt(process.env.UDP_PORT || "5005", 10);
++// Must match the live server's per-node motion window (websocket.ts
++// MOTION_WINDOW_MS) or the calibrated numbers don't transfer.
++const WINDOW_MS = Number.parseInt(process.env.PHANTOM_MOTION_WINDOW_MS ?? "1500", 10);
++const ALLOW_LEGACY_CSI =
++  process.env.PHANTOM_ALLOW_LEGACY_CSI === "1" ||
++  process.env.PHANTOM_ALLOW_LEGACY_CSI === "true";
++
++const SPATIAL = process.argv.includes("--spatial");
++
++function argValue(name: string): string | undefined {
++  const i = process.argv.indexOf(name);
++  return i >= 0 ? process.argv[i + 1] : undefined;
++}
++const LABEL = (argValue("--label") ?? "empty") as RunLabel;
++const OUT_PATH = argValue("--out");
++const MIN_SOAK_MIN = Number(argValue("--min-soak-minutes") ?? DEFAULT_MIN_SOAK_MIN);
++const MIN_FAN_MIN = Number(argValue("--min-fan-minutes") ?? DEFAULT_MIN_FAN_MIN);
++
++function loadRuns(list: string | undefined): CalibrationRun[] {
++  return (list ?? "").split(",").filter(Boolean).map((p) => JSON.parse(fs.readFileSync(p, "utf-8")) as CalibrationRun);
++}
++
++if (process.argv.includes("--evaluate")) {
++  // Offline: reads run files, prints the evaluation, writes nothing, binds no socket, never touches a setting.
++  const ev = evaluateCalibration(
++    { empty: loadRuns(argValue("--empty")), fan: loadRuns(argValue("--fan")), occupied: loadRuns(argValue("--occupied")) },
++    { minSoakMin: MIN_SOAK_MIN, minFanMin: MIN_FAN_MIN, targetFalseAlarmsPerHour: Number(argValue("--target-fa-per-hour") ?? DEFAULT_TARGET_FALSE_ALARMS_PER_HOUR) },
++  );
++  console.log(renderEvaluation(ev));
++  process.exit(ev.recommendationAllowed ? 0 : 3);
++}
++
++if (!["empty", "fan", "occupied"].includes(LABEL)) {
++  console.error(`--label must be empty, fan or occupied (got "${LABEL}")`);
++  process.exit(2);
++}
++const REQUIRED_S = LABEL === "empty" ? MIN_SOAK_MIN * 60 : LABEL === "fan" ? MIN_FAN_MIN * 60 : 0;
++if (SECONDS < REQUIRED_S) {
++  console.error(`Refusing to start: a "${LABEL}" run must last >= ${REQUIRED_S / 60} min (--seconds ${REQUIRED_S}); got ${SECONDS} s. A short run cannot give a trustworthy calibration (PS-FIX-11).`);
++  process.exit(2);
++}
++const startedAt = Date.now();
++const blocks = new BlockAccumulator(LABEL, startedAt);
++
++const windows = new Map<number, { t: number; amps: number[] }[]>();
++const samples: number[] = [];
++const packetCounts = new Map<number, number>();
++/** --spatial: per-packet total amplitude energy (sum of per-subcarrier
++ * amplitudes) — the magnitude quantity the TrackingProcessor cluster gate
++ * sums. Collected raw here; mean+k*sigma computed by calibrateEnergyThreshold. */
++const energySamples: number[] = [];
++
++const sock = dgram.createSocket("udp4");
++sock.on("error", (err: NodeJS.ErrnoException) => {
++  if (err.code === "EADDRINUSE") {
++    console.error(`Cannot bind :${PORT} — stop the dashboard first (it owns the port).`);
++  } else {
++    console.error(err.message);
++  }
++  process.exit(1);
++});
++
++sock.on("message", (msg) => {
++  const parsed = parseCsiPacket(msg, { allowLegacy: ALLOW_LEGACY_CSI });
++  if (!parsed) return;
++  const nodeId = parsed.nodeId;
++  if (!(nodeId >= 1 && nodeId <= 4)) return;
++
++  // Same LLTF data-subcarrier vector (imaginary-first) as the live ingest.
++  const { amplitudes: amps } = reduceCsiFrame(parsed.iqData, parsed.numSubcarriers, parsed.numAntennas);
++
++  const t = Date.now();
++  blocks.addFrame(nodeId, t, parsed.rssi);
++  let win = windows.get(nodeId);
++  if (!win) {
++    win = [];
++    windows.set(nodeId, win);
++  }
++  win.push({ t, amps });
++  while (win.length && win[0].t < t - WINDOW_MS) win.shift();
++  packetCounts.set(nodeId, (packetCounts.get(nodeId) ?? 0) + 1);
++
++  if (SPATIAL) {
++    energySamples.push(amps.reduce((s, a) => s + a, 0));
++  }
++});
++
++function motionFor(nodeId: number): number {
++  const win = windows.get(nodeId) ?? [];
++  return computeNodeMotionFromMatrix(win.map((w) => w.amps)).motion;
++}
++
++sock.bind(PORT, "0.0.0.0", () => {
++  console.log(`Listening on :${PORT} for ${SECONDS}s ... keep the room in the test condition.`);
++});
++
++/** fused_room: per-node adaptive baselines fed exactly like the live server
++ *  (AGC-normalized perturbation); max rise across nodes is sampled after the
++ *  warm-up to calibrate PHANTOM_ROOM_TIER_STILL. */
++const baselines = new Map<number, NodeBaselineTracker>();
++const roomRiseSamples: number[] = [];
++
++function sampleRoomRise(nowMs: number): void {
++  const ready = Array.from(windows.entries()).filter(([, win]) => win.length > 5);
++  if (ready.length < 3) return;
++  let maxRise = 0;
++  let warmingUp = false;
++  for (const [nodeId, win] of ready) {
++    let tracker = baselines.get(nodeId);
++    if (!tracker) {
++      tracker = new NodeBaselineTracker();
++      baselines.set(nodeId, tracker);
++    }
++    const update = tracker.update(computeAgcNormalizedPerturbation(win.map((w) => w.amps)), nowMs, false);
++    warmingUp ||= update.warmingUp;
++    maxRise = Math.max(maxRise, update.z);
++  }
++  if (!warmingUp) {
++    roomRiseSamples.push(maxRise);
++    blocks.addSample("roomZ", nowMs, maxRise);
++  }
++}
++
++const tick = setInterval(() => {
++  // Sample at ~5 Hz once both windows have content.
++  const m1 = motionFor(1);
++  const m2 = motionFor(2);
++  if ((windows.get(1)?.length ?? 0) > 5 && (windows.get(2)?.length ?? 0) > 5) {
++    samples.push(Math.max(m1, m2));
++    blocks.addSample("motion.fused", Date.now(), Math.max(m1, m2));
++  }
++  for (const id of [1, 2, 3, 4]) {
++    if ((windows.get(id)?.length ?? 0) > 5) blocks.addSample(`motion.n${id}`, Date.now(), motionFor(id));
++  }
++  sampleRoomRise(Date.now());
++  const elapsed = (Date.now() - startedAt) / 1000;
++  if (elapsed >= SECONDS) {
++    clearInterval(tick);
++    sock.close();
++    report(elapsed);
++  }
++}, 200);
++
++function stats(values: number[]): { mean: number; sigma: number; max: number } {
++  const mean = values.reduce((s, v) => s + v, 0) / values.length;
++  const sigma = Math.sqrt(values.reduce((s, v) => s + (v - mean) * (v - mean), 0) / values.length);
++  return { mean, sigma, max: Math.max(...values) };
++}
++
++function report(elapsedS: number) {
++  if (samples.length === 0 && roomRiseSamples.length === 0) {
++    console.error("No samples collected — are the nodes streaming to this host?");
++    process.exit(1);
++  }
++
++  console.log(`\n=== Calibration result (${elapsedS.toFixed(0)}s) ===`);
++  for (const id of Array.from(packetCounts.keys()).sort((a, b) => a - b)) {
++    const fps = (packetCounts.get(id) ?? 0) / elapsedS;
++    const warn = fps < 20 ? "  << below 20 fps — fix firmware/network before trusting results" : "";
++    console.log(`node ${id}: ${fps.toFixed(1)} packets/s${warn}`);
++  }
++
++  if (samples.length > 0) {
++    const { mean, sigma, max } = stats(samples);
++    console.log(`\n-- fused_two_node (nodes 1+2, ${samples.length} samples) --`);
++    console.log(`max(motion1,motion2): mean=${mean.toFixed(4)} sigma=${sigma.toFixed(4)} max=${max.toFixed(4)}`);
++    console.log("(descriptive only: no threshold is suggested from a single run; collect an empty soak + a fan run and use --evaluate)");
++  }
++
++  if (roomRiseSamples.length > 0) {
++    const { mean, sigma, max } = stats(roomRiseSamples);
++    console.log(`\n-- fused_room (3-4 nodes, ${roomRiseSamples.length} post-warm-up samples) --`);
++    console.log(`max node z (excess in units of the node's own scatter): mean=${mean.toFixed(2)} sigma=${sigma.toFixed(2)} max=${max.toFixed(2)}`);
++    console.log(`(descriptive only; current PHANTOM_ROOM_TIER_STILL=${DEFAULT_TIER_THRESHOLDS.still}, PHANTOM_ROOM_TIER_MOVING=${DEFAULT_TIER_THRESHOLDS.moving} are NOT changed or suggested here; use --evaluate on an empty soak + a fan run)`);
++  }
++
++  if (SPATIAL) {
++    // Item 4: spatial energy noise floor. NOTE — this samples per-PACKET
++    // total amplitude energy as the closest live proxy for the cluster
++    // energies the TrackingProcessor gate sums; it is not identical to the
++    // in-pipeline cluster energy (which depends on MUSIC point-cloud
++    // geometry and DBSCAN membership). Treat the suggestion as a starting
++    // point and validate against the ADR-057 procedure (empty room >5s in
++    // single-node mode must clear; a real person must persist).
++    const cal3 = calibrateEnergyThreshold(energySamples, 3);
++    const cal4 = calibrateEnergyThreshold(energySamples, 4);
++    console.log(`\n=== Spatial energy calibration (${cal3.sampleCount} per-packet samples) ===`);
++    console.log(`per-packet energy: mean=${cal3.mean.toFixed(2)} sigma=${cal3.sigma.toFixed(2)} max=${cal3.max.toFixed(2)}`);
++    console.log(`suggested PHANTOM_SPATIAL_ENERGY_THRESHOLD: mean+3s=${cal3.suggestedThreshold.toFixed(2)}  mean+4s=${cal4.suggestedThreshold.toFixed(2)}`);
++    console.log("(apply via env PHANTOM_SPATIAL_ENERGY_THRESHOLD — see docs/SPATIAL_CALIBRATION.md; NOT drift- or pooling-checked: the PS-FIX-11 refusal rules do not cover this quantity)");
++  }
++  if (OUT_PATH) {
++    const run = blocks.finish({ command: process.argv.slice(1).join(" "), label: LABEL, node: process.version, note: "collected by scripts/calibrate-threshold.ts; room state is operator-asserted, not verified" });
++    fs.mkdirSync(path.dirname(path.resolve(OUT_PATH)), { recursive: true });
++    fs.writeFileSync(OUT_PATH, JSON.stringify(run), { flag: "wx" });   // exclusive: never overwrite an earlier run
++    console.log(`\nrun file written: ${OUT_PATH} (${Object.values(run.metrics)[0]?.length ?? 0} complete 10 s blocks)`);
++  }
++  process.exit(0);
++}
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\__tests__\\calibration-soak.test.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\__tests__\\calibration-soak.test.ts"
+new file mode 100644
+index 0000000..139da41
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\__tests__\\calibration-soak.test.ts"	
+@@ -0,0 +1,172 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import fs from "fs";
++import os from "os";
++import path from "path";
++import { spawnSync } from "node:child_process";
++import { mulberry32 } from "../auc-bootstrap";
++import {
++  BLOCK_S,
++  BlockAccumulator,
++  detectLinkSteps,
++  evaluateCalibration,
++  renderEvaluation,
++  type CalibrationRun,
++  type RunLabel,
++} from "../calibration-soak";
++
++const DAY0 = new Date(2026, 10, 3, 9, 0, 0).getTime();
++const MIN = 60_000;
++
++interface MakeOpts {
++  label?: RunLabel;
++  start?: number;
++  minutes: number;
++  seed?: number;
++  base?: number;                 // typical block maximum
++  drift?: (block: number) => number;   // added to every metric from this block on
++  rssi?: (block: number) => number;
++  fps?: (block: number) => number;
++}
++
++function makeRun(o: MakeOpts): CalibrationRun {
++  const rand = mulberry32(o.seed ?? 1);
++  const blocks = Math.round((o.minutes * 60) / BLOCK_S);
++  const metric = (b: number) => (o.base ?? 0.3) + 0.05 * Math.abs(rand() + rand() - 1) * 4 + (o.drift ? o.drift(b) : 0);
++  const nodes: CalibrationRun["nodes"] = {};
++  for (const id of ["1", "2"]) {
++    nodes[id] = {
++      rssiMedian: Array.from({ length: blocks }, (_, b) => (o.rssi ? o.rssi(b) : -40) + (rand() - 0.5)),
++      frames: Array.from({ length: blocks }, (_, b) => Math.round(((o.fps ? o.fps(b) : 65) * BLOCK_S) * (0.97 + 0.06 * rand()))),
++    };
++  }
++  return {
++    schema: 1,
++    label: o.label ?? "empty",
++    startedAtMs: o.start ?? DAY0,
++    blockS: BLOCK_S,
++    metrics: { "motion.fused": Array.from({ length: blocks }, (_, b) => metric(b)), "motion.n1": Array.from({ length: blocks }, (_, b) => metric(b)) },
++    nodes,
++  };
++}
++
++const fanAfter = (o: Partial<MakeOpts> = {}) => makeRun({ label: "fan", start: DAY0 + 100 * MIN, minutes: 10, seed: 9, base: 0.3, ...o });
++
++test("BlockAccumulator keeps the maximum per 10 s block, marks empty blocks null and drops the incomplete last block", () => {
++  const acc = new BlockAccumulator("empty", 0);
++  acc.addSample("m", 1_000, 0.2);
++  acc.addSample("m", 9_000, 0.7);
++  acc.addSample("m", 25_000, 0.4);          // block 2; block 1 has no sample
++  acc.addSample("m", 31_000, 9.9);          // block 3 is the last one seen -> incomplete, dropped
++  acc.addSample("m", 1_000, Number.NaN);    // ignored
++  acc.addFrame(1, 2_000, -40);
++  acc.addFrame(1, 4_000, -42);
++  acc.addFrame(1, 12_000, -50);
++  const run = acc.finish();
++  assert.deepEqual(run.metrics.m, [0.7, null, 0.4]);
++  assert.deepEqual(run.nodes["1"].frames, [2, 1, 0]);
++  assert.deepEqual(run.nodes["1"].rssiMedian, [-41, -50, null]);
++});
++
++test("a clean 90 min empty soak plus a 10 min fan control is allowed to give a candidate, and it never writes settings", () => {
++  const ev = evaluateCalibration({ empty: [makeRun({ minutes: 90 })], fan: [fanAfter()] });
++  assert.deepEqual(ev.refusals, []);
++  assert.equal(ev.recommendationAllowed, true);
++  assert.equal(ev.writesSettings, false);
++  const m = ev.metrics.find((x) => x.metric === "motion.fused")!;
++  assert.ok(m.candidate !== null && m.candidate > 0.3);
++  assert.equal(m.heldOutBlocks, 270);
++  assert.ok(m.heldOutFalseAlarmsPerHour !== null && m.heldOutFalseAlarmsPerHour <= 8, "held-out false alarms/hour is reported, not assumed");
++  assert.equal(m.occupiedMissRate, null, "no occupied run: misses are [TO BE MEASURED], not zero");
++  assert.ok(renderEvaluation(ev).includes("[TO BE MEASURED]"));
++});
++
++test("a soak shorter than the required 60 min is refused and no candidate is printed", () => {
++  const ev = evaluateCalibration({ empty: [makeRun({ minutes: 30 })], fan: [fanAfter({ start: DAY0 + 40 * MIN })] });
++  assert.ok(ev.refusals.some((r) => r.code === "soak-too-short"));
++  assert.equal(ev.recommendationAllowed, false);
++  assert.ok(ev.metrics.every((m) => m.candidate === null));
++  assert.ok(renderEvaluation(ev).includes("REFUSED"));
++  assert.equal(evaluateCalibration({ empty: [makeRun({ minutes: 30 })], fan: [fanAfter({ start: DAY0 + 40 * MIN })] }, { minSoakMin: 20 }).refusals.some((r) => r.code === "soak-too-short"), false, "the minimum is configurable");
++});
++
++test("without a fan (negative-control) run, or with a very short one, nothing is recommended", () => {
++  assert.ok(evaluateCalibration({ empty: [makeRun({ minutes: 90 })], fan: [] }).refusals.some((r) => r.code === "no-negative-control"));
++  assert.ok(evaluateCalibration({ empty: [makeRun({ minutes: 90 })], fan: [fanAfter({ minutes: 2 })] }).refusals.some((r) => r.code === "no-negative-control"));
++});
++
++test("empty-vs-empty drift inside the soak refuses a recommendation", () => {
++  const drifting = makeRun({ minutes: 90, drift: (b) => (b >= 270 ? 0.5 : 0) });   // the second half sits higher
++  const ev = evaluateCalibration({ empty: [drifting], fan: [fanAfter()] });
++  assert.ok(ev.refusals.some((r) => r.code === "drift"));
++  assert.ok(ev.metrics.every((m) => m.candidate === null));
++});
++
++test("a held RSSI step inside the soak is a pooled-epochs refusal; a single-block flicker is not", () => {
++  const stepped = makeRun({ minutes: 90, rssi: (b) => (b >= 200 ? -52 : -40) });
++  assert.ok(evaluateCalibration({ empty: [stepped], fan: [fanAfter()] }).refusals.some((r) => r.code === "pooled-epochs"));
++  const flicker = makeRun({ minutes: 90, rssi: (b) => (b === 200 ? -55 : -40) });
++  assert.deepEqual(detectLinkSteps("1", flicker.nodes["1"]), []);
++});
++
++test("a frame-rate collapse inside the soak is a pooled-epochs refusal", () => {
++  const collapsed = makeRun({ minutes: 90, fps: (b) => (b >= 300 ? 40 : 65) });
++  const steps = detectLinkSteps("1", collapsed.nodes["1"]);
++  assert.equal(steps.length, 1);
++  assert.equal(steps[0].kind, "frame-rate");
++  assert.ok(evaluateCalibration({ empty: [collapsed], fan: [fanAfter()] }).refusals.some((r) => r.code === "pooled-epochs"));
++});
++
++test("runs on different calendar days, or with a level change between them, are never pooled", () => {
++  const nextDay = makeRun({ minutes: 50, start: DAY0 + 24 * 60 * MIN, seed: 3 });
++  const ev = evaluateCalibration({ empty: [makeRun({ minutes: 50 }), nextDay], fan: [fanAfter({ start: DAY0 + 24 * 60 * MIN + 60 * MIN })] });
++  assert.ok(ev.refusals.some((r) => r.code === "pooled-epochs" && r.detail.includes("calendar days")));
++  const shifted = makeRun({ minutes: 50, start: DAY0 + 55 * MIN, seed: 3, rssi: () => -52 });
++  const ev2 = evaluateCalibration({ empty: [makeRun({ minutes: 50 }), shifted], fan: [fanAfter({ start: DAY0 + 110 * MIN, rssi: () => -52 })] });
++  assert.ok(ev2.refusals.some((r) => r.code === "pooled-epochs" && r.detail.includes("between consecutive runs")));
++});
++
++test("fan false alarms and occupied misses are reported separately from empty false alarms", () => {
++  const loudFan = fanAfter({ base: 0.9 });
++  const walking = makeRun({ label: "occupied", start: DAY0 + 115 * MIN, minutes: 10, seed: 5, base: 0.9 });
++  const ev = evaluateCalibration({ empty: [makeRun({ minutes: 90 })], fan: [loudFan], occupied: [walking] });
++  const m = ev.metrics.find((x) => x.metric === "motion.fused")!;
++  assert.ok((m.fanFalseAlarmsPerHour ?? 0) > 100, "a fan far above the candidate shows up as false alarms/hour");
++  assert.equal(m.occupiedMissRate, 0);
++  assert.ok(m.heldOutFalseAlarmsPerHour !== null && m.heldOutFalseAlarmsPerHour < 20);
++});
++
++test("the CLI --evaluate mode reads run files, exits 0 with a candidate for good runs and 3 with a refusal for a short soak, and writes nothing", () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cal-soak-"));
++  const write = (name: string, run: CalibrationRun) => {
++    const p = path.join(dir, name);
++    fs.writeFileSync(p, JSON.stringify(run));
++    return p;
++  };
++  const run = (args: string[]) =>
++    spawnSync(process.execPath, ["--import", "tsx", "scripts/calibrate-threshold.ts", "--evaluate", ...args], { encoding: "utf-8" });
++  try {
++    const good = run(["--empty", write("e.json", makeRun({ minutes: 90 })), "--fan", write("f.json", fanAfter())]);
++    assert.equal(good.status, 0, good.stdout + good.stderr);
++    assert.ok(good.stdout.includes("motion.fused") && !good.stdout.includes("REFUSED"));
++    const short = run(["--empty", write("s.json", makeRun({ minutes: 20 })), "--fan", path.join(dir, "f.json")]);
++    assert.equal(short.status, 3);
++    assert.ok(short.stdout.includes("[soak-too-short]"));
++    assert.deepEqual(fs.readdirSync(dir).sort(), ["e.json", "f.json", "s.json"], "evaluation must not write any file");
++  } finally {
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++});
++
++test("a live run shorter than the minimum refuses to start (exit 2) before binding any socket", () => {
++  const r = spawnSync(process.execPath, ["--import", "tsx", "scripts/calibrate-threshold.ts", "--label", "empty", "--seconds", "120"], { encoding: "utf-8" });
++  assert.equal(r.status, 2);
++  assert.ok(r.stderr.includes("Refusing to start"));
++});
++
++test("the calibration code never imports or calls anything that writes a setting", () => {
++  for (const file of ["scripts/accuracy/calibration-soak.ts", "scripts/calibrate-threshold.ts"]) {
++    const src = fs.readFileSync(file, "utf-8");
++    assert.ok(!/runtime-settings|writeFileSync\([^)]*settings|updateSettings|setRuntimeSetting/.test(src), `${file} must not touch runtime settings`);
++  }
++});
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\calibration-soak.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\calibration-soak.ts"
+new file mode 100644
+index 0000000..6a39c9d
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\calibration-soak.ts"	
+@@ -0,0 +1,297 @@
++/**
++ * Calibration soak analysis (PS-FIX-11). Pure functions: no sockets, no files, no settings. `scripts/calibrate-threshold.ts` collects
++ * runs with `BlockAccumulator`; `evaluateCalibration` decides whether a recommendation may be printed at all.
++ *
++ * Rules (each refusal is reported by name; a recommendation is printed ONLY when there is none):
++ *   soak-too-short      empty soak shorter than minSoakMin (default 60 min)
++ *   no-negative-control no fan run, or one shorter than minFanMin (default 5 min)
++ *   pooled-epochs       the empty/fan runs span a link-state change (held RSSI step >= 6 dB or frame-rate collapse <= 0.7x, between
++ *                       or inside runs) or more than one calendar day: scores from different link states must not be pooled
++ *   drift               empty-vs-empty control: first half vs second half of the empty soak separates (symmetric AUC upper bound > 0.65)
++ *   too-few-blocks      fewer than MIN_HELD_OUT_BLOCKS held-out empty blocks for a metric
++ *
++ * Statistic: per metric, the MAXIMUM inside each 10 s block (a false alarm needs only one sample above the threshold, so the block
++ * maximum is the unit that matters). Percentiles and false alarms per hour are computed on HELD-OUT empty blocks (the second half in
++ * time); the candidate threshold is chosen on the first half only. False alarms/hour and misses are reported separately; misses need
++ * an occupied run and are `null` ("[TO BE MEASURED]") without one. The link-state rule here is a COARSER, conservative version of
++ * scripts/presence_eval/epochs.py (10 s blocks, 20 s hold) and was chosen post hoc; it refuses, it never splits.
++ */
++import { blockBootstrapAuc } from "./auc-bootstrap";
++
++export const BLOCK_S = 10;
++export const DEFAULT_MIN_SOAK_MIN = 60;
++export const DEFAULT_MIN_FAN_MIN = 5;
++export const DEFAULT_TARGET_FALSE_ALARMS_PER_HOUR = 1;
++export const DRIFT_SYMMETRIC_UPPER_BOUND = 0.65;
++export const LINK_STEP_DB = 6;
++export const RATE_COLLAPSE = 0.7;
++export const MIN_BASELINE_FPS = 20;
++export const PRE_BLOCKS = 6;
++export const HOLD_BLOCKS = 2;
++export const MIN_HELD_OUT_BLOCKS = 100;
++export const PERCENTILES = [0.5, 0.9, 0.95, 0.99] as const;
++const BOOTSTRAP_BLOCK = 6;   // 60 s of consecutive 10 s block maxima
++
++export type RunLabel = "empty" | "fan" | "occupied";
++export type Refusal = "soak-too-short" | "no-negative-control" | "pooled-epochs" | "drift" | "too-few-blocks";
++
++export interface NodeBlocks {
++  /** Median RSSI per complete 10 s block; null when no frame arrived. */
++  rssiMedian: (number | null)[];
++  /** Frames per complete 10 s block. */
++  frames: number[];
++}
++
++export interface CalibrationRun {
++  schema: 1;
++  label: RunLabel;
++  startedAtMs: number;
++  blockS: number;
++  /** Per metric ("motion.fused", "motion.n1", "roomZ", ...) the maximum in each complete 10 s block; null when no sample fell in it. */
++  metrics: Record<string, (number | null)[]>;
++  nodes: Record<string, NodeBlocks>;
++  provenance?: Record<string, string>;
++}
++
++export function medianOf(values: readonly number[]): number | null {
++  if (values.length === 0) return null;
++  const s = [...values].sort((a, b) => a - b);
++  const m = s.length >> 1;
++  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
++}
++
++/** Collects samples and frames into 10 s blocks relative to `startedAtMs`; the incomplete last block is dropped. */
++export class BlockAccumulator {
++  private readonly maxima = new Map<string, Map<number, number>>();
++  private readonly rssi = new Map<number, Map<number, number[]>>();
++  private lastBlock = -1;
++
++  constructor(private readonly label: RunLabel, private readonly startedAtMs: number) {}
++
++  private blockOf(tMs: number): number {
++    return Math.floor((tMs - this.startedAtMs) / (BLOCK_S * 1000));
++  }
++
++  addSample(metric: string, tMs: number, value: number): void {
++    const b = this.blockOf(tMs);
++    if (b < 0 || !Number.isFinite(value)) return;
++    const m = this.maxima.get(metric) ?? new Map<number, number>();
++    m.set(b, Math.max(m.get(b) ?? -Infinity, value));
++    this.maxima.set(metric, m);
++    this.lastBlock = Math.max(this.lastBlock, b);
++  }
++
++  addFrame(nodeId: number, tMs: number, rssiDbm: number): void {
++    const b = this.blockOf(tMs);
++    if (b < 0) return;
++    const m = this.rssi.get(nodeId) ?? new Map<number, number[]>();
++    const list = m.get(b) ?? [];
++    list.push(rssiDbm);
++    m.set(b, list);
++    this.rssi.set(nodeId, m);
++    this.lastBlock = Math.max(this.lastBlock, b);
++  }
++
++  finish(provenance?: Record<string, string>): CalibrationRun {
++    const complete = Math.max(0, this.lastBlock); // blocks 0..lastBlock-1 are complete
++    const range = Array.from({ length: complete }, (_, i) => i);
++    const metrics: Record<string, (number | null)[]> = {};
++    for (const [name, m] of Array.from(this.maxima.entries())) metrics[name] = range.map((i) => m.get(i) ?? null);
++    const nodes: Record<string, NodeBlocks> = {};
++    for (const [id, m] of Array.from(this.rssi.entries())) {
++      nodes[String(id)] = { rssiMedian: range.map((i) => medianOf(m.get(i) ?? [])), frames: range.map((i) => (m.get(i) ?? []).length) };
++    }
++    return { schema: 1, label: this.label, startedAtMs: this.startedAtMs, blockS: BLOCK_S, metrics, nodes, provenance };
++  }
++}
++
++export function runBlocks(run: CalibrationRun): number {
++  return Math.max(0, ...Object.values(run.metrics).map((v) => v.length), ...Object.values(run.nodes).map((n) => n.frames.length));
++}
++
++export interface LinkStep {
++  node: string;
++  atBlock: number;
++  kind: "rssi" | "frame-rate";
++  detail: string;
++}
++
++/** Held RSSI steps and frame-rate collapses inside one node's block series (conservative: any one is a refusal). */
++export function detectLinkSteps(node: string, nb: NodeBlocks): LinkStep[] {
++  const out: LinkStep[] = [];
++  const n = nb.frames.length;
++  let i = PRE_BLOCKS;
++  while (i + HOLD_BLOCKS <= n) {
++    const preRssi = medianOf(nb.rssiMedian.slice(i - PRE_BLOCKS, i).filter((v): v is number => v !== null));
++    const hold = nb.rssiMedian.slice(i, i + HOLD_BLOCKS);
++    const preFps = (medianOf(nb.frames.slice(i - PRE_BLOCKS, i)) ?? 0) / BLOCK_S;
++    const holdFps = nb.frames.slice(i, i + HOLD_BLOCKS).map((f) => f / BLOCK_S);
++    let hit: LinkStep | null = null;
++    if (preRssi !== null && hold.every((v) => v !== null && Math.abs(v - preRssi) >= LINK_STEP_DB && Math.sign(v - preRssi) === Math.sign((hold[0] as number) - preRssi))) {
++      hit = { node, atBlock: i, kind: "rssi", detail: `median RSSI ${preRssi.toFixed(1)} -> ${(medianOf(hold as number[]) as number).toFixed(1)} dBm held ${HOLD_BLOCKS * BLOCK_S} s` };
++    } else if (preFps >= MIN_BASELINE_FPS && holdFps.every((f) => f <= RATE_COLLAPSE * preFps)) {
++      hit = { node, atBlock: i, kind: "frame-rate", detail: `frame rate ${preFps.toFixed(1)} -> ${(medianOf(holdFps) as number).toFixed(1)} fps held ${HOLD_BLOCKS * BLOCK_S} s` };
++    }
++    if (hit) {
++      out.push(hit);
++      i += PRE_BLOCKS;   // let the new level become the baseline, otherwise one persistent step is reported again
++    } else {
++      i += 1;
++    }
++  }
++  return out;
++}
++
++function localDay(ms: number): string {
++  const d = new Date(ms);
++  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
++}
++
++/** Why these runs must not be pooled; [] when they look like one link state. */
++export function poolingProblems(runs: readonly CalibrationRun[]): string[] {
++  const problems: string[] = [];
++  const ordered = [...runs].sort((a, b) => a.startedAtMs - b.startedAtMs);
++  for (const r of ordered) {
++    for (const [id, nb] of Object.entries(r.nodes)) {
++      for (const s of detectLinkSteps(id, nb)) problems.push(`${r.label} run @${new Date(r.startedAtMs).toISOString()} node ${id}: ${s.kind} step at block ${s.atBlock} (${s.detail})`);
++    }
++  }
++  for (let k = 1; k < ordered.length; k++) {
++    const a = ordered[k - 1];
++    const b = ordered[k];
++    if (localDay(a.startedAtMs) !== localDay(b.startedAtMs)) problems.push(`runs on different calendar days (${localDay(a.startedAtMs)} vs ${localDay(b.startedAtMs)}): nodes may have been moved`);
++    for (const id of Object.keys(a.nodes)) {
++      const nb = b.nodes[id];
++      if (!nb) continue;
++      const pre = medianOf(a.nodes[id].rssiMedian.slice(-PRE_BLOCKS).filter((v): v is number => v !== null));
++      const post = medianOf(nb.rssiMedian.slice(0, PRE_BLOCKS).filter((v): v is number => v !== null));
++      if (pre !== null && post !== null && Math.abs(post - pre) >= LINK_STEP_DB) problems.push(`node ${id}: median RSSI ${pre.toFixed(1)} -> ${post.toFixed(1)} dBm between consecutive runs`);
++      const fpsA = (medianOf(a.nodes[id].frames.slice(-PRE_BLOCKS)) ?? 0) / BLOCK_S;
++      const fpsB = (medianOf(nb.frames.slice(0, PRE_BLOCKS)) ?? 0) / BLOCK_S;
++      if (fpsA >= MIN_BASELINE_FPS && fpsB <= RATE_COLLAPSE * fpsA) problems.push(`node ${id}: frame rate ${fpsA.toFixed(1)} -> ${fpsB.toFixed(1)} fps between consecutive runs`);
++    }
++  }
++  return problems;
++}
++
++function concat(runs: readonly CalibrationRun[], metric: string): number[] {
++  const out: number[] = [];
++  for (const r of [...runs].sort((a, b) => a.startedAtMs - b.startedAtMs)) for (const v of r.metrics[metric] ?? []) if (v !== null) out.push(v);
++  return out;
++}
++
++export function quantile(sorted: readonly number[], q: number): number | null {
++  if (sorted.length === 0) return null;
++  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))];
++}
++
++export interface MetricResult {
++  metric: string;
++  calibrationBlocks: number;
++  heldOutBlocks: number;
++  /** Percentiles of the HELD-OUT empty block maxima. */
++  heldOutPercentiles: Record<string, number | null>;
++  driftAuc: { auc: number | null; lo: number | null; hi: number | null; symmetricUpperBound: number | null; passes: boolean | null };
++  /** Smallest value that leaves <= target false alarms/hour on the CALIBRATION half; null when refused. */
++  candidate: number | null;
++  /** Held-out empty false alarms per hour at `candidate`; fan false alarms per hour at `candidate`. */
++  heldOutFalseAlarmsPerHour: number | null;
++  fanFalseAlarmsPerHour: number | null;
++  /** Share of occupied blocks whose maximum stays below `candidate`; null = no occupied run ("[TO BE MEASURED]"). */
++  occupiedMissRate: number | null;
++}
++
++export interface CalibrationEvaluation {
++  refusals: { code: Refusal; detail: string }[];
++  /** Always false: this module never writes a setting. */
++  writesSettings: false;
++  recommendationAllowed: boolean;
++  metrics: MetricResult[];
++}
++
++export interface EvaluateInput {
++  empty: readonly CalibrationRun[];
++  fan: readonly CalibrationRun[];
++  occupied?: readonly CalibrationRun[];
++}
++
++export interface EvaluateOptions {
++  minSoakMin?: number;
++  minFanMin?: number;
++  targetFalseAlarmsPerHour?: number;
++}
++
++function blocksToHours(n: number): number {
++  return (n * BLOCK_S) / 3600;
++}
++
++function falseAlarmsPerHour(blocks: readonly number[], threshold: number): number | null {
++  if (blocks.length === 0) return null;
++  return blocks.filter((v) => v > threshold).length / blocksToHours(blocks.length);
++}
++
++function evaluateMetric(metric: string, input: EvaluateInput, target: number): MetricResult {
++  const emptyAll = concat(input.empty, metric);
++  const half = Math.floor(emptyAll.length / 2);
++  const calib = emptyAll.slice(0, half);
++  const held = emptyAll.slice(half);
++  const ci = blockBootstrapAuc(held, calib, { block: BOOTSTRAP_BLOCK });
++  const sym = ci.lo === null || ci.hi === null ? null : Math.max(ci.hi, 1 - ci.lo);
++  const driftAuc = { auc: ci.auc, lo: ci.lo, hi: ci.hi, symmetricUpperBound: sym, passes: sym === null ? null : sym <= DRIFT_SYMMETRIC_UPPER_BOUND };
++  const sorted = [...held].sort((a, b) => a - b);
++  const heldOutPercentiles: Record<string, number | null> = {};
++  for (const q of PERCENTILES) heldOutPercentiles[`p${Math.round(q * 100)}`] = quantile(sorted, q);
++  const base = { metric, calibrationBlocks: calib.length, heldOutBlocks: held.length, heldOutPercentiles, driftAuc };
++  if (calib.length === 0) return { ...base, candidate: null, heldOutFalseAlarmsPerHour: null, fanFalseAlarmsPerHour: null, occupiedMissRate: null };
++  const calibSorted = [...calib].sort((a, b) => a - b);
++  const allowedAbove = Math.floor(target * blocksToHours(calib.length));
++  const candidate = calibSorted[Math.max(0, calibSorted.length - 1 - allowedAbove)];
++  const fan = concat(input.fan, metric);
++  const occ = concat(input.occupied ?? [], metric);
++  return {
++    ...base,
++    candidate,
++    heldOutFalseAlarmsPerHour: falseAlarmsPerHour(held, candidate),
++    fanFalseAlarmsPerHour: falseAlarmsPerHour(fan, candidate),
++    occupiedMissRate: occ.length === 0 ? null : occ.filter((v) => v <= candidate).length / occ.length,
++  };
++}
++
++export function evaluateCalibration(input: EvaluateInput, opts: EvaluateOptions = {}): CalibrationEvaluation {
++  const minSoakMin = opts.minSoakMin ?? DEFAULT_MIN_SOAK_MIN;
++  const minFanMin = opts.minFanMin ?? DEFAULT_MIN_FAN_MIN;
++  const target = opts.targetFalseAlarmsPerHour ?? DEFAULT_TARGET_FALSE_ALARMS_PER_HOUR;
++  const refusals: { code: Refusal; detail: string }[] = [];
++  const emptyMin = (input.empty.reduce((s, r) => s + runBlocks(r), 0) * BLOCK_S) / 60;
++  const fanMin = (input.fan.reduce((s, r) => s + runBlocks(r), 0) * BLOCK_S) / 60;
++  if (emptyMin < minSoakMin) refusals.push({ code: "soak-too-short", detail: `empty soak ${emptyMin.toFixed(1)} min < required ${minSoakMin} min` });
++  if (input.fan.length === 0 || fanMin < minFanMin) refusals.push({ code: "no-negative-control", detail: `fan (negative control) ${fanMin.toFixed(1)} min < required ${minFanMin} min` });
++  const pooled = poolingProblems([...input.empty, ...input.fan]);
++  if (pooled.length > 0) refusals.push({ code: "pooled-epochs", detail: pooled.join("; ") });
++  const names = Object.keys(input.empty[0]?.metrics ?? {}).sort();
++  const results = names.map((m) => evaluateMetric(m, input, target));
++  const tooFew = results.filter((r) => r.heldOutBlocks < MIN_HELD_OUT_BLOCKS).map((r) => `${r.metric} (${r.heldOutBlocks})`);
++  if (tooFew.length > 0) refusals.push({ code: "too-few-blocks", detail: `held-out empty blocks < ${MIN_HELD_OUT_BLOCKS}: ${tooFew.join(", ")}` });
++  const drifting = results.filter((r) => r.driftAuc.passes === false).map((r) => `${r.metric} (symmetric upper bound ${r.driftAuc.symmetricUpperBound?.toFixed(2)})`);
++  if (drifting.length > 0) refusals.push({ code: "drift", detail: `empty-vs-empty control separates the two halves: ${drifting.join(", ")}` });
++  const allowed = refusals.length === 0;
++  const metrics = allowed ? results : results.map((r) => ({ ...r, candidate: null, heldOutFalseAlarmsPerHour: null, fanFalseAlarmsPerHour: null, occupiedMissRate: null }));
++  return { refusals, writesSettings: false, recommendationAllowed: allowed, metrics };
++}
++
++const fmt = (v: number | null, d = 3): string => (v === null ? "n/a" : v.toFixed(d));
++
++export function renderEvaluation(ev: CalibrationEvaluation): string {
++  const lines: string[] = ["=== Calibration evaluation (offline; nothing is written, no setting is changed) ==="];
++  if (ev.refusals.length > 0) {
++    lines.push("", "REFUSED — no recommended value is printed:");
++    for (const r of ev.refusals) lines.push(`  [${r.code}] ${r.detail}`);
++  }
++  lines.push("", "metric | calib blocks | held-out blocks | held-out p50 / p90 / p95 / p99 | drift AUC (sym. upper bound) | candidate | held-out FA/h | fan FA/h | occupied miss rate");
++  for (const m of ev.metrics) {
++    const p = m.heldOutPercentiles;
++    lines.push(`${m.metric} | ${m.calibrationBlocks} | ${m.heldOutBlocks} | ${fmt(p.p50 ?? null)} / ${fmt(p.p90 ?? null)} / ${fmt(p.p95 ?? null)} / ${fmt(p.p99 ?? null)} | ${fmt(m.driftAuc.auc, 2)} (${fmt(m.driftAuc.symmetricUpperBound, 2)}) | ${ev.recommendationAllowed ? fmt(m.candidate, 4) : "refused"} | ${fmt(m.heldOutFalseAlarmsPerHour, 1)} | ${fmt(m.fanFalseAlarmsPerHour, 1)} | ${m.occupiedMissRate === null ? "[TO BE MEASURED]" : fmt(m.occupiedMissRate, 2)}`);
++  }
++  if (ev.recommendationAllowed) lines.push("", "A candidate is a number for Thaer to consider, not a setting: apply it only through the documented env/settings path, after a replay on both failure directions.");
++  return lines.join("\n");
++}
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\replay-calibration-runs.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\replay-calibration-runs.ts"
+new file mode 100644
+index 0000000..2835c84
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\accuracy\\replay-calibration-runs.ts"	
+@@ -0,0 +1,88 @@
++/**
++ * Offline: turn recorded datasets (data/datasets/<room>/*.jsonl, read-only) into CalibrationRun files by replaying them through the
++ * SAME motion function the live calibrate script uses (computeNodeMotionFromMatrix, 1500 ms per-node window, sampled every 200 ms of
++ * RECORDING time), so `calibrate-threshold.ts --evaluate` can be exercised on real data without a live capture.
++ *
++ *   npx tsx scripts/accuracy/replay-calibration-runs.ts --label empty --out reports/fix-2026-11/results/cal/s8.json <file.jsonl> [more parts...]
++ *
++ * Parts must be given in order. The run's start time is the first frame's recorder timestamp. Writes only --out (exclusive create).
++ * Not a validation of any threshold: it only lets the refusal rules be checked against real link states.
++ */
++import fs from "fs";
++import path from "path";
++import { computeNodeMotionFromMatrix } from "../../server/lib/node-fusion";
++import { BlockAccumulator, type RunLabel } from "./calibration-soak";
++
++const WINDOW_MS = 1500;
++const TICK_MS = 200;
++const MIN_WINDOW_FRAMES = 5;
++
++interface Frame {
++  t: number;
++  n: number;
++  rssi: number;
++  a: number[];
++}
++
++function* readFrames(file: string): Generator<Frame> {
++  for (const line of fs.readFileSync(file, "utf-8").split("\n")) {
++    if (!line.startsWith('{"type":"frame"')) continue;
++    try {
++      const o = JSON.parse(line) as { t: number; n: number; rssi: number; a: number[] };
++      if (Number.isFinite(o.t) && o.n >= 1 && o.n <= 4 && Array.isArray(o.a)) yield { t: o.t, n: o.n, rssi: o.rssi, a: o.a };
++    } catch {
++      /* a malformed line is skipped, as the Python loader does (and counts); this tool only needs the usable frames */
++    }
++  }
++}
++
++export function replay(files: string[], label: RunLabel) {
++  const windows = new Map<number, Frame[]>();
++  let acc: BlockAccumulator | null = null;
++  let nextTick = 0;
++  for (const file of files) {
++    for (const f of readFrames(file)) {
++      if (!acc) {
++        acc = new BlockAccumulator(label, f.t);
++        nextTick = f.t + TICK_MS;
++      }
++      acc.addFrame(f.n, f.t, f.rssi);
++      const win = windows.get(f.n) ?? [];
++      win.push(f);
++      while (win.length && win[0].t < f.t - WINDOW_MS) win.shift();
++      windows.set(f.n, win);
++      while (f.t >= nextTick) {
++        const motion = new Map<number, number>();
++        for (const [id, w] of Array.from(windows.entries())) {
++          if (w.length > MIN_WINDOW_FRAMES && w[w.length - 1].t >= nextTick - WINDOW_MS) motion.set(id, computeNodeMotionFromMatrix(w.map((x) => x.a)).motion);
++        }
++        for (const [id, m] of Array.from(motion.entries())) acc.addSample(`motion.n${id}`, nextTick, m);
++        if (motion.has(1) && motion.has(2)) acc.addSample("motion.fused", nextTick, Math.max(motion.get(1)!, motion.get(2)!));
++        nextTick += TICK_MS;
++      }
++    }
++  }
++  if (!acc) throw new Error("no usable frames in the given files");
++  return acc.finish({ command: `replay-calibration-runs ${files.map((f) => path.basename(f)).join(" ")}`, label, note: "replayed from a recording; recorder clock; room state as labelled in the file name" });
++}
++
++function main(): void {
++  const args = process.argv.slice(2);
++  const val = (name: string) => {
++    const i = args.indexOf(name);
++    return i >= 0 ? args[i + 1] : undefined;
++  };
++  const label = (val("--label") ?? "empty") as RunLabel;
++  const out = val("--out");
++  const files = args.filter((a, i) => a.endsWith(".jsonl") && args[i - 1] !== "--out");
++  if (!out || files.length === 0) {
++    console.error("usage: replay-calibration-runs.ts --label empty|fan|occupied --out <run.json> <recording.jsonl> [more parts in order]");
++    process.exit(2);
++  }
++  const run = replay(files, label);
++  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
++  fs.writeFileSync(out, JSON.stringify(run), { flag: "wx" });
++  console.log(`${out}: ${Object.values(run.metrics)[0]?.length ?? 0} blocks, metrics ${Object.keys(run.metrics).join(", ")}`);
++}
++
++if (path.basename(process.argv[1] ?? "") === "replay-calibration-runs.ts") main();

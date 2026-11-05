@@ -1,0 +1,22 @@
+{
+ "provenance": {
+  "command": "python -m scripts.presence_eval.twonode --write-prereg",
+  "commit": "744ce43e9772f40bcc0d372e40b077644a9a8939",
+  "branch": "feat/two-node-radar-live-detection",
+  "working_tree_dirty": true,
+  "eval_code_sha256_16": "779a3310b1227668",
+  "date_utc": "2026-11-02T18:40:12Z",
+  "python": "3.13.15",
+  "numpy": "2.4.4",
+  "inputs": []
+ },
+ "criteria": {
+  "C1": "lower 95% block-bootstrap CI bound of walking-vs-empty AUC >= 0.80 in protocol (b) AND in every applicable train session of protocol (c)",
+  "C2": "fan false-positive rate not above empty false-positive rate (pooled, at both alpha = 1% and 5%) in protocols (b) and (c)",
+  "C3": "no held-out empty recording flagged occupied in more than 5% of windows at the alpha = 1% threshold, in protocols (b) and (c)",
+  "C1_auc_lower_bound": 0.8,
+  "C3_max_flag_share": 0.05,
+  "verdict_rule": "a candidate (feature, rule) meets the criteria only if C1, C2 and C3 all hold; if none does, the report says so and stops"
+ },
+ "status": "PROPOSAL for Thaer to confirm or change; frozen before the final numbers were computed"
+}

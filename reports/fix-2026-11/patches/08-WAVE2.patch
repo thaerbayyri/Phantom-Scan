@@ -1,0 +1,3634 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\data\\sessions\\_index.json" "b/D:\\WIFI csi\\phanotm\\phantom scan\\data\\sessions\\_index.json"
+new file mode 100644
+index 0000000..8b4174c
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\data\\sessions\\_index.json"	
+@@ -0,0 +1,2132 @@
++[
++  {
++    "id": "000000204 - 2026-10-27",
++    "name": "scan 04443454 test",
++    "startTime": 1793129740897,
++    "endTime": 1793129752486,
++    "durationS": 11.6,
++    "totalFrames": 215,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 552.4,
++    "avgSpeedMs": 1.245,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000203 - 2026-10-27",
++    "name": "scan 01 test",
++    "startTime": 1793124986171,
++    "endTime": 1793125557952,
++    "durationS": 571.8,
++    "totalFrames": 10443,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 369.4,
++    "avgSpeedMs": 0.196,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000202 - 2026-10-27",
++    "name": "test",
++    "startTime": 1793124425304,
++    "endTime": 1793124491942,
++    "durationS": 66.6,
++    "totalFrames": 1212,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 362.8,
++    "avgSpeedMs": 0.732,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000201 - 2026-10-27",
++    "name": "test15",
++    "startTime": 1793122423280,
++    "endTime": 1793122640631,
++    "durationS": 217.4,
++    "totalFrames": 4041,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.999,
++    "avgDistanceCm": 328.6,
++    "avgSpeedMs": 0.539,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000198 - 2026-10-27",
++    "name": "test13",
++    "startTime": 1793122110772,
++    "endTime": 1793122410767,
++    "durationS": 300,
++    "totalFrames": 5569,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 340.2,
++    "avgSpeedMs": 0.609,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000193 - 2026-10-27",
++    "name": "test13",
++    "startTime": 1793120577446,
++    "endTime": 1793120943518,
++    "durationS": 366.1,
++    "totalFrames": 6793,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.999,
++    "avgDistanceCm": 472.3,
++    "avgSpeedMs": 0.653,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000192 - 2026-10-27",
++    "name": "test13",
++    "startTime": 1793120577446,
++    "endTime": 1793120939655,
++    "durationS": 362.2,
++    "totalFrames": 6793,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.999,
++    "avgDistanceCm": 472.3,
++    "avgSpeedMs": 0.653,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000191 - 2026-10-27",
++    "name": "test 11",
++    "startTime": 1793119079326,
++    "endTime": 1793119445294,
++    "durationS": 366,
++    "totalFrames": 6863,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 375.3,
++    "avgSpeedMs": 0.553,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000190 - 2026-10-27",
++    "name": "test 10",
++    "startTime": 1793118514233,
++    "endTime": 1793118993075,
++    "durationS": 478.8,
++    "totalFrames": 8888,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.999,
++    "avgDistanceCm": 463.2,
++    "avgSpeedMs": 0.617,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000189 - 2026-10-27",
++    "name": "test 10",
++    "startTime": 1793118514233,
++    "endTime": 1793118989049,
++    "durationS": 474.8,
++    "totalFrames": 8888,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.999,
++    "avgDistanceCm": 463.2,
++    "avgSpeedMs": 0.617,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000188 - 2026-10-25",
++    "name": "testy",
++    "startTime": 1792959757531,
++    "endTime": 1792959925191,
++    "durationS": 167.7,
++    "totalFrames": 1620,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 466.8,
++    "avgSpeedMs": 0.656,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000187 - 2026-10-25",
++    "name": "testy",
++    "startTime": 1792959757531,
++    "endTime": 1792959846660,
++    "durationS": 89.1,
++    "totalFrames": 1620,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 466.8,
++    "avgSpeedMs": 0.656,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000186 - 2026-10-18",
++    "name": "test 8",
++    "startTime": 1792345823272,
++    "endTime": 1792345938097,
++    "durationS": 114.8,
++    "totalFrames": 1765,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 369.3,
++    "avgSpeedMs": 0.653,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000185 - 2026-10-18",
++    "name": "test 8",
++    "startTime": 1792345823272,
++    "endTime": 1792345916979,
++    "durationS": 93.7,
++    "totalFrames": 1765,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 369.3,
++    "avgSpeedMs": 0.653,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000184 - 2026-10-18",
++    "name": "test 7",
++    "startTime": 1792344404550,
++    "endTime": 1792344664507,
++    "durationS": 260,
++    "totalFrames": 4782,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 376.8,
++    "avgSpeedMs": 0.685,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000183 - 2026-10-18",
++    "name": "test 6",
++    "startTime": 1792344327461,
++    "endTime": 1792344346254,
++    "durationS": 18.8,
++    "totalFrames": 356,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 492.3,
++    "avgSpeedMs": 1.152,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000182 - 2026-10-17",
++    "name": "scan4",
++    "startTime": 1792270885930,
++    "endTime": 1792271173401,
++    "durationS": 287.5,
++    "totalFrames": 5048,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.996,
++    "avgDistanceCm": 376,
++    "avgSpeedMs": 0.864,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000181 - 2026-10-17",
++    "name": "tran data 1 human walking",
++    "startTime": 1792270042695,
++    "endTime": 1792270065946,
++    "durationS": 23.3,
++    "totalFrames": 421,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 340.5,
++    "avgSpeedMs": 1.143,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000180 - 2026-10-17",
++    "name": "test 3",
++    "startTime": 1792269731734,
++    "endTime": 1792269925191,
++    "durationS": 193.5,
++    "totalFrames": 3556,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.98,
++    "avgDistanceCm": 338.6,
++    "avgSpeedMs": 0.62,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000179 - 2026-10-17",
++    "name": "test 2",
++    "startTime": 1792269493135,
++    "endTime": 1792269589983,
++    "durationS": 96.8,
++    "totalFrames": 1786,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.975,
++    "avgDistanceCm": 327.8,
++    "avgSpeedMs": 1.033,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000178 - 2026-10-17",
++    "name": "test",
++    "startTime": 1792269245198,
++    "endTime": 1792269449458,
++    "durationS": 204.3,
++    "totalFrames": 3679,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.86,
++    "avgDistanceCm": 202.2,
++    "avgSpeedMs": 0.905,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000177 - 2026-10-17",
++    "name": "e2e",
++    "startTime": 1792264849568,
++    "endTime": 1792264879598,
++    "durationS": 30,
++    "totalFrames": 530,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.996,
++    "avgDistanceCm": 211,
++    "avgSpeedMs": 0.439,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000176 - 2026-10-17",
++    "name": "e2e",
++    "startTime": 1792264688176,
++    "endTime": 1792264733506,
++    "durationS": 45.3,
++    "totalFrames": 827,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 249.1,
++    "avgSpeedMs": 0.62,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000175 - 2026-10-17",
++    "name": "e2e",
++    "startTime": 1792264454016,
++    "endTime": 1792264499363,
++    "durationS": 45.3,
++    "totalFrames": 820,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 280.7,
++    "avgSpeedMs": 0.782,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000174 - 2026-09-09",
++    "name": "scan 01 test",
++    "startTime": 1788969194705,
++    "endTime": 1788969310389,
++    "durationS": 115.7,
++    "totalFrames": 1582,
++    "targetClassification": "human",
++    "classificationConfidence": 0.87,
++    "avgDistanceCm": 538,
++    "avgSpeedMs": 1.351,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000173 - 2026-09-09",
++    "name": "test",
++    "startTime": 1788968903746,
++    "endTime": 1788969022647,
++    "durationS": 118.9,
++    "totalFrames": 1844,
++    "targetClassification": "human",
++    "classificationConfidence": 0.829,
++    "avgDistanceCm": 550.7,
++    "avgSpeedMs": 1.276,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000172 - 2026-09-09",
++    "name": "EmptyRoom_4Node_Swap2and3new_2026-09-09.",
++    "startTime": 1788966627658,
++    "endTime": 1788966801353,
++    "durationS": 173.7,
++    "totalFrames": 3036,
++    "targetClassification": "human",
++    "classificationConfidence": 0.891,
++    "avgDistanceCm": 588.5,
++    "avgSpeedMs": 0.928,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000171 - 2026-09-09",
++    "name": "EmptyRoom_4Node_Swap2and3_2026-09-09.",
++    "startTime": 1788966031251,
++    "endTime": 1788966193948,
++    "durationS": 162.7,
++    "totalFrames": 2831,
++    "targetClassification": "human",
++    "classificationConfidence": 0.704,
++    "avgDistanceCm": 583.5,
++    "avgSpeedMs": 1.09,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000170 - 2026-09-09",
++    "name": "EmptyRoom_4Node_new_flash_postion_2026-09-09",
++    "startTime": 1788965127288,
++    "endTime": 1788965545887,
++    "durationS": 418.6,
++    "totalFrames": 7425,
++    "targetClassification": "human",
++    "classificationConfidence": 0.933,
++    "avgDistanceCm": 561.5,
++    "avgSpeedMs": 0.963,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000169 - 2026-09-09",
++    "name": "EmptyRoom_4Node_Swap_2026-09-09",
++    "startTime": 1788962981837,
++    "endTime": 1788963109839,
++    "durationS": 128,
++    "totalFrames": 2261,
++    "targetClassification": "human",
++    "classificationConfidence": 0.869,
++    "avgDistanceCm": 571.1,
++    "avgSpeedMs": 0.863,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000168 - 2026-09-09",
++    "name": "EmptyRoom_4Node_3_2026-09-09",
++    "startTime": 1788962567372,
++    "endTime": 1788962582738,
++    "durationS": 15.4,
++    "totalFrames": 280,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 619.4,
++    "avgSpeedMs": 1.394,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000167 - 2026-09-09",
++    "name": "test",
++    "startTime": 1788962520062,
++    "endTime": 1788962535488,
++    "durationS": 15.4,
++    "totalFrames": 278,
++    "targetClassification": "human",
++    "classificationConfidence": 0.625,
++    "avgDistanceCm": 563.7,
++    "avgSpeedMs": 0.537,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000166 - 2026-09-09",
++    "name": "EmptyRoom_4Node_2_2026-09-09",
++    "startTime": 1788961695842,
++    "endTime": 1788961788268,
++    "durationS": 92.4,
++    "totalFrames": 1610,
++    "targetClassification": "human",
++    "classificationConfidence": 0.847,
++    "avgDistanceCm": 572,
++    "avgSpeedMs": 1.01,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000165 - 2026-09-09",
++    "name": "EmptyRoom_4Node_2026-09-09",
++    "startTime": 1788961198073,
++    "endTime": 1788961277461,
++    "durationS": 79.4,
++    "totalFrames": 1416,
++    "targetClassification": "human",
++    "classificationConfidence": 0.713,
++    "avgDistanceCm": 501.9,
++    "avgSpeedMs": 1.217,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000164 - 2026-09-09",
++    "name": "final test",
++    "startTime": 1788956805012,
++    "endTime": 1788958712935,
++    "durationS": 1907.9,
++    "totalFrames": 35311,
++    "targetClassification": "human",
++    "classificationConfidence": 0.88,
++    "avgDistanceCm": 644.4,
++    "avgSpeedMs": 1.07,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000163 - 2026-09-08",
++    "name": "test",
++    "startTime": 1788879945347,
++    "endTime": 1788884843430,
++    "durationS": 4898.1,
++    "totalFrames": 88123,
++    "targetClassification": "human",
++    "classificationConfidence": 0.867,
++    "avgDistanceCm": 641,
++    "avgSpeedMs": 1.411,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000162 - 2026-09-08",
++    "name": "test",
++    "startTime": 1788876907249,
++    "endTime": 1788877687292,
++    "durationS": 780,
++    "totalFrames": 13202,
++    "targetClassification": "human",
++    "classificationConfidence": 0.879,
++    "avgDistanceCm": 617.8,
++    "avgSpeedMs": 1.438,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000161 - 2026-09-08",
++    "name": "test",
++    "startTime": 1788875159178,
++    "endTime": 1788875671262,
++    "durationS": 512.1,
++    "totalFrames": 6814,
++    "targetClassification": "human",
++    "classificationConfidence": 0.917,
++    "avgDistanceCm": 592.1,
++    "avgSpeedMs": 1.517,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000160 - 2026-09-08",
++    "name": "test",
++    "startTime": 1788875159178,
++    "endTime": 1788875554812,
++    "durationS": 395.6,
++    "totalFrames": 6814,
++    "targetClassification": "human",
++    "classificationConfidence": 0.917,
++    "avgDistanceCm": 592.1,
++    "avgSpeedMs": 1.517,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000159 - 2026-08-27",
++    "name": "room test",
++    "startTime": 1787840137282,
++    "endTime": 1787840375307,
++    "durationS": 238,
++    "totalFrames": 4241,
++    "targetClassification": "human",
++    "classificationConfidence": 0.811,
++    "avgDistanceCm": 489.9,
++    "avgSpeedMs": 1.425,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000158 - 2026-08-27",
++    "name": "test",
++    "startTime": 1787840088794,
++    "endTime": 1787840091600,
++    "durationS": 2.8,
++    "totalFrames": 52,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 276.3,
++    "avgSpeedMs": 0.924,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000157 - 2026-08-27",
++    "name": "room test",
++    "startTime": 1787840055861,
++    "endTime": 1787840080919,
++    "durationS": 25.1,
++    "totalFrames": 344,
++    "targetClassification": "human",
++    "classificationConfidence": 0.852,
++    "avgDistanceCm": 311.5,
++    "avgSpeedMs": 0.634,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000156 - 2026-08-27",
++    "name": "tessss",
++    "startTime": 1787839475539,
++    "endTime": 1787839772809,
++    "durationS": 297.3,
++    "totalFrames": 5222,
++    "targetClassification": "human",
++    "classificationConfidence": 0.818,
++    "avgDistanceCm": 265.1,
++    "avgSpeedMs": 1.288,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000155 - 2026-08-24",
++    "name": "post_reflash_check",
++    "startTime": 1787570661261,
++    "endTime": 1787570709391,
++    "durationS": 48.1,
++    "totalFrames": 849,
++    "targetClassification": "human",
++    "classificationConfidence": 0.603,
++    "avgDistanceCm": 162.4,
++    "avgSpeedMs": 1.046,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000154 - 2026-08-24",
++    "name": "4 node test",
++    "startTime": 1787567633968,
++    "endTime": 1787569046259,
++    "durationS": 1412.3,
++    "totalFrames": 24890,
++    "targetClassification": "human",
++    "classificationConfidence": 0.881,
++    "avgDistanceCm": 408.2,
++    "avgSpeedMs": 1.123,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000153 - 2026-08-24",
++    "name": "4node_verify_2026-08-24",
++    "startTime": 1787565077358,
++    "endTime": 1787566780947,
++    "durationS": 1703.6,
++    "totalFrames": 28524,
++    "targetClassification": "human",
++    "classificationConfidence": 0.868,
++    "avgDistanceCm": 430.2,
++    "avgSpeedMs": 1.194,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000152 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787221279407,
++    "endTime": 1787222322755,
++    "durationS": 1043.3,
++    "totalFrames": 17140,
++    "targetClassification": "human",
++    "classificationConfidence": 0.854,
++    "avgDistanceCm": 698.9,
++    "avgSpeedMs": 0.74,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000151 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787219828974,
++    "endTime": 1787220395853,
++    "durationS": 566.9,
++    "totalFrames": 10072,
++    "targetClassification": "human",
++    "classificationConfidence": 0.912,
++    "avgDistanceCm": 378.3,
++    "avgSpeedMs": 0.6,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000150 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787219396011,
++    "endTime": 1787219792528,
++    "durationS": 396.5,
++    "totalFrames": 7269,
++    "targetClassification": "human",
++    "classificationConfidence": 0.954,
++    "avgDistanceCm": 356.4,
++    "avgSpeedMs": 0.526,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000149 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787219143001,
++    "endTime": 1787219347856,
++    "durationS": 204.9,
++    "totalFrames": 3798,
++    "targetClassification": "human",
++    "classificationConfidence": 0.936,
++    "avgDistanceCm": 395.7,
++    "avgSpeedMs": 0.395,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000148 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787216817503,
++    "endTime": 1787216868683,
++    "durationS": 51.2,
++    "totalFrames": 659,
++    "targetClassification": "human",
++    "classificationConfidence": 0.545,
++    "avgDistanceCm": 102.3,
++    "avgSpeedMs": 0.581,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000147 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787215512796,
++    "endTime": 1787215974242,
++    "durationS": 461.4,
++    "totalFrames": 8202,
++    "targetClassification": "human",
++    "classificationConfidence": 0.819,
++    "avgDistanceCm": 344.3,
++    "avgSpeedMs": 0.742,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000146 - 2026-08-20",
++    "name": "test",
++    "startTime": 1787215354486,
++    "endTime": 1787215417780,
++    "durationS": 63.3,
++    "totalFrames": 1121,
++    "targetClassification": "human",
++    "classificationConfidence": 0.937,
++    "avgDistanceCm": 378.1,
++    "avgSpeedMs": 0.578,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000145 - 2026-08-20",
++    "name": "joddb",
++    "startTime": 1787214734371,
++    "endTime": 1787215145964,
++    "durationS": 411.6,
++    "totalFrames": 7471,
++    "targetClassification": "human",
++    "classificationConfidence": 0.908,
++    "avgDistanceCm": 450.1,
++    "avgSpeedMs": 0.76,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000144 - 2026-08-20",
++    "name": "joddb test",
++    "startTime": 1787214532387,
++    "endTime": 1787214647082,
++    "durationS": 114.7,
++    "totalFrames": 1904,
++    "targetClassification": "human",
++    "classificationConfidence": 0.899,
++    "avgDistanceCm": 592.4,
++    "avgSpeedMs": 0.994,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000143 - 2026-08-20",
++    "name": "jiddb test",
++    "startTime": 1787213066715,
++    "endTime": 1787214522524,
++    "durationS": 1455.8,
++    "totalFrames": 7965,
++    "targetClassification": "human",
++    "classificationConfidence": 0.942,
++    "avgDistanceCm": 439.1,
++    "avgSpeedMs": 0.647,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000142 - 2026-08-19",
++    "name": "test",
++    "startTime": 1787155042826,
++    "endTime": 1787155654604,
++    "durationS": 611.8,
++    "totalFrames": 11224,
++    "targetClassification": "human",
++    "classificationConfidence": 0.917,
++    "avgDistanceCm": 311.3,
++    "avgSpeedMs": 0.693,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000141 - 2026-08-19",
++    "name": "last test",
++    "startTime": 1787154902673,
++    "endTime": 1787154947150,
++    "durationS": 44.5,
++    "totalFrames": 600,
++    "targetClassification": "human",
++    "classificationConfidence": 0.857,
++    "avgDistanceCm": 196.3,
++    "avgSpeedMs": 0.686,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000140 - 2026-08-19",
++    "name": "last test",
++    "startTime": 1787154902673,
++    "endTime": 1787154944310,
++    "durationS": 41.6,
++    "totalFrames": 600,
++    "targetClassification": "human",
++    "classificationConfidence": 0.857,
++    "avgDistanceCm": 196.3,
++    "avgSpeedMs": 0.686,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000139 - 2026-08-18",
++    "name": "scan 01 test",
++    "startTime": 1787061753331,
++    "endTime": 1787065319055,
++    "durationS": 3565.7,
++    "totalFrames": 64434,
++    "targetClassification": "human",
++    "classificationConfidence": 0.887,
++    "avgDistanceCm": 254.9,
++    "avgSpeedMs": 0.625,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000138 - 2026-08-18",
++    "name": "terst",
++    "startTime": 1787057192313,
++    "endTime": 1787057258406,
++    "durationS": 66.1,
++    "totalFrames": 1215,
++    "targetClassification": "human",
++    "classificationConfidence": 0.875,
++    "avgDistanceCm": 155.5,
++    "avgSpeedMs": 0.583,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000137 - 2026-08-12",
++    "name": "test",
++    "startTime": 1786525996076,
++    "endTime": 1786531875877,
++    "durationS": 5879.8,
++    "totalFrames": 103281,
++    "targetClassification": "human",
++    "classificationConfidence": 0.885,
++    "avgDistanceCm": 238.8,
++    "avgSpeedMs": 0.581,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000136 - 2026-08-11",
++    "name": "scan 01 test",
++    "startTime": 1786476064030,
++    "endTime": 1786477237913,
++    "durationS": 1173.9,
++    "totalFrames": 21823,
++    "targetClassification": "human",
++    "classificationConfidence": 0.879,
++    "avgDistanceCm": 292.7,
++    "avgSpeedMs": 0.634,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000135 - 2026-08-11",
++    "name": "test",
++    "startTime": 1786475901717,
++    "endTime": 1786475927713,
++    "durationS": 26,
++    "totalFrames": 480,
++    "targetClassification": "human",
++    "classificationConfidence": 0.967,
++    "avgDistanceCm": 306,
++    "avgSpeedMs": 0.703,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000134 - 2026-08-11",
++    "name": "final test before the meeting",
++    "startTime": 1786475285140,
++    "endTime": 1786475888876,
++    "durationS": 603.7,
++    "totalFrames": 11037,
++    "targetClassification": "human",
++    "classificationConfidence": 0.844,
++    "avgDistanceCm": 293.8,
++    "avgSpeedMs": 0.662,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000133 - 2026-08-08",
++    "name": "new 2 node test",
++    "startTime": 1786201017186,
++    "endTime": 1786201153986,
++    "durationS": 136.8,
++    "totalFrames": 2518,
++    "targetClassification": "human",
++    "classificationConfidence": 0.92,
++    "avgDistanceCm": 230,
++    "avgSpeedMs": 0.8,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000132 - 2026-08-08",
++    "name": "test room fan",
++    "startTime": 1786198583793,
++    "endTime": 1786199287913,
++    "durationS": 704.1,
++    "totalFrames": 12167,
++    "targetClassification": "human",
++    "classificationConfidence": 0.909,
++    "avgDistanceCm": 238.3,
++    "avgSpeedMs": 0.719,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000131 - 2026-08-08",
++    "name": "test room fan",
++    "startTime": 1786198583793,
++    "endTime": 1786199269121,
++    "durationS": 685.3,
++    "totalFrames": 12167,
++    "targetClassification": "human",
++    "classificationConfidence": 0.909,
++    "avgDistanceCm": 238.3,
++    "avgSpeedMs": 0.719,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000130 - 2026-08-07",
++    "name": "pp",
++    "startTime": 1786131427458,
++    "endTime": 1786131497151,
++    "durationS": 69.7,
++    "totalFrames": 1279,
++    "targetClassification": "human",
++    "classificationConfidence": 0.68,
++    "avgDistanceCm": 323.2,
++    "avgSpeedMs": 0.638,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000129 - 2026-08-07",
++    "name": "test",
++    "startTime": 1786129966739,
++    "endTime": 1786130331827,
++    "durationS": 365.1,
++    "totalFrames": 6670,
++    "targetClassification": "human",
++    "classificationConfidence": 0.904,
++    "avgDistanceCm": 65.4,
++    "avgSpeedMs": 0.604,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000128 - 2026-08-07",
++    "name": "final test",
++    "startTime": 1786129826861,
++    "endTime": 1786129914878,
++    "durationS": 88,
++    "totalFrames": 1470,
++    "targetClassification": "human",
++    "classificationConfidence": 0.947,
++    "avgDistanceCm": 53.6,
++    "avgSpeedMs": 0.613,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000127 - 2026-08-07",
++    "name": "final test",
++    "startTime": 1786129826861,
++    "endTime": 1786129911284,
++    "durationS": 84.4,
++    "totalFrames": 1470,
++    "targetClassification": "human",
++    "classificationConfidence": 0.947,
++    "avgDistanceCm": 53.6,
++    "avgSpeedMs": 0.613,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000126 - 2026-08-07",
++    "name": "emty room",
++    "startTime": 1786129456976,
++    "endTime": 1786129478372,
++    "durationS": 21.4,
++    "totalFrames": 380,
++    "targetClassification": "human",
++    "classificationConfidence": 0.955,
++    "avgDistanceCm": 55.2,
++    "avgSpeedMs": 0.668,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000125 - 2026-08-07",
++    "name": "ghost_target_fix_verify",
++    "startTime": 1786128852582,
++    "endTime": 1786129166591,
++    "durationS": 314,
++    "totalFrames": 4972,
++    "targetClassification": "human",
++    "classificationConfidence": 0.833,
++    "avgDistanceCm": 59.3,
++    "avgSpeedMs": 0.684,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000124 - 2026-08-07",
++    "name": "ghost_target_fix_verify",
++    "startTime": 1786128852582,
++    "endTime": 1786129150981,
++    "durationS": 298.4,
++    "totalFrames": 4972,
++    "targetClassification": "human",
++    "classificationConfidence": 0.833,
++    "avgDistanceCm": 59.3,
++    "avgSpeedMs": 0.684,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000123 - 2026-08-07",
++    "name": "ghost_target_fix_verify",
++    "startTime": 1786128852582,
++    "endTime": 1786129133939,
++    "durationS": 281.4,
++    "totalFrames": 4972,
++    "targetClassification": "human",
++    "classificationConfidence": 0.833,
++    "avgDistanceCm": 59.3,
++    "avgSpeedMs": 0.684,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000122 - 2026-08-07",
++    "name": "case001",
++    "startTime": 1786127596420,
++    "endTime": 1786127650293,
++    "durationS": 53.9,
++    "totalFrames": 933,
++    "targetClassification": "human",
++    "classificationConfidence": 0.911,
++    "avgDistanceCm": 72,
++    "avgSpeedMs": 0.883,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000121 - 2026-08-07",
++    "name": "new_test_scan_sesion_47",
++    "startTime": 1786126945373,
++    "endTime": 1786127578854,
++    "durationS": 633.5,
++    "totalFrames": 11332,
++    "targetClassification": "human",
++    "classificationConfidence": 0.896,
++    "avgDistanceCm": 146.5,
++    "avgSpeedMs": 0.723,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000120 - 2026-08-07",
++    "name": "new_test_scan_sesion_46",
++    "startTime": 1786126919502,
++    "endTime": 1786126925663,
++    "durationS": 6.2,
++    "totalFrames": 114,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 204.3,
++    "avgSpeedMs": 0.598,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000119 - 2026-08-07",
++    "name": "new_test_scan_sesion_45",
++    "startTime": 1786126828224,
++    "endTime": 1786126909921,
++    "durationS": 81.7,
++    "totalFrames": 1528,
++    "targetClassification": "human",
++    "classificationConfidence": 0.79,
++    "avgDistanceCm": 207.2,
++    "avgSpeedMs": 0.658,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000118 - 2026-08-07",
++    "name": "test44",
++    "startTime": 1786124221747,
++    "endTime": 1786125337146,
++    "durationS": 1115.4,
++    "totalFrames": 20326,
++    "targetClassification": "human",
++    "classificationConfidence": 0.907,
++    "avgDistanceCm": 268.5,
++    "avgSpeedMs": 0.608,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000117 - 2026-08-07",
++    "name": "new test scan sesion 43",
++    "startTime": 1786123962552,
++    "endTime": 1786124204758,
++    "durationS": 242.2,
++    "totalFrames": 4431,
++    "targetClassification": "human",
++    "classificationConfidence": 0.924,
++    "avgDistanceCm": 219.3,
++    "avgSpeedMs": 0.598,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000116 - 2026-08-07",
++    "name": "dsgdfsg",
++    "startTime": 1786122391393,
++    "endTime": 1786123683942,
++    "durationS": 1292.5,
++    "totalFrames": 22585,
++    "targetClassification": "human",
++    "classificationConfidence": 0.897,
++    "avgDistanceCm": 186.9,
++    "avgSpeedMs": 0.641,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000115 - 2026-08-07",
++    "name": "dsgdfsg",
++    "startTime": 1786122391393,
++    "endTime": 1786123642080,
++    "durationS": 1250.7,
++    "totalFrames": 22585,
++    "targetClassification": "human",
++    "classificationConfidence": 0.897,
++    "avgDistanceCm": 186.9,
++    "avgSpeedMs": 0.641,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000114 - 2026-08-07",
++    "name": "case001",
++    "startTime": 1786104750189,
++    "endTime": 1786104922075,
++    "durationS": 171.9,
++    "totalFrames": 2990,
++    "targetClassification": "human",
++    "classificationConfidence": 0.893,
++    "avgDistanceCm": 162,
++    "avgSpeedMs": 0.575,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000113 - 2026-08-06",
++    "name": "scan 01 test",
++    "startTime": 1786058711745,
++    "endTime": 1786058906275,
++    "durationS": 194.5,
++    "totalFrames": 3374,
++    "targetClassification": "human",
++    "classificationConfidence": 0.802,
++    "avgDistanceCm": 155.9,
++    "avgSpeedMs": 0.592,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000112 - 2026-08-06",
++    "name": "dddddddd",
++    "startTime": 1786058418145,
++    "endTime": 1786058695823,
++    "durationS": 277.7,
++    "totalFrames": 4783,
++    "targetClassification": "human",
++    "classificationConfidence": 0.881,
++    "avgDistanceCm": 160.5,
++    "avgSpeedMs": 0.58,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000111 - 2026-08-06",
++    "name": "case0099",
++    "startTime": 1786057253600,
++    "endTime": 1786057381455,
++    "durationS": 127.9,
++    "totalFrames": 2215,
++    "targetClassification": "human",
++    "classificationConfidence": 0.899,
++    "avgDistanceCm": 185.7,
++    "avgSpeedMs": 0.609,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000110 - 2026-08-06",
++    "name": "scan",
++    "startTime": 1786056323719,
++    "endTime": 1786057001990,
++    "durationS": 678.3,
++    "totalFrames": 11890,
++    "targetClassification": "human",
++    "classificationConfidence": 0.891,
++    "avgDistanceCm": 152.5,
++    "avgSpeedMs": 0.603,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000109 - 2026-08-06",
++    "startTime": 1786055815874,
++    "endTime": 1786055839334,
++    "durationS": 23.5,
++    "totalFrames": 418,
++    "targetClassification": "human",
++    "classificationConfidence": 0.875,
++    "avgDistanceCm": 178.6,
++    "avgSpeedMs": 0.036,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000108 - 2026-08-06",
++    "name": "case300",
++    "startTime": 1786055524531,
++    "endTime": 1786055808906,
++    "durationS": 284.4,
++    "totalFrames": 5022,
++    "targetClassification": "human",
++    "classificationConfidence": 0.903,
++    "avgDistanceCm": 284.2,
++    "avgSpeedMs": 0.075,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000107 - 2026-08-06",
++    "name": "new test",
++    "startTime": 1786055209010,
++    "endTime": 1786055475786,
++    "durationS": 266.8,
++    "totalFrames": 4622,
++    "targetClassification": "human",
++    "classificationConfidence": 0.779,
++    "avgDistanceCm": 255.4,
++    "avgSpeedMs": 0.254,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000106 - 2026-08-06",
++    "name": "test scan",
++    "startTime": 1786048214235,
++    "endTime": 1786048270009,
++    "durationS": 55.8,
++    "totalFrames": 993,
++    "targetClassification": "human",
++    "classificationConfidence": 0.969,
++    "avgDistanceCm": 188.1,
++    "avgSpeedMs": 0.146,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000105 - 2026-08-06",
++    "name": "fix test",
++    "startTime": 1786045725923,
++    "endTime": 1786045772240,
++    "durationS": 46.3,
++    "totalFrames": 816,
++    "targetClassification": "human",
++    "classificationConfidence": 0.947,
++    "avgDistanceCm": 263.5,
++    "avgSpeedMs": 0.491,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000104 - 2026-08-05",
++    "name": "joddb test",
++    "startTime": 1785922749475,
++    "endTime": 1785922826953,
++    "durationS": 77.5,
++    "totalFrames": 1408,
++    "targetClassification": "human",
++    "classificationConfidence": 0.887,
++    "avgDistanceCm": 281,
++    "avgSpeedMs": 0.737,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000103 - 2026-08-04",
++    "name": "last test",
++    "startTime": 1785885936068,
++    "endTime": 1785886156428,
++    "durationS": 220.4,
++    "totalFrames": 3944,
++    "targetClassification": "human",
++    "classificationConfidence": 0.826,
++    "avgDistanceCm": 289.1,
++    "avgSpeedMs": 0.299,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000094 - 2026-07-23",
++    "name": "emty room with fan",
++    "startTime": 1784808675572,
++    "endTime": 1784809086212,
++    "durationS": 410.6,
++    "totalFrames": 7162,
++    "targetClassification": "human",
++    "classificationConfidence": 0.887,
++    "avgDistanceCm": 176.8,
++    "avgSpeedMs": 0.316,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000078 - 2026-07-17",
++    "name": "test scan csi data from esp",
++    "startTime": 1784306237184,
++    "endTime": 1784306896279,
++    "durationS": 659.1,
++    "totalFrames": 11305,
++    "targetClassification": "human",
++    "classificationConfidence": 0.916,
++    "avgDistanceCm": 144.7,
++    "avgSpeedMs": 0.656,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000077 - 2026-07-10",
++    "name": "test",
++    "startTime": 1783694001059,
++    "endTime": 1783694128049,
++    "durationS": 127,
++    "totalFrames": 4611,
++    "targetClassification": "human",
++    "classificationConfidence": 0.789,
++    "avgDistanceCm": 171.8,
++    "avgSpeedMs": 0.656,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000076 - 2026-07-10",
++    "name": "2 node test",
++    "startTime": 1783693360780,
++    "endTime": 1783693976573,
++    "durationS": 615.8,
++    "totalFrames": 22305,
++    "targetClassification": "human",
++    "classificationConfidence": 0.89,
++    "avgDistanceCm": 215.6,
++    "avgSpeedMs": 0.658,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000074 - 2026-07-09",
++    "name": "2 test",
++    "startTime": 1783608393845,
++    "endTime": 1783608523712,
++    "durationS": 129.9,
++    "totalFrames": 4703,
++    "targetClassification": "human",
++    "classificationConfidence": 0.832,
++    "avgDistanceCm": 413.7,
++    "avgSpeedMs": 0.913,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000071 - 2026-07-08",
++    "name": "final test",
++    "startTime": 1783546078320,
++    "endTime": 1783546516270,
++    "durationS": 438,
++    "totalFrames": 12237,
++    "targetClassification": "human",
++    "classificationConfidence": 0.889,
++    "avgDistanceCm": 153.5,
++    "avgSpeedMs": 0.754,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000070 - 2026-07-08",
++    "name": "scan 01 test",
++    "startTime": 1783512026632,
++    "endTime": 1783512924128,
++    "durationS": 897.5,
++    "totalFrames": 32893,
++    "targetClassification": "human",
++    "classificationConfidence": 0.886,
++    "avgDistanceCm": 269.1,
++    "avgSpeedMs": 0.715,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000069 - 2026-07-08",
++    "name": "scan 01 test",
++    "startTime": 1783509941909,
++    "endTime": 1783511414707,
++    "durationS": 1472.8,
++    "totalFrames": 53663,
++    "targetClassification": "human",
++    "classificationConfidence": 0.898,
++    "avgDistanceCm": 173.8,
++    "avgSpeedMs": 0.685,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000068 - 2026-07-08",
++    "name": "scan 01 test",
++    "startTime": 1783508797163,
++    "endTime": 1783509183966,
++    "durationS": 386.8,
++    "totalFrames": 14183,
++    "targetClassification": "human",
++    "classificationConfidence": 0.846,
++    "avgDistanceCm": 221.9,
++    "avgSpeedMs": 0.078,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000067 - 2026-07-08",
++    "name": "test scan csi data from esp",
++    "startTime": 1783469911006,
++    "endTime": 1783471047151,
++    "durationS": 1136.1,
++    "totalFrames": 41099,
++    "targetClassification": "human",
++    "classificationConfidence": 0.883,
++    "avgDistanceCm": 237.6,
++    "avgSpeedMs": 0.098,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000066 - 2026-07-08",
++    "name": "codex-two-node-live-test",
++    "startTime": 1783469013157,
++    "endTime": 1783469028171,
++    "durationS": 15,
++    "totalFrames": 533,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.8,
++    "avgDistanceCm": 86.3,
++    "avgSpeedMs": 0.102,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000065 - 2026-07-07",
++    "name": "scan 01 test",
++    "startTime": 1783448528878,
++    "endTime": 1783449259741,
++    "durationS": 730.9,
++    "totalFrames": 26327,
++    "targetClassification": "human",
++    "classificationConfidence": 0.916,
++    "avgDistanceCm": 368.8,
++    "avgSpeedMs": 0.086,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000064 - 2026-07-03",
++    "name": "test scan csi data from esp",
++    "startTime": 1783117235032,
++    "endTime": 1783119117468,
++    "durationS": 1882.4,
++    "totalFrames": 65973,
++    "targetClassification": "human",
++    "classificationConfidence": 0.886,
++    "avgDistanceCm": 266.5,
++    "avgSpeedMs": 0.145,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000063 - 2026-07-03",
++    "name": "moving-detection-demo",
++    "startTime": 1783115301483,
++    "endTime": 1783115309486,
++    "durationS": 8,
++    "totalFrames": 241,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 784.1,
++    "avgSpeedMs": 0.176,
++    "dataSource": "demo"
++  },
++  {
++    "id": "000000062 - 2026-07-03",
++    "name": "csi data from esp",
++    "startTime": 1783114679865,
++    "endTime": 1783115284178,
++    "durationS": 604.3,
++    "totalFrames": 21465,
++    "targetClassification": "human",
++    "classificationConfidence": 0.904,
++    "avgDistanceCm": 106.8,
++    "avgSpeedMs": 0.11,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000061 - 2026-07-03",
++    "name": "scan 01 test",
++    "startTime": 1783114343256,
++    "endTime": 1783114664594,
++    "durationS": 321.3,
++    "totalFrames": 11369,
++    "targetClassification": "human",
++    "classificationConfidence": 0.841,
++    "avgDistanceCm": 148,
++    "avgSpeedMs": 0.13,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000060 - 2026-07-03",
++    "name": "test",
++    "startTime": 1783113300283,
++    "endTime": 1783113579006,
++    "durationS": 278.7,
++    "totalFrames": 9653,
++    "targetClassification": "human",
++    "classificationConfidence": 0.932,
++    "avgDistanceCm": 347.3,
++    "avgSpeedMs": 0.119,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000059 - 2026-07-03",
++    "name": "test",
++    "startTime": 1783113300283,
++    "endTime": 1783113567530,
++    "durationS": 267.2,
++    "totalFrames": 9653,
++    "targetClassification": "human",
++    "classificationConfidence": 0.932,
++    "avgDistanceCm": 347.3,
++    "avgSpeedMs": 0.119,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000058 - 2026-07-03",
++    "name": "case0044",
++    "startTime": 1783112269298,
++    "endTime": 1783112279351,
++    "durationS": 10.1,
++    "totalFrames": 347,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 357.1,
++    "avgSpeedMs": 0.117,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000057 - 2026-07-03",
++    "name": "testsss",
++    "startTime": 1783110771588,
++    "endTime": 1783111272548,
++    "durationS": 501,
++    "totalFrames": 17649,
++    "targetClassification": "human",
++    "classificationConfidence": 0.87,
++    "avgDistanceCm": 243.5,
++    "avgSpeedMs": 0.096,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000056 - 2026-07-03",
++    "name": "testsss",
++    "startTime": 1783110771588,
++    "endTime": 1783111267439,
++    "durationS": 495.9,
++    "totalFrames": 17649,
++    "targetClassification": "human",
++    "classificationConfidence": 0.87,
++    "avgDistanceCm": 243.5,
++    "avgSpeedMs": 0.096,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000055 - 2026-07-03",
++    "name": "asasas",
++    "startTime": 1783044113439,
++    "endTime": 1783044160427,
++    "durationS": 47,
++    "totalFrames": 1669,
++    "targetClassification": "human",
++    "classificationConfidence": 0.946,
++    "avgDistanceCm": 140,
++    "avgSpeedMs": 0.099,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000054 - 2026-07-03",
++    "name": "case0088",
++    "startTime": 1783043531083,
++    "endTime": 1783043943221,
++    "durationS": 412.1,
++    "totalFrames": 14821,
++    "targetClassification": "human",
++    "classificationConfidence": 0.929,
++    "avgDistanceCm": 176.2,
++    "avgSpeedMs": 0.128,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000053 - 2026-07-03",
++    "name": "test",
++    "startTime": 1783042984717,
++    "endTime": 1783043318663,
++    "durationS": 333.9,
++    "totalFrames": 11657,
++    "targetClassification": "human",
++    "classificationConfidence": 0.921,
++    "avgDistanceCm": 291.7,
++    "avgSpeedMs": 0.096,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000052 - 2026-07-03",
++    "name": "case005",
++    "startTime": 1783041269526,
++    "endTime": 1783041448992,
++    "durationS": 179.5,
++    "totalFrames": 6381,
++    "targetClassification": "human",
++    "classificationConfidence": 0.827,
++    "avgDistanceCm": 203.3,
++    "avgSpeedMs": 0.107,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000051 - 2026-07-03",
++    "name": "case003",
++    "startTime": 1783039963311,
++    "endTime": 1783040191904,
++    "durationS": 228.6,
++    "totalFrames": 8185,
++    "targetClassification": "human",
++    "classificationConfidence": 0.845,
++    "avgDistanceCm": 149,
++    "avgSpeedMs": 0.112,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000050 - 2026-07-03",
++    "name": "case001",
++    "startTime": 1783037953202,
++    "endTime": 1783038018397,
++    "durationS": 65.2,
++    "totalFrames": 1249,
++    "targetClassification": "human",
++    "classificationConfidence": 0.791,
++    "avgDistanceCm": 191.7,
++    "avgSpeedMs": 0.161,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000049 - 2026-07-03",
++    "name": "case02",
++    "startTime": 1783037428618,
++    "endTime": 1783037469380,
++    "durationS": 40.8,
++    "totalFrames": 1173,
++    "targetClassification": "human",
++    "classificationConfidence": 0.927,
++    "avgDistanceCm": 191.1,
++    "avgSpeedMs": 0.175,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000048 - 2026-07-03",
++    "name": "demo",
++    "startTime": 1783036948459,
++    "endTime": 1783036960285,
++    "durationS": 11.8,
++    "totalFrames": 411,
++    "targetClassification": "human",
++    "classificationConfidence": 0.9,
++    "avgDistanceCm": 800,
++    "avgSpeedMs": 0,
++    "dataSource": "demo"
++  },
++  {
++    "id": "000000047 - 2026-07-02",
++    "name": "case002",
++    "startTime": 1783036775697,
++    "endTime": 1783036924666,
++    "durationS": 149,
++    "totalFrames": 3768,
++    "targetClassification": "human",
++    "classificationConfidence": 0.979,
++    "avgDistanceCm": 485,
++    "avgSpeedMs": 0.049,
++    "dataSource": "demo"
++  },
++  {
++    "id": "000000046 - 2026-07-02",
++    "name": "case001",
++    "startTime": 1783036710194,
++    "endTime": 1783036765302,
++    "durationS": 55.1,
++    "totalFrames": 1455,
++    "targetClassification": "human",
++    "classificationConfidence": 0.966,
++    "avgDistanceCm": 289.4,
++    "avgSpeedMs": 0.21,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000045 - 2026-07-02",
++    "name": "case001",
++    "startTime": 1783036710194,
++    "endTime": 1783036750846,
++    "durationS": 40.7,
++    "totalFrames": 1455,
++    "targetClassification": "human",
++    "classificationConfidence": 0.966,
++    "avgDistanceCm": 289.4,
++    "avgSpeedMs": 0.21,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000044 - 2026-07-02",
++    "name": "ttetete",
++    "startTime": 1783019356022,
++    "endTime": 1783019841874,
++    "durationS": 485.9,
++    "totalFrames": 1985,
++    "targetClassification": "human",
++    "classificationConfidence": 0.975,
++    "avgDistanceCm": 267.4,
++    "avgSpeedMs": 0.095,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000043 - 2026-07-02",
++    "name": "test33",
++    "startTime": 1783019326563,
++    "endTime": 1783019341015,
++    "durationS": 14.5,
++    "totalFrames": 497,
++    "targetClassification": "human",
++    "classificationConfidence": 0.949,
++    "avgDistanceCm": 353.1,
++    "avgSpeedMs": 0.169,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000042 - 2026-07-02",
++    "name": "aloha test",
++    "startTime": 1783015138069,
++    "endTime": 1783015657137,
++    "durationS": 519.1,
++    "totalFrames": 16211,
++    "targetClassification": "human",
++    "classificationConfidence": 0.861,
++    "avgDistanceCm": 194.2,
++    "avgSpeedMs": 0.124,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000041 - 2026-07-02",
++    "name": "test",
++    "startTime": 1783014408579,
++    "endTime": 1783014575909,
++    "durationS": 167.3,
++    "totalFrames": 5675,
++    "targetClassification": "human",
++    "classificationConfidence": 0.866,
++    "avgDistanceCm": 148.2,
++    "avgSpeedMs": 0.109,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000040 - 2026-07-02",
++    "name": "secound test",
++    "startTime": 1782953967670,
++    "endTime": 1782954293050,
++    "durationS": 325.4,
++    "totalFrames": 11667,
++    "targetClassification": "human",
++    "classificationConfidence": 0.948,
++    "avgDistanceCm": 241.9,
++    "avgSpeedMs": 0.105,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000039 - 2026-07-02",
++    "name": "sss",
++    "startTime": 1782951612696,
++    "endTime": 1782951761084,
++    "durationS": 148.4,
++    "totalFrames": 5183,
++    "targetClassification": "human",
++    "classificationConfidence": 0.737,
++    "avgDistanceCm": 115.8,
++    "avgSpeedMs": 0.125,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000038 - 2026-07-02",
++    "name": "demo",
++    "startTime": 1782951550020,
++    "endTime": 1782951587341,
++    "durationS": 37.3,
++    "totalFrames": 1288,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 512.8,
++    "avgSpeedMs": 0.121,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000037 - 2026-07-01",
++    "name": "case001",
++    "startTime": 1782940508604,
++    "endTime": 1782940559050,
++    "durationS": 50.4,
++    "totalFrames": 1591,
++    "targetClassification": "human",
++    "classificationConfidence": 0.982,
++    "avgDistanceCm": 222.9,
++    "avgSpeedMs": 0.106,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000036 - 2026-07-01",
++    "name": "case001",
++    "startTime": 1782940508604,
++    "endTime": 1782940554512,
++    "durationS": 45.9,
++    "totalFrames": 1591,
++    "targetClassification": "human",
++    "classificationConfidence": 0.982,
++    "avgDistanceCm": 222.9,
++    "avgSpeedMs": 0.106,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000035 - 2026-07-01",
++    "name": "test",
++    "startTime": 1782936581779,
++    "endTime": 1782937157119,
++    "durationS": 575.3,
++    "totalFrames": 20249,
++    "targetClassification": "human",
++    "classificationConfidence": 0.878,
++    "avgDistanceCm": 312.5,
++    "avgSpeedMs": 0.086,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000034 - 2026-07-01",
++    "name": "StopScanDemoCase",
++    "startTime": 1782934273405,
++    "endTime": 1782934275010,
++    "durationS": 1.6,
++    "totalFrames": 31,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 615.1,
++    "avgSpeedMs": 0.764,
++    "dataSource": "demo"
++  },
++  {
++    "id": "000000033 - 2026-06-29",
++    "startTime": 1782774258190,
++    "endTime": 1782774259439,
++    "durationS": 1.2,
++    "totalFrames": 27,
++    "targetClassification": "human",
++    "classificationConfidence": 0.8,
++    "avgDistanceCm": 112.9,
++    "avgSpeedMs": 0.904,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000032 - 2026-06-29",
++    "name": "test scan csi data from esp",
++    "startTime": 1782774119498,
++    "endTime": 1782774140379,
++    "durationS": 20.9,
++    "totalFrames": 719,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.833,
++    "avgDistanceCm": 162.1,
++    "avgSpeedMs": 0.12,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000031 - 2026-06-29",
++    "name": "scan 01 test",
++    "startTime": 1782773189067,
++    "endTime": 1782773202521,
++    "durationS": 13.5,
++    "totalFrames": 465,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 0.682,
++    "avgDistanceCm": 164.9,
++    "avgSpeedMs": 0.134,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000030 - 2026-06-29",
++    "name": "test",
++    "startTime": 1782773172481,
++    "endTime": 1782773179992,
++    "durationS": 7.5,
++    "totalFrames": 245,
++    "targetClassification": "human",
++    "classificationConfidence": 0.917,
++    "avgDistanceCm": 227.1,
++    "avgSpeedMs": 0.143,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000029 - 2026-06-29",
++    "name": "test",
++    "startTime": 1782772663531,
++    "endTime": 1782772667596,
++    "durationS": 4.1,
++    "totalFrames": 131,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 275.5,
++    "avgSpeedMs": 0.279,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000028 - 2026-06-29",
++    "name": "ttre",
++    "startTime": 1782771494624,
++    "endTime": 1782772499915,
++    "durationS": 1005.3,
++    "totalFrames": 11853,
++    "targetClassification": "human",
++    "classificationConfidence": 0.917,
++    "avgDistanceCm": 190.2,
++    "avgSpeedMs": 0.074,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000027 - 2026-06-29",
++    "name": "test",
++    "startTime": 1782771166107,
++    "endTime": 1782771237833,
++    "durationS": 71.7,
++    "totalFrames": 1685,
++    "targetClassification": "human",
++    "classificationConfidence": 0.864,
++    "avgDistanceCm": 201.2,
++    "avgSpeedMs": 0.093,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000026 - 2026-06-29",
++    "name": "case001",
++    "startTime": 1782764679528,
++    "endTime": 1782764868523,
++    "durationS": 189,
++    "totalFrames": 6589,
++    "targetClassification": "human",
++    "classificationConfidence": 0.5,
++    "avgDistanceCm": 774.9,
++    "avgSpeedMs": 0.085,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000025 - 2026-06-29",
++    "name": "Investigation_Beta",
++    "startTime": 1782763142624,
++    "endTime": 1782763149505,
++    "durationS": 6.9,
++    "totalFrames": 221,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 782.5,
++    "avgSpeedMs": 0.226,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000024 - 2026-06-29",
++    "name": "scan 01 test",
++    "startTime": 1782760952877,
++    "endTime": 1782761062241,
++    "durationS": 109.4,
++    "totalFrames": 3435,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 782.8,
++    "avgSpeedMs": 0.088,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000023 - 2026-06-29",
++    "name": "scan 01 test",
++    "startTime": 1782760952877,
++    "endTime": 1782761052490,
++    "durationS": 99.6,
++    "totalFrames": 3435,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 782.8,
++    "avgSpeedMs": 0.088,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000022 - 2026-06-29",
++    "name": "test",
++    "startTime": 1782759685936,
++    "endTime": 1782759703322,
++    "durationS": 17.4,
++    "totalFrames": 579,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 800,
++    "avgSpeedMs": 0.105,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000021 - 2026-06-29",
++    "name": "Investigation_Beta",
++    "startTime": 1782757264112,
++    "endTime": 1782757269179,
++    "durationS": 5.1,
++    "totalFrames": 157,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 800,
++    "avgSpeedMs": 0.269,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000020 - 2026-06-29",
++    "name": "scan 01 test",
++    "startTime": 1782756023784,
++    "endTime": 1782756196476,
++    "durationS": 172.7,
++    "totalFrames": 6007,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 775.2,
++    "avgSpeedMs": 0.087,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000019 - 2026-06-28",
++    "name": "case001",
++    "startTime": 1782676341503,
++    "endTime": 1782676363399,
++    "durationS": 21.9,
++    "totalFrames": 753,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 790,
++    "avgSpeedMs": 0.104,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000018 - 2026-06-28",
++    "name": "Demo_Case",
++    "startTime": 1782671979699,
++    "endTime": 1782672488584,
++    "durationS": 508.9,
++    "totalFrames": 13458,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 417.2,
++    "avgSpeedMs": 0.089,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000017 - 2026-06-28",
++    "name": "Test_Case_02",
++    "startTime": 1782668478542,
++    "endTime": 1782668653095,
++    "durationS": 174.6,
++    "totalFrames": 3648,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 414.9,
++    "avgSpeedMs": 0.101,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000016 - 2026-06-28",
++    "name": "Test_Case_01",
++    "startTime": 1782667934080,
++    "endTime": 1782668425689,
++    "durationS": 491.6,
++    "totalFrames": 16289,
++    "targetClassification": "human",
++    "classificationConfidence": 0.967,
++    "avgDistanceCm": 419.4,
++    "avgSpeedMs": 0.09,
++    "dataSource": "demo"
++  },
++  {
++    "id": "000000015 - 2026-06-28",
++    "name": "test",
++    "startTime": 1782667848913,
++    "endTime": 1782667888105,
++    "durationS": 39.2,
++    "totalFrames": 1335,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 404.5,
++    "avgSpeedMs": 0.096,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000014 - 2026-03-09",
++    "name": "test",
++    "startTime": 1773084984673,
++    "endTime": 1773085018039,
++    "durationS": 33.4,
++    "totalFrames": 1073,
++    "targetClassification": "unknown",
++    "classificationConfidence": 0,
++    "avgDistanceCm": 411.7,
++    "avgSpeedMs": 9.836,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000013 - 2026-03-09",
++    "name": "case001",
++    "startTime": 1773084191022,
++    "endTime": 1773084273470,
++    "durationS": 82.4,
++    "totalFrames": 2343,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 408.6,
++    "avgSpeedMs": 10.412,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000010 - 2026-03-09",
++    "name": "Investigation_Beta",
++    "startTime": 1773082739097,
++    "endTime": 1773082764882,
++    "durationS": 25.8,
++    "totalFrames": 823,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 410.9,
++    "avgSpeedMs": 10.166,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000008 - 2026-03-09",
++    "name": "Investigation_Beta",
++    "startTime": 1773082673454,
++    "endTime": 1773082697773,
++    "durationS": 24.3,
++    "totalFrames": 773,
++    "targetClassification": "mechanical",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 415.3,
++    "avgSpeedMs": 9.341,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000004 - 2026-03-09",
++    "name": "Investigation_Alpha",
++    "startTime": 1773082434894,
++    "endTime": 1773082471229,
++    "durationS": 36.3,
++    "totalFrames": 1161,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 409.2,
++    "avgSpeedMs": 10.352,
++    "dataSource": "esp32"
++  },
++  {
++    "id": "000000001 - 2026-03-05",
++    "name": "Project Alpha Test",
++    "startTime": 1772744570052,
++    "endTime": 1772744596926,
++    "durationS": 26.9,
++    "totalFrames": 863,
++    "targetClassification": "human",
++    "classificationConfidence": 1,
++    "avgDistanceCm": 411.3,
++    "avgSpeedMs": 10.356,
++    "dataSource": "esp32"
++  }
++]
+\ No newline at end of file
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\scripts\\record_dataset.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\record_dataset.py"
+index 61fa265..e932ebf 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\scripts\\record_dataset.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\record_dataset.py"	
+@@ -30,7 +30,8 @@ import re
+ import socket
+ import sys
+ import time
+-from collections import Counter
++import statistics
++from collections import Counter, deque
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any, Sequence
+@@ -152,6 +153,95 @@ def load_geometry(path: Path) -> dict[str, Any]:
+     return {k: raw[k] for k in ("roomWidthM", "roomDepthM", "anchors") if k in raw}
+ 
+ 
++# ── Per-part link summary sidecar (PS-FIX-29) ────────────────────────────────
++# Same definitions and JSON as server/lib/dataset-recorder.ts (parity vector pinned in both test suites). Written when the
++# file closes to `<file minus .jsonl>.summary.json`; never matched by the *.jsonl dataset glob. Observation only: it says
++# nothing about the CAUSE of a change.
++SUMMARY_WINDOW_MS = 10_000
++SUMMARY_STEP_DB = 6
++SUMMARY_COLLAPSE_RATIO = 0.7
++SUMMARY_MIN_FPS = 20
++
++
++class PartNodeStats:
++    def __init__(self) -> None:
++        self.frames = 0
++        self.first_t: int | None = None
++        self.last_t: int | None = None
++        self._first: list[float] = []
++        self._last: deque[tuple[int, float]] = deque()
++        self._all: list[float] = []
++
++    def add(self, t: int, rssi: float) -> None:
++        self.frames += 1
++        if self.first_t is None:
++            self.first_t = t
++        self.last_t = t
++        if t - self.first_t < SUMMARY_WINDOW_MS:
++            self._first.append(rssi)
++        self._last.append((t, rssi))
++        while self._last and t - self._last[0][0] >= SUMMARY_WINDOW_MS:
++            self._last.popleft()
++        self._all.append(rssi)
++
++    def summary(self) -> dict[str, Any]:
++        first_t, last_t = int(self.first_t), int(self.last_t)  # type: ignore[arg-type]
++        last = [r for t, r in self._last if last_t - t < SUMMARY_WINDOW_MS]
++
++        def win(values: list[float]) -> dict[str, Any]:
++            return {"frames": len(values), "fps": len(values) / (SUMMARY_WINDOW_MS / 1000), "rssiMedian": statistics.median(values) if values else None}
++
++        first10, last10 = win(self._first), win(last)
++        short = last_t - first_t < 2 * SUMMARY_WINDOW_MS  # windows would overlap: no step statement possible
++        reasons: list[str] = []
++        delta: float | None = None
++        ratio: float | None = None
++        flag: bool | None = None
++        if not short:
++            delta = last10["rssiMedian"] - first10["rssiMedian"]
++            if abs(delta) >= SUMMARY_STEP_DB:
++                reasons.append("rssi_step")
++            if first10["fps"] >= SUMMARY_MIN_FPS:
++                ratio = last10["fps"] / first10["fps"]
++                if ratio <= SUMMARY_COLLAPSE_RATIO:
++                    reasons.append("rate_collapse")
++            flag = bool(reasons)
++        return {
++            "frames": self.frames, "firstFrameMs": first_t, "lastFrameMs": last_t, "rssiMedianPart": statistics.median(self._all),
++            "first10s": first10, "last10s": last10, "shortPart": short,
++            "rssiDeltaDb": None if delta is None else round(delta, 3), "fpsRatio": None if ratio is None else round(ratio, 3),
++            "stepFlag": flag, "stepReasons": reasons,
++        }
++
++
++def summary_path_for(part_file: Path) -> Path:
++    name = part_file.name[:-len(".jsonl")] if part_file.name.endswith(".jsonl") else part_file.name
++    return part_file.with_name(name + ".summary.json")
++
++
++def build_part_summary(file: Path, part: int, started_ms: int, part_started_ms: int, closed_ms: int, stats: dict[int, PartNodeStats]) -> dict[str, Any]:
++    return {
++        "type": "part_summary", "schema": 1, "file": file.name, "part": part, "startedAtMs": started_ms, "partStartedAtMs": part_started_ms,
++        "closedAtMs": closed_ms, "windowSeconds": SUMMARY_WINDOW_MS / 1000, "stepThresholdDb": SUMMARY_STEP_DB,
++        "collapseRatio": SUMMARY_COLLAPSE_RATIO, "minBaselineFps": SUMMARY_MIN_FPS,
++        "perNode": {str(n): s.summary() for n, s in sorted(stats.items()) if s.frames > 0},
++    }
++
++
++def write_part_summary(summary: dict[str, Any], part_file: Path) -> Path | None:
++    """Best effort (exclusive create): a failure here must never lose or break the recording."""
++    if not summary["perNode"]:
++        return None
++    target = summary_path_for(part_file)
++    try:
++        with target.open("x", encoding="utf-8") as fh:
++            fh.write(dumps(summary) + "\n")
++    except OSError as exc:
++        print(f"[REC] could not write link summary {target.name}: {exc}")
++        return None
++    return target
++
++
+ def record(args: argparse.Namespace) -> int:
+     started_ms = int(time.time() * 1000)
+     out = output_path(Path(args.data_root), args.room, args.subject, args.label, started_ms)
+@@ -180,6 +270,7 @@ def record(args: argparse.Namespace) -> int:
+ 
+     out.parent.mkdir(parents=True, exist_ok=True)
+     per_node: Counter[int] = Counter()
++    link_stats: dict[int, PartNodeStats] = {}
+     deadline = time.monotonic() + args.seconds
+     next_progress = time.monotonic() + PROGRESS_EVERY_S
+     lines = 0
+@@ -199,7 +290,9 @@ def record(args: argparse.Namespace) -> int:
+                     amps = lltf_amplitudes(frame.iq_bytes, frame.n_subcarriers)
+                 except ValueError:
+                     continue
+-                handle.write(dumps(frame_record(time.time() * 1000.0, frame.node_id, frame.rssi_dbm, amps)) + "\n")
++                now_ms = time.time() * 1000.0
++                handle.write(dumps(frame_record(now_ms, frame.node_id, frame.rssi_dbm, amps)) + "\n")
++                link_stats.setdefault(frame.node_id, PartNodeStats()).add(int(now_ms), int(frame.rssi_dbm))
+                 per_node[frame.node_id] += 1
+                 lines += 1
+                 if lines % FLUSH_EVERY_LINES == 0:
+@@ -211,6 +304,7 @@ def record(args: argparse.Namespace) -> int:
+         except KeyboardInterrupt:
+             print("[REC] interrupted; keeping what was captured")
+     sock.close()
++    write_part_summary(build_part_summary(out, 1, started_ms, started_ms, int(time.time() * 1000), link_stats), out)
+ 
+     print(f"[REC] done: {lines} frames, per node {dict(sorted(per_node.items()))} -> {out}")
+     if len(per_node) < args.expect_nodes:
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\server\\lib\\dataset-recorder.test.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.test.ts"
+index 4fe7913..b3f6871 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\server\\lib\\dataset-recorder.test.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.test.ts"	
+@@ -8,8 +8,11 @@ import {
+   DatasetRecorder,
+   canonicalJson,
+   captureFromEnv,
++  PartNodeStats,
++  buildPartSummary,
+   geometryHash,
+   parseDatasetStart,
++  summaryPathFor,
+   type DatasetFrame,
+ } from "./dataset-recorder";
+ 
+@@ -218,3 +221,98 @@ test("operator annotation (node moved / room not empty) is validated and written
+   rec.record(FRAME);
+   for (const f of rec.stop().files) assert.deepEqual((readJsonl(f)[0] as Record<string, any>).annotation, req.annotation);
+ });
++
++// ── PS-FIX-29: per-part link summary sidecar ────────────────────────────────
++
++const BASE = 1_700_000_000_000;
++
++/** Parity vector (same numbers in tests/test_record_dataset.py):
++ *  node 1: 50 fps for 30 s, RSSI -36 until +20 s then -47;  node 2: 50 fps for 10 s then 20 fps, RSSI -27;
++ *  node 3: steady 50 fps, -30;  node 4: only 5 s of frames. */
++function parityFrames(): Array<{ t: number; n: number; rssi: number }> {
++  const out: Array<{ t: number; n: number; rssi: number }> = [];
++  for (let t = 0; t < 30_000; t += 20) out.push({ t: BASE + t, n: 1, rssi: t < 20_000 ? -36 : -47 });
++  for (let t = 0; t < 10_000; t += 20) out.push({ t: BASE + t, n: 2, rssi: -27 });
++  for (let t = 10_000; t < 30_000; t += 50) out.push({ t: BASE + t, n: 2, rssi: -27 });
++  for (let t = 0; t < 30_000; t += 20) out.push({ t: BASE + t, n: 3, rssi: -30 });
++  for (let t = 0; t < 5_000; t += 20) out.push({ t: BASE + t, n: 4, rssi: -40 });
++  return out.sort((a, b) => a.t - b.t);
++}
++
++function statsFor(frames: Array<{ t: number; n: number; rssi: number }>): Map<number, PartNodeStats> {
++  const m = new Map<number, PartNodeStats>();
++  for (const f of frames) {
++    if (!m.has(f.n)) m.set(f.n, new PartNodeStats());
++    (m.get(f.n) as PartNodeStats).add(f.t, f.rssi);
++  }
++  return m;
++}
++
++test("part summary: RSSI step, rate collapse, steady node and short part (parity vector)", () => {
++  const s = buildPartSummary({ file: "/x/room__s1__empty__20261102T000000Z.jsonl", part: 1, startedAtMs: BASE, partStartedAtMs: BASE, closedAtMs: BASE + 30_000 }, statsFor(parityFrames()));
++  const n = s.perNode as Record<string, Record<string, any>>;
++  assert.equal(s.type, "part_summary");
++  assert.equal(s.file, "room__s1__empty__20261102T000000Z.jsonl");
++  assert.deepEqual(
++    [n["1"].frames, n["1"].first10s.frames, n["1"].first10s.fps, n["1"].first10s.rssiMedian, n["1"].last10s.frames, n["1"].last10s.fps, n["1"].last10s.rssiMedian, n["1"].rssiMedianPart, n["1"].rssiDeltaDb, n["1"].fpsRatio, n["1"].stepFlag, n["1"].stepReasons],
++    [1500, 500, 50, -36, 500, 50, -47, -36, -11, 1, true, ["rssi_step"]],
++  );
++  assert.deepEqual(
++    [n["2"].frames, n["2"].first10s.fps, n["2"].last10s.frames, n["2"].last10s.fps, n["2"].rssiDeltaDb, n["2"].fpsRatio, n["2"].stepFlag, n["2"].stepReasons],
++    [900, 50, 200, 20, 0, 0.4, true, ["rate_collapse"]],
++  );
++  assert.deepEqual([n["3"].stepFlag, n["3"].stepReasons, n["3"].rssiDeltaDb, n["3"].fpsRatio], [false, [], 0, 1]);
++  assert.deepEqual([n["4"].shortPart, n["4"].stepFlag, n["4"].rssiDeltaDb], [true, null, null]);   // < 20 s: windows overlap
++});
++
++test("a low first-window frame rate gives no collapse statement (baseline below the minimum)", () => {
++  const frames: Array<{ t: number; n: number; rssi: number }> = [];
++  for (let t = 0; t < 10_000; t += 200) frames.push({ t: BASE + t, n: 1, rssi: -40 });   // 5 fps
++  for (let t = 10_000; t < 30_000; t += 1000) frames.push({ t: BASE + t, n: 1, rssi: -40 }); // 1 fps
++  const n1 = (buildPartSummary({ file: "f.jsonl", part: 1, startedAtMs: BASE, partStartedAtMs: BASE, closedAtMs: BASE }, statsFor(frames)).perNode as any)["1"];
++  assert.equal(n1.fpsRatio, null);
++  assert.equal(n1.stepFlag, false);
++});
++
++test("recorder writes one summary per part when it closes, next to (not inside) the *.jsonl dataset files", () => {
++  const root = tempRoot();
++  const rec = new DatasetRecorder({ rootDir: root, maxFramesPerFile: 1000, now: () => BASE });
++  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), { capture: captureFromEnv({}) });
++  for (const f of parityFrames().filter((x) => x.n === 1)) rec.record({ tMs: f.t, nodeId: f.n, rssi: f.rssi, amps: [1, 2, 3] });
++  const done = rec.stop();
++  assert.equal(done.files.length, 2);                                    // 1500 frames, 1000 per part
++  const dir = path.dirname(done.files[0]);
++  const summaries = fs.readdirSync(dir).filter((f) => f.endsWith(".summary.json")).sort();
++  assert.deepEqual(summaries, done.files.map((f) => path.basename(summaryPathFor(f))).sort());
++  assert.ok(summaries[0].endsWith("Z.part2.summary.json") || summaries[1].endsWith("Z.part2.summary.json"));
++  assert.ok(!fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl")).some((f) => f.includes("summary")));
++  const part1 = JSON.parse(fs.readFileSync(summaryPathFor(done.files[0]), "utf-8"));
++  assert.equal(part1.part, 1);
++  assert.equal(part1.perNode["1"].frames, 1000);
++  assert.equal(part1.perNode["1"].shortPart, true);                      // 19.98 s < 2 x 10 s: windows would overlap -> no step statement
++  assert.equal(part1.perNode["1"].stepFlag, null);
++  assert.equal(part1.perNode["1"].rssiMedianPart, -36);                  // part 1 is -36 throughout; the step is at +20 s = start of part 2
++  const part2 = JSON.parse(fs.readFileSync(summaryPathFor(done.files[1]), "utf-8"));
++  assert.equal(part2.perNode["1"].frames, 500);
++  assert.equal(part2.perNode["1"].rssiMedianPart, -47);
++});
++
++test("a summary that cannot be written never breaks or stops the recording", () => {
++  const root = tempRoot();
++  const rec = new DatasetRecorder({ rootDir: root, now: () => BASE });
++  const info = rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
++  fs.writeFileSync(summaryPathFor(info.files[0]), "occupied");          // the exclusive create will fail
++  for (const f of parityFrames().filter((x) => x.n === 3).slice(0, 50)) rec.record({ tMs: f.t, nodeId: f.n, rssi: f.rssi, amps: [1] });
++  const done = rec.stop();
++  assert.equal(done.recording, false);
++  assert.equal(done.frames, 50);
++  assert.equal(fs.readFileSync(summaryPathFor(info.files[0]), "utf-8"), "occupied");
++});
++
++test("no frames, no summary file", () => {
++  const root = tempRoot();
++  const rec = new DatasetRecorder({ rootDir: root });
++  const info = rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
++  rec.stop();
++  assert.ok(!fs.existsSync(summaryPathFor(info.files[0])));
++});
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\server\\lib\\dataset-recorder.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.ts"
+index 846fbe9..7779bcb 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\server\\lib\\dataset-recorder.ts"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\dataset-recorder.ts"	
+@@ -129,6 +129,86 @@ function triState(value: unknown): boolean | null {
+   return typeof value === "boolean" ? value : null;
+ }
+ 
++// ── Per-part link summary sidecar (PS-FIX-29) ───────────────────────────────
++// Written when a part CLOSES to `<part file minus .jsonl>.summary.json` (never matched by the *.jsonl dataset glob).
++// Per node: RSSI median and frame rate over the first and last SUMMARY_WINDOW_MS of the part, the part's RSSI median, and a
++// step flag (|last - first| >= SUMMARY_STEP_DB, or frame rate <= SUMMARY_COLLAPSE_RATIO x first, first >= SUMMARY_MIN_FPS).
++// Mirrors scripts/record_dataset.py (identical definitions, parity vector pinned in both test suites). Observation only: it
++// says nothing about the CAUSE of a change.
++export const SUMMARY_WINDOW_MS = 10_000;
++export const SUMMARY_STEP_DB = 6;
++export const SUMMARY_COLLAPSE_RATIO = 0.7;
++export const SUMMARY_MIN_FPS = 20;
++
++function median(values: number[]): number | null {
++  if (values.length === 0) return null;
++  const s = [...values].sort((a, b) => a - b);
++  const mid = s.length >> 1;
++  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
++}
++
++const round3 = (x: number): number => Math.round(x * 1000) / 1000;
++
++export class PartNodeStats {
++  frames = 0;
++  firstT: number | null = null;
++  lastT: number | null = null;
++  private firstWindow: number[] = [];
++  private lastWindow: Array<{ t: number; rssi: number }> = [];
++  private all: number[] = [];
++
++  add(t: number, rssi: number): void {
++    this.frames++;
++    if (this.firstT === null) this.firstT = t;
++    this.lastT = t;
++    if (t - this.firstT < SUMMARY_WINDOW_MS) this.firstWindow.push(rssi);
++    this.lastWindow.push({ t, rssi });
++    while (this.lastWindow.length > 0 && t - this.lastWindow[0].t >= SUMMARY_WINDOW_MS) this.lastWindow.shift();
++    this.all.push(rssi);
++  }
++
++  summary(): Record<string, unknown> {
++    const firstT = this.firstT as number;
++    const lastT = this.lastT as number;
++    const last = this.lastWindow.filter((f) => lastT - f.t < SUMMARY_WINDOW_MS).map((f) => f.rssi);
++    const win = (rssis: number[]) => ({ frames: rssis.length, fps: rssis.length / (SUMMARY_WINDOW_MS / 1000), rssiMedian: median(rssis) });
++    const first10s = win(this.firstWindow);
++    const last10s = win(last);
++    const shortPart = lastT - firstT < 2 * SUMMARY_WINDOW_MS; // the two windows would overlap: no step statement possible
++    let stepFlag: boolean | null = null;
++    const stepReasons: string[] = [];
++    let rssiDeltaDb: number | null = null;
++    let fpsRatio: number | null = null;
++    if (!shortPart) {
++      rssiDeltaDb = (last10s.rssiMedian as number) - (first10s.rssiMedian as number);
++      if (Math.abs(rssiDeltaDb) >= SUMMARY_STEP_DB) stepReasons.push("rssi_step");
++      if (first10s.fps >= SUMMARY_MIN_FPS) {
++        fpsRatio = last10s.fps / first10s.fps;
++        if (fpsRatio <= SUMMARY_COLLAPSE_RATIO) stepReasons.push("rate_collapse");
++      }
++      stepFlag = stepReasons.length > 0;
++    }
++    return {
++      frames: this.frames, firstFrameMs: firstT, lastFrameMs: lastT, rssiMedianPart: median(this.all), first10s, last10s,
++      shortPart, rssiDeltaDb: rssiDeltaDb === null ? null : round3(rssiDeltaDb), fpsRatio: fpsRatio === null ? null : round3(fpsRatio), stepFlag, stepReasons,
++    };
++  }
++}
++
++export function buildPartSummary(info: { file: string; part: number; startedAtMs: number; partStartedAtMs: number; closedAtMs: number }, stats: Map<number, PartNodeStats>): Record<string, unknown> {
++  const perNode: Record<string, unknown> = {};
++  for (const [node, s] of [...stats.entries()].sort((a, b) => a[0] - b[0])) if (s.frames > 0) perNode[String(node)] = s.summary();
++  return {
++    type: "part_summary", schema: 1, file: path.basename(info.file), part: info.part, startedAtMs: info.startedAtMs,
++    partStartedAtMs: info.partStartedAtMs, closedAtMs: info.closedAtMs, windowSeconds: SUMMARY_WINDOW_MS / 1000,
++    stepThresholdDb: SUMMARY_STEP_DB, collapseRatio: SUMMARY_COLLAPSE_RATIO, minBaselineFps: SUMMARY_MIN_FPS, perNode,
++  };
++}
++
++export function summaryPathFor(partFile: string): string {
++  return partFile.replace(/\.jsonl$/, "") + ".summary.json";
++}
++
+ export interface DatasetFrame {
+   /** Host receive time, ms. */
+   tMs: number;
+@@ -222,6 +302,9 @@ export class DatasetRecorder {
+   private perNode: Record<string, number> = {};
+   private files: string[] = [];
+   private pending: string[] = [];
++  private partStats = new Map<number, PartNodeStats>();
++  private partFile = "";
++  private partStartedAtMs = 0;
+ 
+   constructor(options: DatasetRecorderOptions = {}) {
+     this.rootDir = options.rootDir ?? path.resolve("data", "datasets");
+@@ -273,6 +356,9 @@ export class DatasetRecorder {
+     this.frames++;
+     const key = String(frame.nodeId);
+     this.perNode[key] = (this.perNode[key] ?? 0) + 1;
++    let ns = this.partStats.get(frame.nodeId);
++    if (!ns) this.partStats.set(frame.nodeId, (ns = new PartNodeStats()));
++    ns.add(frame.tMs, frame.rssi);
+     if (this.pending.length >= FLUSH_EVERY_LINES) this.flush();
+   }
+ 
+@@ -283,6 +369,7 @@ export class DatasetRecorder {
+     try {
+       this.flush();
+     } finally {
++      this.writePartSummary();
+       if (this.fd !== null) {
+         try {
+           fs.closeSync(this.fd);
+@@ -313,6 +400,7 @@ export class DatasetRecorder {
+   private openNextPart(): void {
+     const request = this.request;
+     if (!request) return;
++    this.writePartSummary(); // the part that is closing
+     if (this.fd !== null) {
+       fs.closeSync(this.fd);
+       this.fd = null;
+@@ -326,6 +414,9 @@ export class DatasetRecorder {
+     this.part = part;
+     this.files.push(file);
+     this.framesInPart = 0;
++    this.partFile = file;
++    this.partStartedAtMs = this.now();
++    this.partStats = new Map();
+     const header = {
+       type: "header",
+       schema: SCHEMA_VERSION,
+@@ -335,7 +426,7 @@ export class DatasetRecorder {
+       count: request.count,
+       notes: request.notes,
+       startedAtMs: this.startedAtMs,
+-      partStartedAtMs: this.now(),
++      partStartedAtMs: this.partStartedAtMs,
+       part: this.part,
+       geometry: this.context.geometry ?? null,
+       geometryHash: geometryHash(this.context.geometry),
+@@ -347,6 +438,22 @@ export class DatasetRecorder {
+     fs.writeSync(this.fd, `${JSON.stringify(header)}\n`);
+   }
+ 
++  /** Write the closing part's link summary. Best effort: a failure here must never break or stop a recording. */
++  private writePartSummary(): void {
++    if (!this.partFile || this.partStats.size === 0) return;
++    try {
++      const summary = buildPartSummary(
++        { file: this.partFile, part: this.part, startedAtMs: this.startedAtMs, partStartedAtMs: this.partStartedAtMs, closedAtMs: this.now() },
++        this.partStats,
++      );
++      fs.writeFileSync(summaryPathFor(this.partFile), `${JSON.stringify(summary)}\n`, { flag: "wx" });
++    } catch {
++      /* summary is advisory; the dataset file itself is what matters */
++    }
++    this.partFile = "";
++    this.partStats = new Map();
++  }
++
+   private flush(): void {
+     if (this.fd === null || this.pending.length === 0) return;
+     const batch = this.pending;
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\tests\\test_record_dataset.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_record_dataset.py"
+index bec2830..c876a0b 100644
+--- "a/D:\\WIFI csi\\phanotm\\phantom scan\\.tmp\\fix-backups\\08-WAVE2\\tests\\test_record_dataset.py"	
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_record_dataset.py"	
+@@ -107,3 +107,65 @@ def test_dumps_is_compact_and_roundtrips_through_the_loader(tmp_path: Path) -> N
+     assert '": ' not in text and '", "' not in text, "no spaces after separators"
+     rec = load_recording([path])
+     assert rec.header["annotation"]["nodeMoved"] is True and rec.header["geometryHash"] == GEOMETRY_HASH and rec.report.clean
++
++
++# ── PS-FIX-29: per-part link summary sidecar (parity vector identical to server/lib/dataset-recorder.test.ts) ─────────────
++
++from scripts.record_dataset import PartNodeStats, build_part_summary, summary_path_for, write_part_summary  # noqa: E402
++
++BASE = 1_700_000_000_000
++
++
++def parity_frames() -> list[tuple[int, int, int]]:
++    """(t, node, rssi): node 1 50 fps -36 then -47 at +20 s; node 2 50 fps then 20 fps; node 3 steady; node 4 only 5 s."""
++    out = [(BASE + t, 1, -36 if t < 20_000 else -47) for t in range(0, 30_000, 20)]
++    out += [(BASE + t, 2, -27) for t in range(0, 10_000, 20)] + [(BASE + t, 2, -27) for t in range(10_000, 30_000, 50)]
++    out += [(BASE + t, 3, -30) for t in range(0, 30_000, 20)] + [(BASE + t, 4, -40) for t in range(0, 5_000, 20)]
++    return sorted(out)
++
++
++def stats_for(frames: list[tuple[int, int, int]]) -> dict[int, PartNodeStats]:
++    stats: dict[int, PartNodeStats] = {}
++    for t, n, rssi in frames:
++        stats.setdefault(n, PartNodeStats()).add(t, rssi)
++    return stats
++
++
++def test_part_summary_parity_vector_matches_the_dashboard_recorder(tmp_path: Path) -> None:
++    f = tmp_path / "room1__s1__empty__20261102T000000Z.jsonl"
++    s = build_part_summary(f, 1, BASE, BASE, BASE + 30_000, stats_for(parity_frames()))
++    n = s["perNode"]
++    assert s["type"] == "part_summary" and s["file"] == f.name
++    n1 = n["1"]
++    assert [n1["frames"], n1["first10s"]["frames"], n1["first10s"]["fps"], n1["first10s"]["rssiMedian"], n1["last10s"]["frames"], n1["last10s"]["fps"],
++            n1["last10s"]["rssiMedian"], n1["rssiMedianPart"], n1["rssiDeltaDb"], n1["fpsRatio"], n1["stepFlag"], n1["stepReasons"]] == \
++        [1500, 500, 50, -36, 500, 50, -47, -36, -11, 1, True, ["rssi_step"]]
++    n2 = n["2"]
++    assert [n2["frames"], n2["first10s"]["fps"], n2["last10s"]["frames"], n2["last10s"]["fps"], n2["rssiDeltaDb"], n2["fpsRatio"], n2["stepFlag"], n2["stepReasons"]] == \
++        [900, 50, 200, 20, 0, 0.4, True, ["rate_collapse"]]
++    assert [n["3"]["stepFlag"], n["3"]["stepReasons"], n["3"]["rssiDeltaDb"], n["3"]["fpsRatio"]] == [False, [], 0, 1]
++    assert [n["4"]["shortPart"], n["4"]["stepFlag"], n["4"]["rssiDeltaDb"]] == [True, None, None]
++
++
++def test_low_first_window_rate_gives_no_collapse_statement() -> None:
++    frames = [(BASE + t, 1, -40) for t in range(0, 10_000, 200)] + [(BASE + t, 1, -40) for t in range(10_000, 30_000, 1000)]
++    n1 = build_part_summary(Path("f.jsonl"), 1, BASE, BASE, BASE, stats_for(frames))["perNode"]["1"]
++    assert n1["fpsRatio"] is None and n1["stepFlag"] is False
++
++
++def test_summary_path_is_a_sibling_that_the_jsonl_glob_never_matches(tmp_path: Path) -> None:
++    f = tmp_path / "room1__s6__empty__20261102T000000Z.jsonl"
++    assert summary_path_for(f).name == "room1__s6__empty__20261102T000000Z.summary.json"
++    assert summary_path_for(tmp_path / "room1__s6__empty__20261102T000000Z.part2.jsonl").name.endswith("Z.part2.summary.json")
++    f.write_text("{}\n", encoding="utf-8")
++    write_part_summary(build_part_summary(f, 1, BASE, BASE, BASE, stats_for(parity_frames())), f)
++    assert [p.name for p in tmp_path.glob("*.jsonl")] == [f.name]               # the summary is not a dataset file
++    assert json.loads(summary_path_for(f).read_text(encoding="utf-8"))["perNode"]["1"]["stepFlag"] is True
++
++
++def test_summary_write_failure_is_swallowed_and_never_overwrites(tmp_path: Path) -> None:
++    f = tmp_path / "room1__s6__empty__20261102T000000Z.jsonl"
++    summary_path_for(f).write_text("occupied", encoding="utf-8")
++    assert write_part_summary(build_part_summary(f, 1, BASE, BASE, BASE, stats_for(parity_frames())), f) is None
++    assert summary_path_for(f).read_text(encoding="utf-8") == "occupied"
++    assert write_part_summary({"perNode": {}}, f) is None                         # no frames -> no file
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_eval.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_eval.py"
+new file mode 100644
+index 0000000..f493f84
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epoch_eval.py"	
+@@ -0,0 +1,206 @@
++"""Epoch-stratified evaluation: every analysis is reported WITHIN each link-state epoch and ACROSS epochs, separately.
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.epoch_eval
++
++* Epochs come from scripts/presence_eval/epochs.py for a node set (default N1+N2). Empties from different epochs are never
++  pooled: a model is fit on the empties of ONE epoch.
++* Transitional windows (PRE_MARGIN_S before to SETTLE_S after a boundary event) are removed from every evaluation; so the tail of
++  s7 after node 1's step is not part of walking-vs-empty.
++* "within": leave-one-segment-out among the empty segments of the same epoch. A held-out empty is only testable when the epoch
++  has >= 2 empty segments; otherwise the cell says "insufficient data" (it never falls back to pooling).
++* "cross": train on the empties of epoch A, test every segment of epoch B != A.
++The CAUSE of any link-state change is not inferred here.
++"""
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass
++from pathlib import Path
++
++import numpy as np
++
++from . import epochs as ep
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
++from .recordings import group_recordings, load_recording
++from .tables import REC_CACHE, ROOM_DIR, RecTables, load_all
++from . import twonode as tn
++
++OUT_DIR = default_out_dir()
++DEFAULT_NODES = (1, 2)
++WINDOW_MS = 1500
++MIN_GRID_COVERAGE = 0.5   # a recording needs usable windows for at least half of its time grid to be evaluated
++
++
++def load_links(room_dir: Path = ROOM_DIR) -> list[ep.RecordingLinks]:
++    links = []
++    for name, paths in group_recordings(room_dir).items():
++        rec = load_recording(paths, REC_CACHE)
++        links.append(ep.analyze_recording(name[7:30] if name.startswith("room1__") else name, name.split("__")[3][:8], rec.nodes, rec.t_min, rec.t_max, rec.label))
++    return ep.classify_persistence(links)
++
++
++def window_info(rec: RecTables, tl: ep.Timeline, k: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    """(epoch index per window, transitional flag per window) for window indices ``k`` of ``rec`` (window centre time)."""
++    centre = rec.t0_ms + ((k + 0.5) * WINDOW_MS).astype(np.int64)
++    idx = np.searchsorted(np.asarray(tl._times, dtype=np.int64), centre, side="right")
++    trans = np.zeros(k.shape, dtype=bool)
++    for a, b, _ in tl.transitional:
++        trans |= (centre >= a) & (centre < b)
++    return idx, trans
++
++
++def joint_count(seg: RecTables, need: tuple[int, ...], feat: str = "decor") -> int:
++    """Windows with a finite value on EVERY node in ``need`` (inner join; no zero-filling)."""
++    ks = None
++    for n in need:
++        t = seg.nodes.get(n)
++        if t is None:
++            return 0
++        kk = t["k"][np.isfinite(t[feat])]
++        ks = kk if ks is None else np.intersect1d(ks, kk)
++    return 0 if ks is None else int(len(ks))
++
++
++def make_segments(tabs: dict[str, RecTables], tl: ep.Timeline, min_windows: int = tn.MIN_WIN, need: tuple[int, ...] = tn.NODES) -> tuple[dict[str, RecTables], list[dict]]:
++    """Split every recording into (recording x epoch) segments, dropping transitional windows. Returns (segments, log)."""
++    segs: dict[str, RecTables] = {}
++    log: list[dict] = []
++    for rid, rec in tabs.items():
++        per_epoch: dict[int, dict[int, dict[str, np.ndarray]]] = {}
++        counts: dict[int, dict] = {}
++        for node, table in rec.nodes.items():
++            idx, trans = window_info(rec, tl, table["k"])
++            for e in np.unique(idx):
++                m_all = idx == e
++                m_keep = m_all & ~trans
++                c = counts.setdefault(int(e), {"windows": 0, "transitional_dropped": 0})
++                if node == min(rec.nodes):
++                    c["windows"] += int(m_keep.sum())
++                    c["transitional_dropped"] += int((m_all & trans).sum())
++                if m_keep.any():
++                    per_epoch.setdefault(int(e), {})[node] = {c_: v[m_keep] for c_, v in table.items()}
++        for e, nodes in per_epoch.items():
++            name = f"E{e + 1:02d}"
++            seg = RecTables(rid=f"{rid}@{name}", name=rec.name, label=rec.label, subject=rec.subject, day=rec.day, t0_ms=rec.t0_ms,
++                            duration_s=rec.duration_s, parts=rec.parts, nodes=nodes)
++            usable = joint_count(seg, need)
++            log.append({"segment": seg.rid, "epoch": name, "label": rec.label, **counts[e], "joint_N1N2_windows": usable, "kept": usable >= min_windows})
++            if usable >= min_windows:
++                segs[seg.rid] = seg
++        for e, c in counts.items():  # epochs that lost EVERY window to the transitional exclusion are still listed
++            if e not in per_epoch:
++                log.append({"segment": f"{rid}@E{e + 1:02d}", "epoch": f"E{e + 1:02d}", "label": rec.label, **c, "joint_N1N2_windows": 0, "kept": False})
++    return segs, log
++
++
++def epoch_of(seg: RecTables) -> str:
++    return seg.rid.rsplit("@", 1)[1]
++
++
++def splits_within(segs: dict[str, RecTables]) -> list[tn.Split]:
++    out = []
++    for sid, seg in segs.items():
++        e = epoch_of(seg)
++        train = tuple(r for r, o in segs.items() if o.label == "empty" and epoch_of(o) == e and r != sid)
++        if train:
++            out.append(tn.Split("epoch_within", sid, train, e))
++    return out
++
++
++def splits_cross(segs: dict[str, RecTables]) -> list[tn.Split]:
++    out = []
++    epochs = sorted({epoch_of(s) for s in segs.values()})
++    for a in epochs:
++        train = tuple(r for r, o in segs.items() if o.label == "empty" and epoch_of(o) == a)
++        if not train:
++            continue
++        for sid, seg in segs.items():
++            if epoch_of(seg) != a:
++                out.append(tn.Split("epoch_cross", sid, train, f"{a}->{epoch_of(seg)}"))
++    return out
++
++
++def run(nodes: tuple[int, ...] = DEFAULT_NODES, tabs: dict[str, RecTables] | None = None, links: list[ep.RecordingLinks] | None = None) -> dict:
++    tabs = tabs or load_all()
++    links = links or load_links()
++    tl = ep.build_timeline(links, nodes)
++    low_coverage = {}
++    for rid, rec in list(tabs.items()):  # e.g. the 11 frames/s pre-fix recording: only chance bursts reach 20 frames/window
++        grid = max(1.0, rec.duration_s / (WINDOW_MS / 1000.0))
++        cov = min((len(rec.nodes[n]["k"]) / grid for n in nodes if n in rec.nodes), default=0.0)
++        if cov < MIN_GRID_COVERAGE:
++            low_coverage[rid] = round(cov, 3)
++            del tabs[rid]
++    segs, log = make_segments(tabs, tl)
++    sp = {"epoch_within": splits_within(segs), "epoch_cross": splits_cross(segs)}
++    cands: dict = {}
++    for feat in tn.FEATS:
++        for rule in tn.RULES:
++            rows = [r for p in sp.values() for r in tn.run_candidate(segs, p, feat, rule)]
++            cands[f"{feat}/{rule}"] = tn.aggregate(rows)
++    return {
++        "provenance": provenance("python -m scripts.presence_eval.epoch_eval", sorted(t.name for t in tabs.values())),
++        "node_set": nodes,
++        "params": {"step_db": ep.STEP_DB, "hold_s": ep.HOLD_S, "pre_s": ep.PRE_S, "settle_s": ep.SETTLE_S, "pre_margin_s": ep.PRE_MARGIN_S,
++                   "min_empty_boundary_hold_s": ep.MIN_EMPTY_BOUNDARY_HOLD_S, "min_windows": tn.MIN_WIN, "n_boot": tn.N_BOOT},
++        "cause_of_link_changes": "UNCONFIRMED. The audit log holds only dataset_recording_started/stopped; nothing records what happened at node 1.",
++        "boundaries": [{"time_utc": ep.iso(t), "reason": r} for t, r in tl.boundaries],
++        "events": [
++            {"recording": r.rid, "label": r.label, "node": n, "time_utc": ep.iso(e.t_ms), "offset_s": (e.t_ms - r.t_start_ms) / 1000.0, "kind": e.kind,
++             "delta_db": e.delta_db, "rssi_before": e.rssi_before, "rssi_after": e.rssi_after, "fps_before": e.fps_before, "fps_after": e.fps_after,
++             "held_s": e.held_s, "persistent": e.persistent, "boundary": ep.is_boundary(r, e)}
++            for r in links for n in sorted(r.events) for e in r.events[n]
++        ],
++        "excluded_low_coverage": low_coverage,
++        "segments": log,
++        "candidates": cands,
++    }
++
++
++def _cell(v) -> str:
++    if not isinstance(v, dict):
++        return "n/a"
++    if "auc" in v and v.get("auc") is not None:
++        lo = v.get("lo")
++        return f"{v['auc']:.2f}" + (f" [{lo:.2f}, {v['hi']:.2f}]" if lo is not None else " [no CI]")
++    if "rate" in v:
++        return f"{100 * v['rate']:.0f}%"
++    return "n/a"
++
++
++def render(res: dict, show=("decor/max", "perturb_agc/max", "decor/n2", "perturb/max")) -> str:
++    nodes = "+".join(f"N{n}" for n in res["node_set"])
++    L = [f"## Link-state epochs for {nodes}", "", "Cause of every change: **unconfirmed** (the audit log has only recording start/stop).", "",
++         "| boundary (UTC) | reason |", "|--|--|"] + [f"| {b['time_utc']} | {b['reason']} |" for b in res["boundaries"]]
++    L += ["", "### Detected events (all nodes; `boundary` = used to split)", "", "| recording | label | event | at | held s | persistent | boundary |", "|--|--|--|--|--|--|--|"]
++    for e in res["events"]:
++        what = f"N{e['node']} {e['kind']}" + (f" {e['delta_db']:+.0f} dB ({e['rssi_before']:.0f}→{e['rssi_after']:.0f})" if e["delta_db"] is not None else "") + (f" fps {e['fps_before']:.0f}→{e['fps_after']:.0f}" if e["fps_before"] is not None and e["fps_after"] is not None else "")
++        held = "" if e["held_s"] is None else f"{e['held_s']:.0f}"
++        L.append(f"| {e['recording'][:26]} | {e['label']} | {what} | +{e['offset_s']:.0f} s | {held} | {e['persistent']} | {e['boundary']} |")
++    L += ["", "### Segments (recording × epoch); transitional windows removed", "", "| segment | label | kept windows | transitional dropped | N1+N2 windows | evaluated |", "|--|--|--|--|--|--|"]
++    L += [f"| {s['segment'][:40]} | {s['label']} | {s['windows']} | {s['transitional_dropped']} | {s['joint_N1N2_windows']} | {'yes' if s['kept'] else 'too few'} |" for s in res["segments"]]
++    for cand in show:
++        cells = res["candidates"].get(cand)
++        if not cells:
++            continue
++        L += ["", f"### Candidate `{cand}` (window-block CIs, optimistic; session-blocked shown where ≥ 2 recordings per class exist)", "",
++              "| protocol/group | empty windows | walking AUC | still AUC | fan AUC | walking TPR@1% | still TPR@1% | empty FPR@1% | fan FPR@1% | empty-vs-empty gate C4 |", "|--|--|--|--|--|--|--|--|--|--|"]
++        for g, c in cells.items():
++            ctrl = c["empty_vs_empty_control"]
++            gate = "n/a (needs ≥ 2 empties)" if ctrl.get("passes") is None else f"{'pass' if ctrl['passes'] else 'FAIL'} (worst sym. upper {ctrl['worst_symmetric_upper_bound']:.2f})"
++            L.append(f"| {g} | {c['n_empty_windows']} | {_cell(c['auc'].get('walking'))} | {_cell(c['auc'].get('still'))} | {_cell(c['auc'].get('empty_fan'))} | "
++                     f"{_cell(c['tpr'].get('walking@1%'))} | {_cell(c['tpr'].get('still@1%'))} | {_cell(c['fpr'].get('empty@1%'))} | {_cell(c['fpr'].get('empty_fan@1%'))} | {gate} |")
++    return "\n".join(L) + "\n"
++
++
++def main() -> None:
++    res = run()
++    (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
++    dump_json(OUT_DIR / "results" / "epoch_eval.json", res)
++    (OUT_DIR / "results" / "epoch_eval_tables.md").write_text(render(res), encoding="utf-8")
++    print("wrote results/epoch_eval.json and results/epoch_eval_tables.md;", len(res["boundaries"]), "boundaries,", len(res["segments"]), "segments")
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epochs.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epochs.py"
+new file mode 100644
+index 0000000..6d1c7aa
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\epochs.py"	
+@@ -0,0 +1,260 @@
++"""Link-state epochs: split recordings where a node's link changed, so empties from different link states are never pooled.
++
++Why: node 1 stepped from about -36 to -47 dBm (and its frame rate collapsed) at +195 s inside the s7 walking recording
++and stayed there for ~1.5 h (PS-EVAL-006). Scores calibrated on one link state are not valid in another.
++
++Per node and recording, on a 1 s grid (median RSSI, frame count):
++  * rssi_step     : |median(next HOLD s) - median(previous PRE s)| >= STEP_DB, and >= 90 % of the HOLD seconds are beyond STEP_DB
++                    on the same side (the step is HELD, not a one-second dip);
++  * rate_collapse : median frame rate over the next HOLD s <= COLLAPSE x the previous PRE s median (>= 80 % of seconds below
++                    0.85 x baseline), baseline >= MIN_BASELINE_FPS.
++Between consecutive recordings of the same day the last/first EDGE_S seconds are compared the same way (the change happened
++in an unrecorded gap). A new calendar day always starts a new epoch (nodes may have been moved; nothing says otherwise).
++
++Epoch boundaries for a node SET are the union of that set's events. The time from PRE_MARGIN_S before an in-recording event to
++SETTLE_S after it is TRANSITIONAL and must be excluded from detection evaluations. The CAUSE of an event is never inferred here.
++"""
++from __future__ import annotations
++
++import bisect
++from dataclasses import dataclass, field, replace
++from datetime import datetime, timezone
++
++import numpy as np
++
++from .recordings import NodeSeries
++
++STEP_DB = 6.0
++HOLD_S = 10
++PRE_S = 30
++COLLAPSE = 0.7
++MIN_BASELINE_FPS = 20.0
++EDGE_S = 30
++PRE_MARGIN_S = 5
++SETTLE_S = 30
++HELD_FRACTION = 0.9
++COLLAPSE_FRACTION = 0.8
++
++
++@dataclass(frozen=True)
++class Event:
++    node: int
++    t_ms: int            # absolute (recorder host clock) onset
++    kind: str            # rssi_step | rate_collapse | gap_step | gap_collapse | day_boundary
++    delta_db: float | None
++    fps_before: float | None
++    fps_after: float | None
++    rssi_before: float | None
++    rssi_after: float | None
++    in_gap: bool = False
++    persistent: bool | None = None   # new level also holds at the end of the recording AND at the start of the next one
++    held_s: float | None = None      # seconds the new level held before returning toward the old one (or to the recording end)
++    reversal: bool = False           # returns to the level before the previous step: the end of an excursion, not a new link state
++
++    def label(self) -> str:
++        bits = [f"N{self.node} {self.kind}"]
++        if self.delta_db is not None:
++            bits.append(f"{self.delta_db:+.0f} dB ({self.rssi_before:.0f} -> {self.rssi_after:.0f} dBm)")
++        if self.fps_before is not None and self.fps_after is not None:
++            bits.append(f"fps {self.fps_before:.0f} -> {self.fps_after:.0f}")
++        return " ".join(bits)
++
++
++def second_series(node: NodeSeries, t0_ms: int, n_sec: int) -> tuple[np.ndarray, np.ndarray]:
++    """(median RSSI per second [NaN where no frames], frames per second) on a 1 s grid starting at t0_ms."""
++    sec = ((node.t - t0_ms) // 1000).astype(np.int64)
++    keep = (sec >= 0) & (sec < n_sec)
++    sec, rssi = sec[keep], node.rssi[keep]
++    fps = np.bincount(sec, minlength=n_sec).astype(np.float64)
++    med = np.full(n_sec, np.nan)
++    if sec.size:
++        order = np.argsort(sec, kind="stable")
++        sec, rssi = sec[order], rssi[order]
++        bounds = np.flatnonzero(np.diff(sec)) + 1
++        for s_idx, chunk in zip(sec[np.concatenate([[0], bounds])], np.split(rssi, bounds)):
++            if np.isfinite(chunk).any():
++                med[s_idx] = np.nanmedian(chunk)
++    return med, fps
++
++
++def _nanmed(x: np.ndarray) -> float:
++    return float(np.nanmedian(x)) if np.isfinite(x).any() else float("nan")
++
++
++def _held_seconds(rssi: np.ndarray, s: int, base: float, step_db: float, calm: int = 5) -> float:
++    """Seconds from onset ``s`` until RSSI is back within step_db/2 of ``base`` for ``calm`` consecutive seconds (or the end)."""
++    back = np.isfinite(rssi) & (np.abs(rssi - base) < step_db / 2)
++    run = 0
++    for k in range(s, len(rssi)):
++        run = run + 1 if back[k] else 0
++        if run >= calm:
++            return float(k - calm + 1 - s)
++    return float(len(rssi) - s)
++
++
++def detect_events(rssi: np.ndarray, fps: np.ndarray, t0_ms: int, node: int, *, pre: int = PRE_S, hold: int = HOLD_S, step_db: float = STEP_DB) -> list[Event]:
++    """Held RSSI steps and frame-rate collapses inside one recording (onset = first second of the earliest qualifying window)."""
++    events: list[Event] = []
++    n = len(rssi)
++    quiet_until = {"rssi_up": 0, "rssi_down": 0, "rate_collapse": 0}  # per direction: a step and its REVERSAL are both real events
++    for s in range(pre, n - hold + 1):
++        before_r, after_r = rssi[s - pre:s], rssi[s:s + hold]
++        before_f, after_f = fps[s - pre:s], fps[s:s + hold]
++        base, new = _nanmed(before_r), _nanmed(after_r)
++        direction = "rssi_up" if new > base else "rssi_down"
++        if np.isfinite(base) and np.isfinite(new) and s >= quiet_until[direction]:
++            if abs(new - base) >= step_db:
++                beyond = np.sign(new - base) * (after_r - base) >= step_db
++                if np.isfinite(after_r).sum() >= 0.5 * hold and beyond.sum() / max(1, np.isfinite(after_r).sum()) >= HELD_FRACTION:
++                    events.append(Event(node, t0_ms + s * 1000, "rssi_step", new - base, float(np.median(before_f)), float(np.median(after_f)), base, new, held_s=_held_seconds(rssi, s, base, step_db)))
++                    quiet_until[direction] = s + pre
++        if s >= quiet_until["rate_collapse"]:
++            base_f, new_f = float(np.median(before_f)), float(np.median(after_f))
++            if base_f >= MIN_BASELINE_FPS and new_f <= COLLAPSE * base_f and (after_f <= 0.85 * base_f).mean() >= COLLAPSE_FRACTION:
++                events.append(Event(node, t0_ms + s * 1000, "rate_collapse", None, base_f, new_f, _nanmed(before_r), _nanmed(after_r)))
++                quiet_until["rate_collapse"] = s + pre
++    return _mark_reversals(sorted(events, key=lambda e: e.t_ms))
++
++
++def _mark_reversals(events: list[Event]) -> list[Event]:
++    out: list[Event] = []
++    for i, e in enumerate(events):
++        prev = next((p for p in reversed(events[:i]) if p.kind == "rssi_step"), None)
++        if (
++            e.kind == "rssi_step"
++            and prev is not None
++            and np.sign(e.delta_db) != np.sign(prev.delta_db)
++            and abs(e.rssi_after - prev.rssi_before) <= PERSIST_DB
++            and e.t_ms - prev.t_ms <= (PRE_S + HOLD_S) * 1000
++        ):
++            e = replace(e, reversal=True)
++        out.append(e)
++    return out
++
++
++def edge_stats(rssi: np.ndarray, fps: np.ndarray, *, last: bool, edge: int = EDGE_S) -> tuple[float, float]:
++    sl = slice(max(0, len(rssi) - edge), len(rssi)) if last else slice(0, min(len(rssi), edge))
++    return _nanmed(rssi[sl]), float(np.median(fps[sl]))
++
++
++@dataclass
++class RecordingLinks:
++    """Everything the epoch logic needs about one recording."""
++    rid: str
++    day: str
++    t_start_ms: int
++    t_end_ms: int
++    label: str = ""
++    events: dict[int, list[Event]] = field(default_factory=dict)             # node -> in-recording events
++    edges: dict[int, dict[str, tuple[float, float]]] = field(default_factory=dict)  # node -> {"first": (rssi, fps), "last": (...)}
++
++
++EMPTY_LABELS = ("empty", "empty_fan")
++PERSIST_DB = 3.0
++
++
++def analyze_recording(rid: str, day: str, nodes: dict[int, NodeSeries], t_start_ms: int, t_end_ms: int, label: str = "") -> RecordingLinks:
++    n_sec = int((t_end_ms - t_start_ms) // 1000) + 1
++    out = RecordingLinks(rid, day, t_start_ms, t_end_ms, label)
++    for node, series in nodes.items():
++        rssi, fps = second_series(series, t_start_ms, n_sec)
++        out.events[node] = detect_events(rssi, fps, t_start_ms, node)
++        out.edges[node] = {"first": edge_stats(rssi, fps, last=False), "last": edge_stats(rssi, fps, last=True)}
++    return out
++
++
++def gap_events(prev: RecordingLinks, nxt: RecordingLinks, *, step_db: float = STEP_DB) -> list[Event]:
++    """Events between two consecutive recordings (same or different day). The change happened somewhere in the gap."""
++    ev: list[Event] = []
++    if prev.day != nxt.day:
++        return [Event(0, nxt.t_start_ms, "day_boundary", None, None, None, None, None, in_gap=True)]
++    for node in sorted(set(prev.edges) & set(nxt.edges)):
++        (r0, f0), (r1, f1) = prev.edges[node]["last"], nxt.edges[node]["first"]
++        if np.isfinite(r0) and np.isfinite(r1) and abs(r1 - r0) >= step_db:
++            ev.append(Event(node, nxt.t_start_ms, "gap_step", r1 - r0, f0, f1, r0, r1, in_gap=True))
++        elif f0 >= MIN_BASELINE_FPS and f1 <= COLLAPSE * f0:
++            ev.append(Event(node, nxt.t_start_ms, "gap_collapse", None, f0, f1, r0, r1, in_gap=True))
++    return ev
++
++
++def classify_persistence(links: list[RecordingLinks]) -> list[RecordingLinks]:
++    """Mark every in-recording event persistent or not (in place; returns the chronologically sorted list).
++
++    rssi_step: persistent iff the median of the recording's last EDGE_S seconds is within PERSIST_DB of the new level AND the
++    next recording of the same day (if any) starts within PERSIST_DB of it. rate_collapse: the same with frame rates (<= 0.85 x
++    the pre-event rate). With no next recording the event is persistent=None (cannot be confirmed)."""
++    links.sort(key=lambda r: r.t_start_ms)
++    for i, rec in enumerate(links):
++        nxt = links[i + 1] if i + 1 < len(links) and links[i + 1].day == rec.day else None
++        for node, evs in rec.events.items():
++            for k, e in enumerate(evs):
++                last_r, last_f = rec.edges[node]["last"]
++                nxt_r, nxt_f = nxt.edges[node]["first"] if nxt and node in nxt.edges else (float("nan"), float("nan"))
++                if e.kind == "rssi_step":
++                    here = bool(np.isfinite(last_r) and abs(last_r - e.rssi_after) <= PERSIST_DB)
++                    ahead = None if nxt is None else bool(np.isfinite(nxt_r) and abs(nxt_r - e.rssi_after) <= PERSIST_DB)
++                else:
++                    here = bool(last_f <= 0.85 * e.fps_before)
++                    ahead = None if nxt is None else bool(nxt_f <= 0.85 * e.fps_before)
++                verdict = None if ahead is None else (here and ahead)
++                evs[k] = replace(e, persistent=verdict)
++    return links
++
++
++MIN_EMPTY_BOUNDARY_HOLD_S = 60.0
++
++
++def is_boundary(rec: RecordingLinks, e: Event) -> bool:
++    """A persistent change always splits. In an EMPTY/fan recording a non-persistent change splits only if it HELD
++    >= MIN_EMPTY_BOUNDARY_HOLD_S (nobody legitimately changes the link there, but a 10-20 s flicker is an excursion, not a new
++    link state). In an occupied recording a non-persistent step may be the person's own body, so it only warns."""
++    if e.reversal:
++        return False
++    if e.persistent:
++        return True
++    return rec.label in EMPTY_LABELS and e.held_s is not None and e.held_s >= MIN_EMPTY_BOUNDARY_HOLD_S
++
++
++@dataclass
++class Timeline:
++    """Epoch boundaries for one node set."""
++    nodes: tuple[int, ...]
++    boundaries: list[tuple[int, str]]                     # (t_ms, reason), sorted
++    transitional: list[tuple[int, int, str]]              # (t_start_ms, t_end_ms, reason)
++    _times: list[int] = field(default_factory=list)
++
++    def __post_init__(self) -> None:
++        self._times = [b[0] for b in self.boundaries]
++
++    def epoch_index(self, t_ms: int) -> int:
++        return bisect.bisect_right(self._times, t_ms)
++
++    def is_transitional(self, t_ms: int) -> bool:
++        return any(a <= t_ms < b for a, b, _ in self.transitional)
++
++    def epoch_name(self, t_ms: int) -> str:
++        return f"E{self.epoch_index(t_ms) + 1:02d}"
++
++
++def build_timeline(links: list[RecordingLinks], nodes: tuple[int, ...]) -> Timeline:
++    """links must cover every recording of the study (any order); boundaries use only events of ``nodes``."""
++    links = sorted(links, key=lambda r: r.t_start_ms)
++    boundaries: list[tuple[int, str]] = []
++    transitional: list[tuple[int, int, str]] = []
++    for i, rec in enumerate(links):
++        for node in nodes:
++            for e in rec.events.get(node, []):
++                if not is_boundary(rec, e):
++                    continue  # ambiguous (possibly the occupant); reported, not used to split
++                boundaries.append((e.t_ms, e.label()))
++                transitional.append((e.t_ms - PRE_MARGIN_S * 1000, e.t_ms + SETTLE_S * 1000, e.label()))
++        if i > 0:
++            for e in gap_events(links[i - 1], rec):
++                if e.kind == "day_boundary" or e.node in nodes:
++                    boundaries.append((e.t_ms, e.label() if e.kind != "day_boundary" else "new calendar day"))
++    boundaries.sort()
++    return Timeline(tuple(nodes), boundaries, sorted(transitional))
++
++
++def iso(ms: int) -> str:
++    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\movement.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\movement.py"
+new file mode 100644
+index 0000000..a983772
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\movement.py"	
+@@ -0,0 +1,163 @@
++"""MOVEMENT SCORE for the live movement view -- NOT a presence detector and NOT a detection candidate.
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.movement
++
++    score_n(t) = x_n(t) - P25( x_n over the same node's PREVIOUS L seconds )      (causal: only windows before t)
++    fused      = max over the chosen nodes, on windows where every chosen node has a score
++
++x is a per-window feature (perturb, perturb_agc, decor), L in {45, 90} s, node sets N1+N2 and all four. There is no training
++set, no reference recording and no threshold: the baseline is the node's own recent past. Consequences that MUST be shown
++wherever this is displayed: it fades under SUSTAINED motion (the baseline rises to meet the signal) and it reads ZERO for a
++MOTIONLESS person. So it can only say "something changed recently on this link", never "someone is here", never "the room is
++empty". It is evaluated within link-state epochs first (epochs.py), with session-blocked CIs where >= 2 recordings per class
++exist, the empty-vs-empty gate (C4) and the fan recording as a negative control. Windows closer than L s to a segment start are
++warm-up (no score), so a baseline never spans an epoch boundary.
++"""
++from __future__ import annotations
++
++import numpy as np
++
++from . import epoch_eval as ee
++from . import epochs as ep
++from .features import fuse_max
++from .jsonutil import dump_json
++from .provenance import default_out_dir, provenance
++from .stats import block_bootstrap_auc, empty_pair_control, session_block_auc
++from .tables import RecTables, load_all
++
++OUT_DIR = default_out_dir()
++WINDOW_S = 1.5
++LS = (45, 90)
++FEATS = ("perturb", "perturb_agc", "decor")
++NODE_SETS = ((1, 2), (1, 2, 3, 4))
++QUANTILE = 25.0
++MIN_PREVIOUS_FRACTION = 0.8
++N_BOOT = 300
++MIN_WIN = 60
++POSITIVE = ("walking", "still", "two_people")
++CAVEAT = ("movement score: relative to this node's own recent past; fades under sustained motion and is zero for a motionless person; "
++          "NOT presence, and never evidence that a room is empty")
++
++
++def causal_score(k: np.ndarray, x: np.ndarray, l_seconds: int, q: float = QUANTILE, min_fraction: float = MIN_PREVIOUS_FRACTION) -> np.ndarray:
++    """x_t minus the q-th percentile of x over the previous ``l_seconds`` (windows strictly before t). NaN when fewer than
++    ``min_fraction`` of the expected previous windows exist (warm-up, gaps) or x_t is not finite."""
++    span = int(round(l_seconds / WINDOW_S))
++    need = int(np.ceil(min_fraction * span))
++    out = np.full(len(k), np.nan)
++    for i in range(len(k)):
++        lo, hi = np.searchsorted(k, k[i] - span), np.searchsorted(k, k[i])  # windows with k in [k_i - span, k_i)
++        prev = x[lo:hi]
++        prev = prev[np.isfinite(prev)]
++        if len(prev) >= need and np.isfinite(x[i]):
++            out[i] = x[i] - np.percentile(prev, q)
++    return out
++
++
++def fused_scores(seg: RecTables, feat: str, l_seconds: int, nodes: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
++    """(window index, fused movement score) of one segment: per-node causal scores, then the max over ``nodes``."""
++    if any(n not in seg.nodes for n in nodes):
++        return np.zeros(0, dtype=np.int64), np.zeros(0)
++    tables = {n: {"k": seg.nodes[n]["k"], "move": causal_score(seg.nodes[n]["k"], seg.nodes[n][feat], l_seconds)} for n in nodes}
++    return fuse_max(tables, nodes, "move")
++
++
++def _ci(r) -> dict | str:
++    return r if isinstance(r, dict) else "insufficient data"
++
++
++def evaluate_group(scores: dict[str, tuple[str, np.ndarray]]) -> dict:
++    """scores: segment id -> (label, time-ordered fused scores). Reports each positive class and the fan control against the
++    EMPTY segments of this group, plus the empty-vs-empty gate. Cells are 'insufficient data' rather than invented numbers."""
++    by = lambda lab: {sid: v for sid, (l, v) in scores.items() if l == lab and len(v) >= MIN_WIN}
++    neg = by("empty")
++    negs = np.concatenate(list(neg.values())) if neg else np.zeros(0)
++    cell: dict = {"n_empty_segments": len(neg), "n_empty_windows": int(negs.size), "auc": {}, "auc_session_blocked": {}}
++    for cls in (*POSITIVE, "empty_fan"):
++        pos = by(cls)
++        ps = np.concatenate(list(pos.values())) if pos else np.zeros(0)
++        if ps.size < MIN_WIN or negs.size < MIN_WIN:
++            cell["auc"][cls] = cell["auc_session_blocked"][cls] = "insufficient data"
++            continue
++        cell["auc"][cls] = block_bootstrap_auc(ps, negs, n_boot=N_BOOT)
++        cell["auc_session_blocked"][cls] = session_block_auc(pos, neg, n_boot=N_BOOT)
++    cell["empty_vs_empty_control"] = empty_pair_control(neg, n_boot=N_BOOT)
++    cell["n_segments_per_class"] = {lab: len(by(lab)) for lab in (*POSITIVE, "empty_fan", "empty")}
++    return cell
++
++
++def median_by_third(v: np.ndarray) -> list[float] | None:
++    """Median score in the first, middle and last third of a segment (fading under sustained motion shows as a falling sequence)."""
++    if len(v) < 3 * 20:
++        return None
++    return [float(np.median(c)) for c in np.array_split(v, 3)]
++
++
++def run(tabs: dict[str, RecTables] | None = None, links: list[ep.RecordingLinks] | None = None) -> dict:
++    tabs = tabs or load_all()
++    links = links or ee.load_links()
++    out: dict = {"provenance": provenance("python -m scripts.presence_eval.movement", sorted(t.name for t in tabs.values())), "caveat": CAVEAT,
++                 "definition": {"quantile": QUANTILE, "L_seconds": LS, "features": FEATS, "node_sets": NODE_SETS, "min_previous_fraction": MIN_PREVIOUS_FRACTION},
++                 "not_a_detection_candidate": True, "variants": {}}
++    for nodes in NODE_SETS:
++        tl = ep.build_timeline(links, nodes)
++        usable = {rid: t for rid, t in tabs.items() if all(n in t.nodes for n in nodes)}
++        low = [rid for rid, t in usable.items() if min(len(t.nodes[n]["k"]) for n in nodes) / max(1.0, t.duration_s / WINDOW_S) < ee.MIN_GRID_COVERAGE]
++        segs, log = ee.make_segments({r: t for r, t in usable.items() if r not in low}, tl, need=nodes)
++        for feat in FEATS:
++            for l_s in LS:
++                scored = {sid: (seg.label, fused_scores(seg, feat, l_s, nodes)[1]) for sid, seg in segs.items()}
++                epochs = sorted({ee.epoch_of(s) for s in segs.values()})
++                variant = {
++                    "within_epoch": {e: evaluate_group({sid: v for sid, v in scored.items() if ee.epoch_of(segs[sid]) == e}) for e in epochs},
++                    "across_epochs": evaluate_group(scored),
++                    "median_score_by_third": {sid: median_by_third(v[1]) for sid, v in scored.items()},
++                    "warmup_windows_without_score": {sid: int(len(segs[sid].nodes[min(nodes)]["k"]) - len(v[1])) for sid, v in scored.items()},
++                }
++                out["variants"][f"{'+'.join(f'N{n}' for n in nodes)}/{feat}/L{l_s}"] = variant
++        out.setdefault("segments", {})["+".join(f"N{n}" for n in nodes)] = log
++        out.setdefault("excluded_low_coverage", {})["+".join(f"N{n}" for n in nodes)] = low
++    return out
++
++
++def _c(v) -> str:
++    if not isinstance(v, dict):
++        return "n/a"
++    if v.get("auc") is None:
++        return "n/a"
++    lo = v.get("lo")
++    return f"{v['auc']:.2f}" + (f" [{lo:.2f}, {v['hi']:.2f}]" if lo is not None else " [no CI]")
++
++
++def render(res: dict) -> str:
++    L = ["# Movement score (not a presence detector)", "", f"**{res['caveat']}.**", "",
++         "AUC = movement score of the named class vs the EMPTY segments of the same group (an epoch, or all epochs). The first interval is a "
++         "window-block bootstrap (optimistic); `sb` is the session-blocked interval (needs ≥ 2 recordings in each class, otherwise `[no CI]`).", ""]
++    for name, v in res["variants"].items():
++        L += [f"## {name}", "", "| group | empties | walking | still | two_people | fan (negative control) | empty-vs-empty C4 |", "|--|--|--|--|--|--|--|"]
++        groups = {**{f"epoch {e}": c for e, c in v["within_epoch"].items()}, "ACROSS epochs": v["across_epochs"]}
++        for g, c in groups.items():
++            ctrl = c["empty_vs_empty_control"]
++            gate = "n/a (< 2 empties)" if ctrl.get("passes") is None else f"{'pass' if ctrl['passes'] else 'FAIL'} ({ctrl['worst_symmetric_upper_bound']:.2f})"
++            sb = {k: c["auc_session_blocked"].get(k) for k in (*POSITIVE, "empty_fan")}
++            cells = [f"{_c(c['auc'].get(k))}" + (f" sb {_c(sb[k])}" if isinstance(sb[k], dict) and sb[k].get("lo") is not None else "") for k in (*POSITIVE, "empty_fan")]
++            L.append(f"| {g} | {c['n_empty_segments']} seg / {c['n_empty_windows']} win | " + " | ".join(cells) + f" | {gate} |")
++        L.append("")
++    fade = res["variants"].get("N1+N2/decor/L45")
++    if fade:
++        L += ["## Does it fade? median score by third of each segment (N1+N2/decor/L45)", "", "| segment | first third | middle | last third |", "|--|--|--|--|"]
++        L += [f"| {sid} | {m[0]:.3g} | {m[1]:.3g} | {m[2]:.3g} |" for sid, m in fade["median_score_by_third"].items() if m]
++        L.append("")
++    return "\n".join(L)
++
++
++def main() -> None:
++    res = run()
++    (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
++    dump_json(OUT_DIR / "results" / "movement_score.json", res)
++    (OUT_DIR / "results" / "movement_score_tables.md").write_text(render(res), encoding="utf-8")
++    print("wrote results/movement_score.json and results/movement_score_tables.md;", len(res["variants"]), "variants")
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_epochs.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_epochs.py"
+new file mode 100644
+index 0000000..923f28a
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_epochs.py"	
+@@ -0,0 +1,201 @@
++"""Addendum A: per-node link-state step detector, epochs, transitional exclusion, and no pooling of empties across epochs."""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from scripts.presence_eval import epoch_eval as ee
++from scripts.presence_eval import epochs as ep
++from scripts.presence_eval.features import COVARIATES, FEATURES
++from scripts.presence_eval.tables import RecTables
++
++T0 = 1_793_130_000_000
++
++
++def series(n: int, level: float = -36.0, fps: float = 66.0) -> tuple[np.ndarray, np.ndarray]:
++    return np.full(n, level), np.full(n, fps)
++
++
++def detect(r: np.ndarray, f: np.ndarray) -> list[ep.Event]:
++    return ep.detect_events(r, f, T0, node=1)
++
++
++# ---- detector -----------------------------------------------------------------------------------------------------
++
++def test_a_held_rssi_step_is_detected_near_its_onset_with_delta_and_hold() -> None:
++    r, f = series(300)
++    r[195:] = -47.0                                    # the s7 pattern: -36 -> -47 and it stays
++    ev = [e for e in detect(r, f) if e.kind == "rssi_step"]
++    assert len(ev) == 1
++    e = ev[0]
++    assert abs((e.t_ms - T0) / 1000 - 195) <= 2 and e.delta_db == pytest.approx(-11.0, abs=0.5)
++    assert e.rssi_before == pytest.approx(-36.0) and e.rssi_after == pytest.approx(-47.0) and e.held_s == pytest.approx(105.0, abs=1)
++
++
++def test_a_one_second_dip_and_a_short_excursion_are_not_steps() -> None:
++    r, f = series(300)
++    r[203] = -71.0                                     # node 4's one-second dip
++    r[120:127] = -43.0                                 # 7 dB for 7 s: shorter than HOLD_S
++    assert [e for e in detect(r, f) if e.kind == "rssi_step"] == []
++
++
++def test_a_steady_link_has_no_events_and_a_step_below_6_db_is_ignored() -> None:
++    r, f = series(300)
++    assert detect(r, f) == []
++    r[150:] = -41.0                                    # 5 dB
++    assert detect(r, f) == []
++
++
++def test_a_step_and_its_reversal_within_30_s_are_both_detected() -> None:
++    r, f = series(300)
++    r[100:125] = -47.0                                 # down 11 dB for 25 s, then back
++    ev = [e for e in detect(r, f) if e.kind == "rssi_step"]
++    assert [round(e.delta_db) for e in ev] == [-11, 11]
++    assert [e.reversal for e in ev] == [False, True]               # the return to the old level is not a new link state
++
++
++def test_a_held_excursion_reports_how_long_it_held() -> None:
++    r, f = series(300)
++    r[100:116] = -43.0                                 # the s5 flicker: 7 dB for 16 s
++    ev = [e for e in detect(r, f) if e.kind == "rssi_step"]
++    assert 14 <= ev[0].held_s <= 17 and ev[0].reversal is False
++    assert [e.reversal for e in ev[1:]] == [True] * (len(ev) - 1)   # the way back is flagged, never a boundary
++    empty = links("e", "empty", 0, 300, -36, -36)
++    assert not any(ep.is_boundary(empty, e) for e in ev)           # a 16 s flicker (and its return) never splits an empty recording
++
++
++def test_frame_rate_collapse_is_detected_and_a_low_baseline_is_not() -> None:
++    r, f = series(300)
++    f[200:215] = 20.0                                  # 66 -> 20 frames/s for 15 s
++    ev = [e for e in detect(r, f) if e.kind == "rate_collapse"]
++    assert len(ev) == 1 and ev[0].fps_before == pytest.approx(66.0) and ev[0].fps_after <= 25
++    r2, f2 = series(300, fps=11.0)                     # pre-fix recording: baseline below MIN_BASELINE_FPS
++    f2[200:215] = 2.0
++    assert detect(r2, f2) == []
++
++
++def test_missing_seconds_do_not_crash_and_count_as_zero_frames() -> None:
++    r, f = series(200)
++    r[80:100] = np.nan
++    f[80:100] = 0.0
++    assert all(isinstance(e, ep.Event) for e in detect(r, f))
++
++
++# ---- gaps, persistence, boundaries ----------------------------------------------------------------------------------
++
++def links(rid: str, label: str, start_s: int, dur_s: int, first: float, last: float, day: str = "20261027", fps: float = 66.0) -> ep.RecordingLinks:
++    rl = ep.RecordingLinks(rid, day, T0 + start_s * 1000, T0 + (start_s + dur_s) * 1000, label)
++    rl.events = {1: []}
++    rl.edges = {1: {"first": (first, fps), "last": (last, fps)}}
++    return rl
++
++
++def test_gap_step_day_boundary_and_no_event() -> None:
++    a, b = links("a", "empty", 0, 100, -36, -36), links("b", "empty", 400, 100, -47, -47)
++    assert [e.kind for e in ep.gap_events(a, b)] == ["gap_step"] and ep.gap_events(a, b)[0].delta_db == pytest.approx(-11.0)
++    assert ep.gap_events(a, links("c", "empty", 400, 100, -38, -38)) == []
++    assert [e.kind for e in ep.gap_events(a, links("d", "empty", 400, 100, -36, -36, day="20261028"))] == ["day_boundary"]
++
++
++def test_persistence_requires_the_new_level_to_hold_to_the_end_and_into_the_next_recording() -> None:
++    step = ep.Event(1, T0 + 50_000, "rssi_step", -11.0, 66, 44, -36.0, -47.0, held_s=20.0)
++    a = links("a", "walking", 0, 70, -36, -47)
++    a.events = {1: [step]}
++    b = links("b", "empty", 300, 100, -47, -47)
++    ep.classify_persistence([a, b])
++    assert a.events[1][0].persistent is True and ep.is_boundary(a, a.events[1][0])
++    b2 = links("b2", "empty", 300, 100, -36, -36)                  # the next recording is back at the old level
++    a2 = links("a", "walking", 0, 70, -36, -47)
++    a2.events = {1: [step]}
++    ep.classify_persistence([a2, b2])
++    assert a2.events[1][0].persistent is False
++    last = links("only", "walking", 0, 70, -36, -47)
++    last.events = {1: [step]}
++    ep.classify_persistence([last])
++    assert last.events[1][0].persistent is None                    # no next recording: cannot be confirmed
++
++
++def test_boundary_rules_depend_on_the_label_and_the_hold_time() -> None:
++    short = ep.Event(1, T0, "rssi_step", -7.0, 65, 60, -36.0, -43.0, persistent=False, held_s=16.0)
++    long_ = ep.Event(1, T0, "rssi_step", -7.0, 65, 60, -36.0, -43.0, persistent=False, held_s=120.0)
++    occupied, empty = links("o", "still", 0, 100, -36, -36), links("e", "empty", 0, 100, -36, -36)
++    assert not ep.is_boundary(occupied, long_)                     # may be the person's own body
++    assert not ep.is_boundary(empty, short)                        # a 16 s flicker is an excursion
++    assert ep.is_boundary(empty, long_)                            # long-held change in an EMPTY recording splits
++    assert ep.is_boundary(occupied, ep.Event(1, T0, "rssi_step", -12.0, 63, 44, -35.0, -48.0, persistent=True, held_s=20.0))
++
++
++def test_timeline_marks_the_transitional_interval_and_names_epochs() -> None:
++    a = links("a", "walking", 0, 220, -36, -47)
++    a.events = {1: [ep.Event(1, T0 + 195_000, "rssi_step", -11.0, 66, 44, -36.0, -47.0, persistent=True, held_s=20.0)]}
++    tl = ep.build_timeline([a], (1,))
++    assert tl.epoch_name(T0 + 100_000) == "E01" and tl.epoch_name(T0 + 200_000) == "E02"
++    assert tl.is_transitional(T0 + 191_000) and tl.is_transitional(T0 + 224_000)
++    assert not tl.is_transitional(T0 + 150_000) and not tl.is_transitional(T0 + 226_000)
++    assert ep.build_timeline([a], (2,)).boundaries == []           # events of OTHER nodes do not split this node set
++
++
++# ---- evaluation: no pooling across epochs -----------------------------------------------------------------------------
++
++def rec(rid: str, label: str, n_windows: int, mu: float, seed: int, start_k: int = 0) -> RecTables:
++    rng = np.random.default_rng(seed)
++    t = {f: mu + rng.standard_normal(n_windows) for f in FEATURES}
++    t.update({c: np.zeros(n_windows) for c in COVARIATES})
++    t["k"] = np.arange(start_k, start_k + n_windows, dtype=np.int64)
++    t["nframes"] = np.full(n_windows, 90, dtype=np.int64)
++    return RecTables(rid=rid, name=f"x__{rid}__{label}__20261027T000000Z.jsonl", label=label, subject=rid, day="20261027", t0_ms=T0,
++                     duration_s=n_windows * 1.5, parts=1, nodes={1: dict(t), 2: {k: v.copy() for k, v in t.items()}})
++
++
++def two_epoch_timeline(boundary_s: float) -> ep.Timeline:
++    return ep.Timeline((1, 2), [(T0 + int(boundary_s * 1000), "test boundary")], [])
++
++
++def test_segments_split_at_the_boundary_and_never_mix_epochs() -> None:
++    tabs = {"e1": rec("e1", "empty", 400, 0.0, 1)}                  # 600 s; boundary at 300 s
++    segs, log = ee.make_segments(tabs, two_epoch_timeline(300))
++    assert sorted(segs) == ["e1@E01", "e1@E02"]
++    assert {s["epoch"] for s in log} == {"E01", "E02"}
++    k1, k2 = segs["e1@E01"].nodes[1]["k"], segs["e1@E02"].nodes[1]["k"]
++    assert k1.max() < k2.min() and len(k1) + len(k2) == 400
++
++
++def test_transitional_windows_are_removed_from_the_evaluation_and_logged() -> None:
++    tabs = {"w": rec("w", "walking", 300, 0.0, 2)}                  # 450 s
++    tl = ep.Timeline((1, 2), [(T0 + 200_000, "step")], [(T0 + 195_000, T0 + 230_000, "step")])
++    segs, log = ee.make_segments(tabs, tl)
++    kept = np.concatenate([s.nodes[1]["k"] for s in segs.values()])
++    centre = T0 + ((kept + 0.5) * 1500).astype(np.int64)
++    assert not ((centre >= T0 + 195_000) & (centre < T0 + 230_000)).any()
++    assert sum(s["transitional_dropped"] for s in log) == 300 - len(kept)
++
++
++def test_within_epoch_models_train_only_on_empties_of_the_same_epoch_and_cross_uses_one_source_epoch() -> None:
++    tabs = {"eA1": rec("eA1", "empty", 100, 0, 1), "eA2": rec("eA2", "empty", 100, 0, 2, start_k=100),      # epoch E01
++            "eB": rec("eB", "empty", 100, 5, 3, start_k=300), "wB": rec("wB", "walking", 100, 9, 4, start_k=400)}  # epoch E02
++    segs, _ = ee.make_segments(tabs, two_epoch_timeline(300))      # k >= 200 -> after 300 s
++    for sp in ee.splits_within(segs):
++        e = ee.epoch_of(segs[sp.test_id])
++        assert sp.test_id not in sp.train_ids
++        assert all(ee.epoch_of(segs[t]) == e and segs[t].label == "empty" for t in sp.train_ids)
++    for sp in ee.splits_cross(segs):
++        a, b = sp.group.split("->")
++        assert all(ee.epoch_of(segs[t]) == a for t in sp.train_ids) and ee.epoch_of(segs[sp.test_id]) == b and a != b
++
++
++def test_an_epoch_with_a_single_empty_has_no_held_out_empty_so_the_cell_says_insufficient_data() -> None:
++    tabs = {"e": rec("e", "empty", 150, 0, 1), "w": rec("w", "walking", 150, 8, 2, start_k=150)}
++    segs, _ = ee.make_segments(tabs, ep.Timeline((1, 2), [], []))   # a single epoch
++    rows = [r for sp in [ee.splits_within(segs)] for r in ee.tn.run_candidate(segs, sp, "decor", "max")]
++    cell = ee.tn.aggregate(rows)["epoch_within/E01"]
++    assert cell["auc"]["walking"] == "insufficient data" and cell["n_empty_windows"] == 0
++    assert cell["empty_vs_empty_control"]["passes"] is None
++    assert cell["tpr"]["walking@1%"]["rate"] > 0.9                   # positives are still scored against the epoch's empty
++
++
++def test_low_coverage_recordings_are_excluded_not_evaluated_on_chance_bursts() -> None:
++    sparse = rec("old", "walking", 40, 0.0, 5)
++    sparse.duration_s = 400.0                                       # 40 windows on a 267-window grid
++    res = ee.run(nodes=(1, 2), tabs={"old": sparse, "e": rec("e", "empty", 200, 0, 1)}, links=[])
++    assert "old" in res["excluded_low_coverage"] and all("old" not in s["segment"] for s in res["segments"])
++    assert "UNCONFIRMED" in res["cause_of_link_changes"]
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_movement.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_movement.py"
+new file mode 100644
+index 0000000..aa2aef9
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_movement.py"	
+@@ -0,0 +1,144 @@
++"""Addendum B: the movement score is causal, baseline-free, fades under sustained motion, is zero for a motionless person,
++never spans an epoch boundary, and is labelled as NOT presence."""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from scripts.presence_eval import epoch_eval as ee
++from scripts.presence_eval import epochs as ep
++from scripts.presence_eval import movement as mv
++from scripts.presence_eval.features import COVARIATES, FEATURES
++from scripts.presence_eval.tables import RecTables
++
++T0 = 1_793_130_000_000
++L45 = 45
++SPAN45 = 30  # windows of 1.5 s in 45 s
++
++
++def ks(n: int) -> np.ndarray:
++    return np.arange(n, dtype=np.int64)
++
++
++# ---- causality and baseline ---------------------------------------------------------------------------------------
++
++def test_the_score_is_causal_future_values_never_change_past_scores() -> None:
++    rng = np.random.default_rng(1)
++    x = rng.standard_normal(200)
++    k = ks(200)
++    full = mv.causal_score(k, x, L45)
++    changed = x.copy()
++    changed[120:] += 50.0                                   # rewrite the future
++    after = mv.causal_score(k, changed, L45)
++    assert np.array_equal(full[:120], after[:120], equal_nan=True)
++    assert not np.array_equal(full[120:], after[120:], equal_nan=True)
++
++
++def test_score_is_the_window_minus_the_25th_percentile_of_the_previous_L_seconds() -> None:
++    x = np.arange(100, dtype=float)
++    k = ks(100)
++    s = mv.causal_score(k, x, L45)
++    i = 60
++    prev = x[i - SPAN45:i]
++    assert s[i] == pytest.approx(x[i] - np.percentile(prev, 25))
++
++
++def test_warmup_has_no_score_and_gaps_below_the_required_history_give_none() -> None:
++    x = np.zeros(100)
++    s = mv.causal_score(ks(100), x, L45)
++    assert np.isnan(s[:int(np.ceil(0.8 * SPAN45))]).all() and np.isfinite(s[SPAN45 + 5])
++    k = np.concatenate([ks(40), ks(40) + 200])               # a long gap: the history before the gap is too old
++    g = mv.causal_score(k, np.zeros(80), L45)
++    assert np.isfinite(g[39]) and np.isnan(g[40])
++
++
++# ---- what it can and cannot say -------------------------------------------------------------------------------------
++
++def test_a_motionless_person_reads_zero_once_the_baseline_has_settled() -> None:
++    x = np.full(200, 5.0)                                    # elevated from the start and constant: nothing is CHANGING
++    s = mv.causal_score(ks(200), x, L45)
++    assert np.allclose(s[SPAN45:], 0.0)
++
++
++def test_sustained_motion_fades_as_the_baseline_catches_up() -> None:
++    x = np.concatenate([np.zeros(100), np.full(200, 5.0)])  # onset of motion at window 100 that then simply continues
++    s = mv.causal_score(ks(300), x, L45)
++    assert s[100] == pytest.approx(5.0) and s[105] == pytest.approx(5.0)   # the change is visible at first
++    assert s[100 + SPAN45 + 5] == pytest.approx(0.0)                       # ... and is gone after ~L seconds
++    assert np.allclose(s[100 + SPAN45:], 0.0)
++
++
++def test_a_new_burst_after_quiet_is_visible_again() -> None:
++    x = np.zeros(300)
++    x[200:210] = 4.0
++    s = mv.causal_score(ks(300), x, L45)
++    assert s[205] == pytest.approx(4.0) and s[250] == pytest.approx(0.0)
++
++
++# ---- fusion --------------------------------------------------------------------------------------------------------
++
++def seg(rid: str, label: str, n: int, series: dict[int, np.ndarray], start_k: int = 0) -> RecTables:
++    nodes = {}
++    for node, x in series.items():
++        t = {f: x.copy() for f in FEATURES}
++        t.update({c: np.zeros(n) for c in COVARIATES})
++        t["k"] = np.arange(start_k, start_k + n, dtype=np.int64)
++        t["nframes"] = np.full(n, 90, dtype=np.int64)
++        nodes[node] = t
++    return RecTables(rid=rid, name=f"x__{rid}__{label}__20261027T000000Z.jsonl", label=label, subject=rid, day="20261027", t0_ms=T0,
++                     duration_s=n * 1.5, parts=1, nodes=nodes)
++
++
++def test_fusion_is_the_max_over_the_chosen_nodes_on_windows_where_all_have_a_score() -> None:
++    n = 120
++    a, b = np.zeros(n), np.zeros(n)
++    a[80] = 1.0
++    b[80] = 3.0
++    b[90] = 2.0
++    s = seg("s", "walking", n, {1: a, 2: b})
++    k, v = mv.fused_scores(s, "decor", L45, (1, 2))
++    assert v[list(k).index(80)] == pytest.approx(3.0) and v[list(k).index(90)] == pytest.approx(2.0)
++    only1 = mv.fused_scores(s, "decor", L45, (1,))[1]
++    assert only1[list(k).index(80)] == pytest.approx(1.0)
++    assert mv.fused_scores(s, "decor", L45, (1, 2, 3))[1].size == 0     # node 3 absent -> nothing, not zero-filled
++
++
++def test_the_baseline_never_spans_an_epoch_boundary() -> None:
++    n = 200
++    x = np.concatenate([np.zeros(100), np.full(100, 9.0)])          # the link-state level changes at window 100
++    s = seg("r", "empty", n, {1: x, 2: x})
++    tl = ep.Timeline((1, 2), [(T0 + int(100 * 1500), "boundary")], [])
++    segs, _ = ee.make_segments({"r": s}, tl)
++    after = segs["r@E02"]
++    k, v = mv.fused_scores(after, "decor", L45, (1, 2))
++    assert k.min() >= 100 + int(np.ceil(0.8 * SPAN45))               # warm-up restarts at the boundary
++    assert np.allclose(v, 0.0)                                       # the +9 level change is NOT reported as movement
++
++
++# ---- evaluation and labelling -----------------------------------------------------------------------------------------
++
++def test_a_class_with_too_few_windows_or_recordings_is_insufficient_not_a_number() -> None:
++    rng = np.random.default_rng(3)
++    sc = {"w": ("walking", rng.normal(1, 1, 200)), "e1": ("empty", rng.normal(0, 1, 200)), "e2": ("empty", rng.normal(0, 1, 200))}
++    cell = mv.evaluate_group(sc)
++    assert cell["auc"]["walking"]["auc"] > 0.6
++    assert cell["auc_session_blocked"]["walking"]["lo"] is None                 # one walking recording: no session-blocked CI
++    assert "insufficient" in cell["auc_session_blocked"]["walking"]["reason"]
++    assert cell["auc"]["still"] == "insufficient data" and cell["auc"]["empty_fan"] == "insufficient data"
++    assert cell["empty_vs_empty_control"]["passes"] is True
++    shifted = {**sc, "e3": ("empty", rng.normal(1.5, 1, 200))}
++    assert mv.evaluate_group(shifted)["empty_vs_empty_control"]["passes"] is False
++
++
++def test_the_result_is_labelled_a_movement_score_and_never_presence() -> None:
++    rng = np.random.default_rng(4)
++    res = {"caveat": mv.CAVEAT, "variants": {"v": {"within_epoch": {"E01": mv.evaluate_group({"e1": ("empty", rng.normal(0, 1, 100)), "e2": ("empty", rng.normal(0, 1, 100))})},
++                                                   "across_epochs": mv.evaluate_group({}), "median_score_by_third": {}}}}
++    text = mv.render(res)
++    assert "NOT presence" in mv.CAVEAT and "empty" in mv.CAVEAT and "not a presence detector" in text.lower()
++    assert mv.POSITIVE == ("walking", "still", "two_people")
++
++
++def test_median_by_third_shows_a_fade() -> None:
++    fading = np.concatenate([np.full(40, 3.0), np.full(40, 1.0), np.full(40, 0.1)])
++    assert mv.median_by_third(fading) == [3.0, 1.0, 0.1] and mv.median_by_third(np.ones(30)) is None

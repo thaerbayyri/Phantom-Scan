@@ -1,0 +1,1245 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\udp-server.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\udp-server.ts"
+new file mode 100644
+index 0000000..7254e24
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\udp-server.ts"	
+@@ -0,0 +1,772 @@
++import dgram from "dgram";
++import { signalServer } from "./websocket";
++import { phaseTestLogger } from "./phase-test-logger";
++import { reduceCsiFrame } from "./csi-subcarriers";
++import { phyGuard, shouldLogPhyMismatch } from "./phy-guard";
++import type { CSISample } from "@shared/schema";
++import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
++
++const UDP_PORT = parseInt(process.env.UDP_PORT || "5005", 10);
++const UDP_HOST = "0.0.0.0";
++const UDP_RECV_BUFFER_BYTES = 4 * 1024 * 1024;
++
++// Local advisory-only Python AI sidecar (ADR-051): loopback-only by
++// convention, but configurable rather than hardcoded like every other
++// address in this file (Phase-1 bug audit).
++const PY_SIDECAR_PORT = parseInt(process.env.PY_SIDECAR_PORT || "5006", 10);
++const PY_SIDECAR_HOST = process.env.PY_SIDECAR_HOST || "127.0.0.1";
++
++const MAGIC_NUMBER_LE = 0xc5110001;
++const HEARTBEAT_MAGIC_LE = 0xc51100a1;
++/** Phantom Scan firmware rv_feature_state packet (1 Hz per node, board-side DSP). */
++const FEATURE_STATE_MAGIC_LE = 0xc5110006;
++const FEATURE_STATE_MIN_SIZE = 56;
++/** This repo's own firmware vitals packet (edge_vitals_pkt_t, 32 bytes). */
++const EDGE_VITALS_MAGIC_LE = 0xc5110002;
++const EDGE_VITALS_SIZE = 32;
++/** Firmware XOR+RLE compressed CSI (edge tier >= 2). Not decoded here: the
++ *  raw 0xC5110001 stream already feeds the pipeline, so these are counted
++ *  and skipped instead of warned about. */
++const EDGE_COMPRESSED_MAGIC_LE = 0xc5110003;
++/** Full rv_feature_state size incl. trailing CRC32 (bytes 56..59). */
++const FEATURE_STATE_FULL_SIZE = 60;
++const LEGACY_HEADER_SIZE = 20;
++const ADR018_HEADER_SIZE = 32;
++
++type ParsedCsiPacket = {
++    schemaVersion?: number;
++    nodeId: number;
++    seq?: number;
++    freqMhz?: number;
++    noiseDbm?: number;
++    channel?: number;
++    deviceTsUs?: bigint;
++    deviceTsMs?: number;
++    rssi: number;
++    numAntennas: number;
++    numSubcarriers: number;
++    iqData: Buffer;
++};
++
++type ParseCsiPacketOptions = {
++    allowLegacy?: boolean;
++};
++
++type StaticSourcePins = Map<number, string>;
++
++type SequenceMetadata = {
++    seq?: number;
++    deviceTsUs?: bigint;
++    deviceTsMs?: number;
++};
++
++function parseStaticSourcePins(envValue: string | undefined): StaticSourcePins {
++    if (!envValue) {
++        return new Map();
++    }
++
++    try {
++        const parsed = JSON.parse(envValue) as Record<string, unknown>;
++        const pins = new Map<number, string>();
++        for (const [nodeIdRaw, sourceIp] of Object.entries(parsed)) {
++            const nodeId = Number.parseInt(nodeIdRaw, 10);
++            if (!Number.isFinite(nodeId) || typeof sourceIp !== "string" || !sourceIp) {
++                continue;
++            }
++            pins.set(nodeId, sourceIp);
++        }
++        return pins;
++    } catch (error) {
++        console.warn(
++            `[UDP] Failed to parse PHANTOM_STATIC_NODE_SOURCES; expected JSON like ` +
++                `{"1":"10.0.0.11","2":"10.0.0.12"}. Ignoring static pins. Error: ${String(error)}`,
++        );
++        return new Map();
++    }
++}
++
++/**
++ * Anti-spoof guard for the detection input: pins each node_id to the first
++ * source IP that used it, so a rogue/duplicate sender cannot inject fake CSI
++ * (and thus fake presence/motion) under an already-claimed node identity.
++ * Allows legitimate rebinds after 10 s of silence (device reboot + new DHCP IP).
++ */
++export class SourcePinningGuard {
++    /** A pinned source goes stale after this much silence; a new IP may then
++     *  claim the node (device reboot + DHCP renumber), which is NOT a spoof. */
++    static readonly STALE_BINDING_MS = 10_000;
++    /** At most one [UDP][SEC] console line per node per this interval. */
++    static readonly WARN_INTERVAL_MS = 5_000;
++    /** Bounded security-event history. */
++    static readonly MAX_EVENTS = 200;
++
++    private readonly staticPins: StaticSourcePins;
++
++    private bindings = new Map<
++        number,
++        { address: string; port: number; lastAcceptedMs: number }
++    >();
++    private rejectionCount = 0;
++    private lastWarnMs = new Map<number, number>();
++    private securityEvents: Array<{
++        record_type: "security_event";
++        event_type: "node_source_mismatch";
++        node_id: number;
++        expected_source: { ip: string; port: number };
++        actual_source: { ip: string; port: number };
++        packet_kind: "csi_frame" | "feature_state";
++    }> = [];
++
++    constructor(staticPins: StaticSourcePins = new Map()) {
++        this.staticPins = staticPins;
++    }
++
++    check(
++        nodeId: number,
++        source: { address: string; port: number },
++        nowMs: number = Date.now(),
++        packetKind: "csi_frame" | "feature_state" = "csi_frame",
++    ): boolean {
++        const staticallyPinnedIp = this.staticPins.get(nodeId);
++        if (staticallyPinnedIp && staticallyPinnedIp !== source.address) {
++            return this.reject(nodeId, source, packetKind, {
++                ip: staticallyPinnedIp,
++                port: this.bindings.get(nodeId)?.port ?? 0,
++            }, nowMs);
++        }
++
++        const existing = this.bindings.get(nodeId);
++        if (!existing) {
++            this.bindings.set(nodeId, {
++                address: source.address,
++                port: source.port,
++                lastAcceptedMs: nowMs,
++            });
++            return true;
++        }
++
++        if (existing.address === source.address) {
++            // Same device, possibly a new ephemeral UDP port after reboot.
++            if (existing.port !== source.port) {
++                existing.port = source.port;
++            }
++            existing.lastAcceptedMs = nowMs;
++            return true;
++        }
++
++        // Different IP. If the pinned source has been silent past the stale
++        // window, this is a legitimate reconnect (DHCP renumber) — rebind.
++        // A conflicting IP while the pinned source is still actively sending
++        // is the real spoof signal and stays rejected.
++        if (
++            !staticallyPinnedIp &&
++            nowMs - existing.lastAcceptedMs > SourcePinningGuard.STALE_BINDING_MS
++        ) {
++            console.log(
++                `[UDP] node ${nodeId} source rebound after silence: ` +
++                    `${existing.address}:${existing.port} -> ${source.address}:${source.port}`,
++            );
++            existing.address = source.address;
++            existing.port = source.port;
++            existing.lastAcceptedMs = nowMs;
++            return true;
++        }
++
++        return this.reject(
++            nodeId,
++            source,
++            packetKind,
++            { ip: existing.address, port: existing.port },
++            nowMs,
++        );
++    }
++
++    private reject(
++        nodeId: number,
++        source: { address: string; port: number },
++        packetKind: "csi_frame" | "feature_state",
++        expectedSource: { ip: string; port: number },
++        nowMs: number,
++    ): boolean {
++        this.rejectionCount++;
++        const event = {
++            record_type: "security_event" as const,
++            event_type: "node_source_mismatch" as const,
++            node_id: nodeId,
++            expected_source: expectedSource,
++            actual_source: { ip: source.address, port: source.port },
++            packet_kind: packetKind,
++        };
++        this.securityEvents.push(event);
++        if (this.securityEvents.length > SourcePinningGuard.MAX_EVENTS) {
++            this.securityEvents.splice(
++                0,
++                this.securityEvents.length - SourcePinningGuard.MAX_EVENTS,
++            );
++        }
++        const lastWarn = this.lastWarnMs.get(nodeId) ?? 0;
++        if (nowMs - lastWarn >= SourcePinningGuard.WARN_INTERVAL_MS) {
++            this.lastWarnMs.set(nodeId, nowMs);
++            console.warn(
++                `[UDP][SEC] ${JSON.stringify(event)} (rejections for node ${nodeId}: rate-limited log). ` +
++                    `If BOTH boards keep sending, they were likely provisioned with the same node_id — ` +
++                    `re-provision one with a unique id (firmware/esp32-csi-node/esp-flash.py).`,
++            );
++        }
++        return false;
++    }
++
++    getBindings(): Record<string, { address: string; port: number }> {
++        return Object.fromEntries(
++            Array.from(this.bindings.entries()).map(([nodeId, source]) => [
++                String(nodeId),
++                { address: source.address, port: source.port },
++            ])
++        );
++    }
++
++    getRejectionCount(): number {
++        return this.rejectionCount;
++    }
++
++    getSecurityEvents(): Array<{
++        record_type: "security_event";
++        event_type: "node_source_mismatch";
++        node_id: number;
++        expected_source: { ip: string; port: number };
++        actual_source: { ip: string; port: number };
++        packet_kind: "csi_frame" | "feature_state";
++    }> {
++        return [...this.securityEvents];
++    }
++}
++
++export class PacketOrderGuard {
++    private states = new Map<
++        number,
++        {
++            lastSeq?: number;
++            lastDeviceTsUs?: bigint;
++            lastDeviceTsMs?: number;
++            gapCount: number;
++            replayCount: number;
++            outOfOrderCount: number;
++        }
++    >();
++
++    check(nodeId: number, meta: SequenceMetadata): boolean {
++        if (meta.seq === undefined) {
++            return true;
++        }
++
++        const current = this.states.get(nodeId);
++        if (!current) {
++            this.states.set(nodeId, {
++                lastSeq: meta.seq,
++                lastDeviceTsUs: meta.deviceTsUs,
++                lastDeviceTsMs: meta.deviceTsMs,
++                gapCount: 0,
++                replayCount: 0,
++                outOfOrderCount: 0,
++            });
++            return true;
++        }
++
++        const delta = (meta.seq - (current.lastSeq ?? 0)) >>> 0;
++        if (delta === 0) {
++            current.replayCount++;
++            return false;
++        }
++        if (delta >= 0x80000000) {
++            current.outOfOrderCount++;
++            return false;
++        }
++
++        if (
++            meta.deviceTsUs !== undefined &&
++            current.lastDeviceTsUs !== undefined &&
++            meta.deviceTsUs <= current.lastDeviceTsUs
++        ) {
++            current.replayCount++;
++            return false;
++        }
++        if (
++            meta.deviceTsUs === undefined &&
++            meta.deviceTsMs !== undefined &&
++            current.lastDeviceTsMs !== undefined &&
++            meta.deviceTsMs <= current.lastDeviceTsMs
++        ) {
++            current.replayCount++;
++            return false;
++        }
++
++        if (delta > 1) {
++            current.gapCount += delta - 1;
++        }
++        current.lastSeq = meta.seq;
++        if (meta.deviceTsUs !== undefined) {
++            current.lastDeviceTsUs = meta.deviceTsUs;
++        }
++        if (meta.deviceTsMs !== undefined) {
++            current.lastDeviceTsMs = meta.deviceTsMs;
++        }
++        return true;
++    }
++}
++
++export type ParsedFeatureState = {
++    nodeId: number;
++    motion: number;
++    presence: number;
++    respBpm: number;
++    respConf: number;
++    hrBpm: number;
++    hrConf: number;
++    /** Board-reported RSSI (dBm). Only the 0xC5110002 vitals packet carries
++     *  it; rv_feature_state packets leave it undefined. */
++    rssi?: number;
++};
++
++export type PacketKind =
++    | "csi"
++    | "heartbeat"
++    | "vitals"
++    | "feature_state"
++    | "compressed"
++    | "unknown";
++
++/** Classify a datagram by its leading magic (LE u32). Pure helper so the
++ *  dispatch in startUDPServer is unit-testable. */
++export function classifyPacketMagic(msg: Buffer): PacketKind {
++    if (msg.length < 4) {
++        return "unknown";
++    }
++    switch (msg.readUInt32LE(0)) {
++        case MAGIC_NUMBER_LE:
++            return "csi";
++        case HEARTBEAT_MAGIC_LE:
++            return "heartbeat";
++        case EDGE_VITALS_MAGIC_LE:
++            return "vitals";
++        case FEATURE_STATE_MAGIC_LE:
++            return "feature_state";
++        case EDGE_COMPRESSED_MAGIC_LE:
++            return "compressed";
++        default:
++            return "unknown";
++    }
++}
++
++/** IEEE 802.3 CRC32 (poly 0xEDB88320, init/final-xor 0xFFFFFFFF) — matches
++ *  the firmware's rv_feature_state_finalize bit-by-bit implementation. */
++export function crc32IEEE(buf: Buffer, length: number): number {
++    let crc = 0xffffffff;
++    for (let i = 0; i < length; i++) {
++        crc ^= buf[i];
++        for (let bit = 0; bit < 8; bit++) {
++            crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
++        }
++    }
++    return (crc ^ 0xffffffff) >>> 0;
++}
++
++/**
++ * Parse the Phantom Scan rv_feature_state packet (magic 0xC5110006, ≥56 bytes LE).
++ * Field offsets match the archived scripts/ruview-dashboard-bridge.py parse_feat()
++ * for continuity: node_id u8 @4; f32 motion @16, presence @20, resp_bpm @24,
++ * resp_conf @28, hr_bpm @32, hr_conf @36.
++ */
++export function parseFeatureStatePacket(msg: Buffer): ParsedFeatureState | null {
++    if (msg.length < FEATURE_STATE_MIN_SIZE) {
++        return null;
++    }
++    if (msg.readUInt32LE(0) !== FEATURE_STATE_MAGIC_LE) {
++        return null;
++    }
++    // Full 60-byte packets carry a trailing CRC32 over bytes 0..55; reject on
++    // mismatch (corrupted datagram). 56-59 byte packets predate the CRC and
++    // stay accepted for backward compatibility.
++    if (msg.length >= FEATURE_STATE_FULL_SIZE) {
++        const expected = msg.readUInt32LE(FEATURE_STATE_FULL_SIZE - 4);
++        if (crc32IEEE(msg, FEATURE_STATE_FULL_SIZE - 4) !== expected) {
++            return null;
++        }
++    }
++    return {
++        nodeId: msg.readUInt8(4),
++        motion: msg.readFloatLE(16),
++        presence: msg.readFloatLE(20),
++        respBpm: msg.readFloatLE(24),
++        respConf: msg.readFloatLE(28),
++        hrBpm: msg.readFloatLE(32),
++        hrConf: msg.readFloatLE(36),
++    };
++}
++
++/**
++ * Parse this repo's own firmware vitals packet (magic 0xC5110002, 32 bytes LE;
++ * edge_vitals_pkt_t in firmware/esp32-csi-node/main/edge_processing.h):
++ * node_id u8 @4; flags u8 @5 (bit0 presence, bit1 fall, bit2 motion);
++ * breathing u16 @6 (BPM*100); heart u32 @8 (BPM*10000); rssi i8 @12;
++ * motion_energy f32 @16; presence_score f32 @20; timestamp_ms u32 @24.
++ * Mapped onto the same ParsedFeatureState the 0xC5110006 feature-state packet
++ * produces, so either firmware populates the dashboard's Board DSP card.
++ */
++export function parseEdgeVitalsPacket(msg: Buffer): ParsedFeatureState | null {
++    if (msg.length < EDGE_VITALS_SIZE) {
++        return null;
++    }
++    if (msg.readUInt32LE(0) !== EDGE_VITALS_MAGIC_LE) {
++        return null;
++    }
++    const respBpm = msg.readUInt16LE(6) / 100;
++    const hrBpm = msg.readUInt32LE(8) / 10000;
++    return {
++        nodeId: msg.readUInt8(4),
++        motion: msg.readFloatLE(16),
++        presence: msg.readFloatLE(20),
++        rssi: msg.readInt8(12),
++        respBpm,
++        // edge_vitals_pkt_t carries no confidence fields: report full
++        // confidence for a non-zero (sanity-clamped on the board) estimate.
++        respConf: respBpm > 0 ? 1 : 0,
++        hrBpm,
++        hrConf: hrBpm > 0 ? 1 : 0,
++    };
++}
++
++/**
++ * Parse a raw CSI frame (magic 0xC5110001) into header fields + IQ payload.
++ * Live ingest accepts only the ADR-018 32-byte header (schema v1:
++ * seq/freq/noise/channel/device timestamps). The superseded legacy 20-byte
++ * header is available only to explicit offline compatibility tooling via
++ * `allowLegacy` / `PHANTOM_ALLOW_LEGACY_CSI`. Heartbeats (0xC51100A1) and
++ * malformed/short packets return null and are ignored.
++ */
++export function parseCsiPacket(
++    msg: Buffer,
++    options: ParseCsiPacketOptions = {},
++): ParsedCsiPacket | null {
++    if (msg.length < 4) {
++        return null;
++    }
++
++    const magic = msg.readUInt32LE(0);
++    if (magic === HEARTBEAT_MAGIC_LE) {
++        return null;
++    }
++    if (magic !== MAGIC_NUMBER_LE) {
++        return null;
++    }
++
++    // Preferred path: ADR-018 32-byte header, schema version 1.
++    if (msg.length >= ADR018_HEADER_SIZE) {
++        const schemaVersion = msg.readUInt8(4);
++        if (schemaVersion === 1) {
++            const nodeId = msg.readUInt8(5);
++            const numAntennas = msg.readUInt8(6);
++            const numSubcarriers = msg.readUInt16LE(7);
++            const freqMhz = msg.readUInt32LE(9);
++            const seq = msg.readUInt32LE(13);
++            const rssi = msg.readInt8(17);
++            const noiseDbm = msg.readInt8(18);
++            const channel = msg.readUInt8(19);
++            const deviceTsUs = msg.readBigUInt64LE(20);
++            const deviceTsMs = msg.readUInt32LE(28);
++            const iqData = msg.subarray(ADR018_HEADER_SIZE);
++            const expectedIqBytes = numAntennas * numSubcarriers * 2;
++
++            if (numAntennas <= 0 || numSubcarriers <= 0) {
++                return null;
++            }
++            if (iqData.length < expectedIqBytes) {
++                return null;
++            }
++
++            return {
++                schemaVersion,
++                nodeId,
++                seq,
++                freqMhz,
++                noiseDbm,
++                channel,
++                deviceTsUs,
++                deviceTsMs,
++                rssi,
++                numAntennas,
++                numSubcarriers,
++                iqData,
++            };
++        }
++    }
++
++    if (!options.allowLegacy) {
++        return null;
++    }
++
++    // Compatibility-only fallback: 20-byte header (older firmware without
++    // ADR-018 fields). Never enabled on the live authority path.
++    if (msg.length < LEGACY_HEADER_SIZE) {
++        return null;
++    }
++
++    const nodeId = msg.readUInt8(4);
++    const numAntennas = msg.readUInt8(5);
++    const numSubcarriers = msg.readUInt16LE(6);
++    const rssi = msg.readInt8(16);
++    const iqData = msg.subarray(LEGACY_HEADER_SIZE);
++    const expectedIqBytes = numAntennas * numSubcarriers * 2;
++
++    if (numAntennas <= 0 || numSubcarriers <= 0) {
++        return null;
++    }
++    if (iqData.length < expectedIqBytes) {
++        return null;
++    }
++
++    return {
++        nodeId,
++        rssi,
++        numAntennas,
++        numSubcarriers,
++        iqData,
++    };
++}
++
++/**
++ * Sole ESP32 ingest for the live pipeline. Binds UDP :5005, validates each
++ * datagram (magic + source pinning), extracts the per-subcarrier amplitude
++ * vector and the max-power subcarrier as scalar h1/h2, then hands the
++ * CSISample to signalServer.ingestSample — the start of every presence/
++ * movement decision. Accepted raw packets are also mirrored to the Python
++ * AI sidecar on :5006 (advisory classification only).
++ */
++export function startUDPServer() {
++    // Singleton ingest: do NOT set reuseAddr. On Windows SO_REUSEADDR lets a
++    // stale/second listener silently share :5005 with non-deterministic delivery,
++    // which would steal ESP32 frames. We want a hard EADDRINUSE instead so the
++    // operator sees the clash (handled below) rather than losing packets quietly.
++    const server = dgram.createSocket("udp4");
++    const pyForwardSocket = dgram.createSocket("udp4");
++    const sourceGuard = new SourcePinningGuard(
++        parseStaticSourcePins(process.env.PHANTOM_STATIC_NODE_SOURCES),
++    );
++    const packetOrderGuard = new PacketOrderGuard();
++
++    server.on("error", (err: NodeJS.ErrnoException) => {
++        if (err.code === "EADDRINUSE") {
++            console.error(
++                `[UDP] Cannot bind UDP :${UDP_PORT} — the port is already in use. ` +
++                `Another ESP32 ingest (e.g. a Python 'phantom.runtime live' authority) is likely ` +
++                `holding it. Stop that process, or run the dashboard alone so it owns :${UDP_PORT}.`,
++            );
++        } else {
++            console.error(`[UDP] Server error:\n${err.stack}`);
++        }
++        server.close();
++        pyForwardSocket.close();
++    });
++
++    let packetCount = 0;
++    let compressedFrameCount = 0;
++    let lastLogTime = Date.now();
++    let lastUnknownMagicLogMs = 0;
++    let lastPyForwardErrorLogMs = 0;
++    const lastPhaseLogMsByNode = new Map<number, number>();
++
++    server.on("message", (msg, rinfo) => {
++        const kind = classifyPacketMagic(msg);
++
++        // Firmware DSP feature-state (0xC5110006): independent 1 Hz
++        // stream shown alongside host-DSP metrics — never fused with them.
++        if (kind === "feature_state") {
++            const feat = parseFeatureStatePacket(msg);
++            if (!feat) {
++                return;
++            }
++            // Phase-1 bug audit: this path previously only IP-pinned the
++            // sender (sourceGuard.check), unlike the raw-CSI path below which
++            // also requires a provisioned hardware node_id (PS-AUDIT-005).
++            // Any sender passing the IP check could otherwise inject
++            // feature-state data for an arbitrary, never-provisioned node_id.
++            if (mapRuntimeNodeIdToHardwareId(feat.nodeId) === undefined) {
++                console.warn(`[UDP] rejecting feature_state packet for unmapped runtime node_id=${feat.nodeId}`);
++                return;
++            }
++            if (sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
++                signalServer.ingestNodeFeatureState(feat);
++            }
++            return;
++        }
++
++        // This repo's own firmware vitals (0xC5110002): same role as the
++        // 0xC5110006 feature-state packet — board-side presence/motion/vitals for the
++        // Board DSP card, never fused with the host target math.
++        if (kind === "vitals") {
++            const feat = parseEdgeVitalsPacket(msg);
++            if (!feat) {
++                return;
++            }
++            // Phase-1 bug audit: same hardware-id gap as feature_state above.
++            if (mapRuntimeNodeIdToHardwareId(feat.nodeId) === undefined) {
++                console.warn(`[UDP] rejecting vitals packet for unmapped runtime node_id=${feat.nodeId}`);
++                return;
++            }
++            if (sourceGuard.check(feat.nodeId, rinfo, Date.now(), "feature_state")) {
++                signalServer.ingestNodeFeatureState(feat);
++            }
++            return;
++        }
++
++        // Compressed CSI (0xC5110003, edge tier >= 2): expected traffic, not
++        // decoded — the raw stream carries the same frames. Count for the
++        // periodic stats line instead of warning.
++        if (kind === "compressed") {
++            compressedFrameCount++;
++            return;
++        }
++
++        // Diagnosability: surface unexpected packet types (≤1 log / 10 s) so
++        // "Board DSP card empty" is distinguishable between silent boards and
++        // firmware speaking an unknown protocol.
++        if (kind === "unknown") {
++            const magic = msg.length >= 4 ? msg.readUInt32LE(0) : 0;
++            const nowMs = Date.now();
++            if (nowMs - lastUnknownMagicLogMs > 10_000) {
++                lastUnknownMagicLogMs = nowMs;
++                console.warn(
++                    `[UDP] unknown packet magic 0x${magic.toString(16)} (${msg.length} B) from ` +
++                        `${rinfo.address}:${rinfo.port} — not CSI/heartbeat/vitals/feature-state/compressed`,
++                );
++            }
++            return;
++        }
++
++        const parsed = parseCsiPacket(msg);
++        if (!parsed) {
++            return;
++        }
++        const hardwareId = mapRuntimeNodeIdToHardwareId(parsed.nodeId);
++        if (hardwareId === undefined) {
++            console.warn(`[UDP] rejecting CSI packet for unmapped runtime node_id=${parsed.nodeId} (PS-AUDIT-005)`);
++            return;
++        }
++        if (!sourceGuard.check(parsed.nodeId, rinfo)) {
++            return;
++        }
++        if (
++            !packetOrderGuard.check(parsed.nodeId, {
++                seq: parsed.seq,
++                deviceTsUs: parsed.deviceTsUs,
++                deviceTsMs: parsed.deviceTsMs,
++            })
++        ) {
++            return;
++        }
++
++        // PS-FIX-08, SHADOW MODE: count/log a change of this node's (subcarrier count, channel, frequency) tuple. Never drops.
++        const phyDiff = phyGuard.observe(parsed.nodeId, {
++            nSubcarriers: parsed.numSubcarriers,
++            channel: parsed.channel ?? 0,
++            freqMhz: parsed.freqMhz ?? 0,
++        });
++        if (phyDiff.length > 0) {
++            const phyStats = phyGuard.snapshot()[String(parsed.nodeId)];
++            if (shouldLogPhyMismatch(phyStats)) {
++                console.warn(
++                    `[PHY] node ${parsed.nodeId}: ${phyDiff.join(",")} differs from the first-seen tuple ` +
++                        `(${phyStats.mismatchedFrames} mismatched of ${phyStats.frames} frames; shadow mode, frames are NOT dropped)`,
++                );
++            }
++        }
++
++        // Forward only accepted raw packets to the local Python AI sidecar.
++        pyForwardSocket.send(msg, PY_SIDECAR_PORT, PY_SIDECAR_HOST, (err) => {
++            // The sidecar being down/not-yet-started is expected and not
++            // logged every packet — but a persistently failing forward path
++            // (Phase-1 bug audit: previously silent forever) now surfaces at
++            // most once per 10s so sidecar connectivity loss is diagnosable.
++            if (err) {
++                const nowMs = Date.now();
++                if (nowMs - lastPyForwardErrorLogMs > 10_000) {
++                    lastPyForwardErrorLogMs = nowMs;
++                    console.warn(`[UDP] AI sidecar forward failed: ${err.message}`);
++                }
++            }
++        });
++
++        // For Phantom Scan, we expect an array of subcarriers.
++        // We'll average across the subcarriers for a single representative complex number per antenna for the core math,
++        // or just pass the first subcarrier (or an average) as the scalar `h1` and `h2` expected by `CSISample`.
++        // Actually, `CSISample` expects `h1` and `h2` as single complex numbers {re, im}. 
++        // Usually CSI is an array, but the existing signal pipeline processes them as scalar complex numbers (representing the dominant path).
++        // Let's take the subcarrier with the maximum power to represent the sample.
++
++        // Per-subcarrier amplitudes (antenna 0, LLTF data subcarriers only —
++        // DC/guards/invalid first word dropped, constant length across frame
++        // types) plus the dominant subcarrier as scalar h1/h2. ESP-IDF stores
++        // imaginary-first; see csi-subcarriers.ts. On single-antenna boards h2
++        // duplicates h1 so downstream magnitude(h2) math never crashes.
++        const {
++            amplitudes,
++            h1: bestH1,
++            h2: bestH2,
++        } = reduceCsiFrame(parsed.iqData, parsed.numSubcarriers, parsed.numAntennas);
++
++        const phaseRad = Math.atan2(bestH1.im, bestH1.re);
++        if (phaseTestLogger.isEnabled()) {
++            phaseTestLogger.log(parsed.nodeId, parsed.seq, parsed.rssi, phaseRad);
++        }
++
++        // Live phase readout in the npm run terminal, throttled per node to
++        // ~1 Hz so it stays readable at the 20-50 Hz CSI packet rate.
++        const nowPhaseMs = Date.now();
++        const lastPhaseLogMs = lastPhaseLogMsByNode.get(parsed.nodeId) ?? 0;
++        if (nowPhaseMs - lastPhaseLogMs >= 1000) {
++            lastPhaseLogMsByNode.set(parsed.nodeId, nowPhaseMs);
++            console.log(
++                `[Phase] node=${parsed.nodeId} phase=${phaseRad.toFixed(4)} rad rssi=${parsed.rssi}dBm`,
++            );
++        }
++
++        // One CSISample per packet: scalar h1/h2 (dominant subcarrier) feed the
++        // legacy DSP chain; `amplitudes` (full vector) feeds two-node fusion.
++        const sample: CSISample = {
++            timestamp: Date.now(),
++            h1: bestH1,
++            h2: bestH2,
++            rssi: parsed.rssi,
++            nodeId: parsed.nodeId,
++            hardwareId,
++            amplitudes,
++        };
++
++        signalServer.ingestSample(sample);
++
++        packetCount++;
++        const now = Date.now();
++        if (now - lastLogTime > 5000) {
++            const compressedNote =
++                compressedFrameCount > 0 ? ` (${compressedFrameCount} compressed skipped)` : "";
++            console.log(`[UDP] Received ${packetCount} packets${compressedNote} in last 5s`);
++            packetCount = 0;
++            compressedFrameCount = 0;
++            lastLogTime = now;
++        }
++    });
++
++    server.on("listening", () => {
++        const address = server.address();
++        console.log(`[UDP] CSI Receiver listening on ${address.address}:${address.port}`);
++        // Four nodes burst ~160-200 packets/s; the OS default buffer can overflow
++        // while the event loop is busy, dropping frames before any counter sees them.
++        try {
++            server.setRecvBufferSize(UDP_RECV_BUFFER_BYTES);
++        } catch (err) {
++            console.warn(`[UDP] Could not enlarge receive buffer: ${err instanceof Error ? err.message : err}`);
++        }
++    });
++
++    server.bind(UDP_PORT, UDP_HOST);
++    return server;
++}
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\presence_head_norms.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\presence_head_norms.py"
+new file mode 100644
+index 0000000..7ecf287
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\presence_head_norms.py"	
+@@ -0,0 +1,166 @@
++"""PS-FIX-28: what does the shipped presence head actually see on OUR recordings?
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.presence_head_norms     (needs torch)
++
++The guard in phantom/presence_guard.py refuses the head because ||w|| (3.67) < |bias| (8.19) for UNIT-norm input. The sidecar's own
++docstring says the head is meant for the UN-normalised bn2 activation (||pre|| ~ 15) where it "gives a full 0..1 spread". This
++measures that: it reproduces the sidecar's real path (100-frame window every 0.2 s -> 8 standardised features -> csi-embed-v2 ->
++un-normalised activation) on every recording and reports ||pre||, the head's logit and probability per label and node, plus how
++well the probability separates occupied from empty. No LoRA adapter is applied (opt-in, trained for other rooms).
++
++The sidecar functions are NOT re-implemented: estimate_vitals / extract_features_8d / Enc are extracted from scripts/ai_inference.py
++with ast and executed, so the measurement cannot drift from the code that runs live (that script cannot be imported: it starts
++the sidecar).
++"""
++from __future__ import annotations
++
++import ast
++import json
++import math
++from pathlib import Path
++
++import numpy as np
++
++from phantom.embedding import load_standardizer, ruview_scale_features, standardize
++from phantom.presence_guard import presence_head_check
++
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
++from .recordings import group_recordings, load_recording
++from .stats import block_bootstrap_auc
++from .tables import REC_CACHE, ROOM_DIR
++
++OUT_DIR = default_out_dir()
++SIDECAR = REPO_ROOT / "scripts" / "ai_inference.py"
++MODEL_DIR = REPO_ROOT / "ai model and densepose" / "model"
++HISTORY_LEN = 100        # frames per window (ai_inference.HISTORY_LEN)
++INFER_EVERY_S = 0.2      # 5 Hz inference throttle
++QUANTILES = (0.05, 0.5, 0.95)
++LABELS = ("empty", "empty_fan", "walking", "still", "two_people")
++
++
++def load_sidecar_code(embed_mean: np.ndarray, embed_std: np.ndarray) -> dict:
++    """Execute estimate_vitals, extract_features_8d, Enc and DEFAULT_FS exactly as written in scripts/ai_inference.py."""
++    import torch
++    import torch.nn as nn
++    import torch.nn.functional as F
++
++    tree = ast.parse(SIDECAR.read_text(encoding="utf-8"))
++    keep = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in {"estimate_vitals", "extract_features_8d"})
++            or (isinstance(n, ast.ClassDef) and n.name == "Enc")
++            or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "DEFAULT_FS" for t in n.targets))]
++    found = {getattr(n, "name", "DEFAULT_FS") for n in keep}
++    if found != {"estimate_vitals", "extract_features_8d", "Enc", "DEFAULT_FS"}:
++        raise RuntimeError(f"sidecar layout changed: extracted {sorted(found)}")
++    ns: dict = {"np": np, "torch": torch, "nn": nn, "F": F, "math": math, "ruview_scale_features": ruview_scale_features,
++                "standardize": standardize, "EMBED_MEAN": embed_mean, "EMBED_STD": embed_std}
++    exec(compile(ast.Module(body=keep, type_ignores=[]), "scripts/ai_inference.py (extracted)", "exec"), ns)  # noqa: S102 (our own repo file)
++    return ns
++
++
++def estimate_fs(timestamps_ms: np.ndarray, default_fs: float) -> float:
++    """ai_inference._estimate_fs: samples per second from millisecond timestamps, guarded to 1..200 Hz."""
++    if len(timestamps_ms) < 2:
++        return default_fs
++    span_s = (timestamps_ms[-1] - timestamps_ms[0]) / 1000.0
++    if span_s <= 0:
++        return default_fs
++    fs = (len(timestamps_ms) - 1) / span_s
++    return fs if 1.0 <= fs <= 200.0 else default_fs
++
++
++def windows_for_node(t_ms: np.ndarray, amps: np.ndarray, rssi: np.ndarray, code: dict) -> tuple[np.ndarray, np.ndarray]:
++    """(features [W, 8], sample times of each window end) for one node, the way the sidecar slides its 100-frame history."""
++    feats, ends = [], []
++    prev_mean = None
++    i = HISTORY_LEN
++    while i <= len(t_ms):
++        sl = slice(i - HISTORY_LEN, i)
++        fs = estimate_fs(t_ms[sl].astype(float), code["DEFAULT_FS"])
++        f, _motion, mean, _vitals = code["extract_features_8d"](amps[sl].astype(np.float64), rssi[sl].astype(np.float64), fs, prev_mean)
++        feats.append(f)
++        ends.append(t_ms[i - 1])
++        prev_mean = mean
++        step = max(1, int(round(fs * INFER_EVERY_S)))
++        i += step
++    return (np.asarray(feats, dtype=np.float32), np.asarray(ends)) if feats else (np.zeros((0, 8), dtype=np.float32), np.zeros(0))
++
++
++def q(x: np.ndarray) -> list[float | None]:
++    return [float(np.quantile(x, p)) for p in QUANTILES] if x.size else [None] * len(QUANTILES)
++
++
++def run(room_dir: Path = ROOM_DIR) -> dict:
++    import torch
++    from safetensors.torch import load_file
++
++    mean, std = load_standardizer(MODEL_DIR / "csi-embed-v2-int4.bin")
++    code = load_sidecar_code(mean, std)
++    net = code["Enc"]()
++    net.load_state_dict(load_file(str(MODEL_DIR / "csi-embed-v2.safetensors")), strict=True)
++    net.eval()
++    head = json.loads((MODEL_DIR / "presence-head.json").read_text(encoding="utf-8"))
++    w, b = np.asarray(head["weights"], dtype=np.float64), float(head["bias"])
++    per: dict[tuple[str, int], dict[str, list[np.ndarray]]] = {}
++    by_rec: dict[str, dict] = {}
++    for name, paths in group_recordings(room_dir).items():
++        rec = load_recording(paths, REC_CACHE)
++        for node, s in rec.nodes.items():
++            feats, ends = windows_for_node(s.t, s.a, np.nan_to_num(s.rssi, nan=-100.0), code)
++            if not len(feats):
++                continue
++            with torch.no_grad():
++                z_t, pre_t = net(torch.from_numpy(feats))
++            pre, z = pre_t.numpy().astype(np.float64), z_t.numpy().astype(np.float64)
++            cell = per.setdefault((rec.label, node), {"norm": [], "logit": [], "p": [], "zlogit": []})
++            logit = pre @ w + b
++            cell["norm"].append(np.linalg.norm(pre, axis=1))
++            cell["logit"].append(logit)
++            cell["p"].append(1.0 / (1.0 + np.exp(-np.clip(logit, -60, 60))))
++            cell["zlogit"].append(z @ w + b)
++            by_rec.setdefault(rec.name, {})[node] = (ends, cell["p"][-1])
++    cells: dict = {}
++    for (label, node), c in sorted(per.items()):
++        norm, logit, p, zl = (np.concatenate(c[k]) for k in ("norm", "logit", "p", "zlogit"))
++        cells[f"{label}/N{node}"] = {"windows": int(norm.size), "pre_norm_q05_q50_q95": q(norm), "logit_q05_q50_q95": q(logit), "p_q05_q50_q95": q(p),
++                                     "share_p_gt_0.5": float((p > 0.5).mean()), "share_p_gt_0.99": float((p > 0.99).mean()),
++                                     "l2_normalised_input_logit_min_max": [float(zl.min()), float(zl.max())]}
++    pooled = {lab: np.concatenate([np.concatenate(c["p"]) for (l, _n), c in per.items() if l == lab]) for lab in LABELS if any(l == lab for l, _ in per)}
++    aucs = {lab: block_bootstrap_auc(pooled[lab], pooled["empty"], block=7, n_boot=300) for lab in pooled if lab != "empty" and "empty" in pooled}
++    all_norms = np.concatenate([np.concatenate(c["norm"]) for c in per.values()])
++    r_lo = float(np.quantile(all_norms, 0.05))
++    return {
++        "provenance": provenance("python -m scripts.presence_eval.presence_head_norms", sorted(group_recordings(room_dir))),
++        "head": {"weight_norm": float(np.linalg.norm(w)), "bias": b},
++        "cells": cells,
++        "pre_norm_all_windows_q05_q50_q95": q(all_norms),
++        "guard_unit_norm": presence_head_check(w, b, 1.0).__dict__,
++        "guard_with_measured_q05_norm": presence_head_check(w, b, r_lo).__dict__,
++        "auc_p_vs_empty": aucs,
++        "note": "No LoRA adapter applied. AUC is window-level, pooled across nodes and recordings; window-block CI only (optimistic).",
++    }
++
++
++def render(res: dict) -> str:
++    L = ["# Presence head on our recordings (PS-FIX-28)", "", f"Head: ||w|| = {res['head']['weight_norm']:.3f}, bias = {res['head']['bias']:.3f}.",
++         f"Un-normalised activation ||pre||, all windows: q05 / q50 / q95 = {' / '.join(f'{x:.1f}' for x in res['pre_norm_all_windows_q05_q50_q95'])}.", "",
++         "| label/node | windows | ‖pre‖ q05/q50/q95 | logit q05/q50/q95 | p q05/q50/q95 | share p>0.5 | share p>0.99 | logit range on L2-normalised input |", "|--|--|--|--|--|--|--|--|"]
++    f = lambda xs: " / ".join("–" if x is None else f"{x:.2f}" for x in xs)
++    for k, c in res["cells"].items():
++        L.append(f"| {k} | {c['windows']} | {f(c['pre_norm_q05_q50_q95'])} | {f(c['logit_q05_q50_q95'])} | {f(c['p_q05_q50_q95'])} | {100 * c['share_p_gt_0.5']:.0f}% | {100 * c['share_p_gt_0.99']:.0f}% | {f(c['l2_normalised_input_logit_min_max'])} |")
++    L += ["", "AUC of p(present) vs empty (window-level, pooled):", ""]
++    L += [f"* {lab}: {a['auc']:.2f} [{a['lo']:.2f}, {a['hi']:.2f}]" for lab, a in res["auc_p_vs_empty"].items()]
++    L += ["", f"Guard at unit norm: ok={res['guard_unit_norm']['ok']}; with the measured q05 norm: ok={res['guard_with_measured_q05_norm']['ok']}.", "", res["note"]]
++    return "\n".join(L) + "\n"
++
++
++def main() -> None:
++    res = run()
++    (OUT_DIR / "results").mkdir(parents=True, exist_ok=True)
++    dump_json(OUT_DIR / "results" / "presence_head_norms.json", res)
++    (OUT_DIR / "results" / "presence_head_norms.md").write_text(render(res), encoding="utf-8")
++    print("wrote results/presence_head_norms.json and .md;", len(res["cells"]), "cells")
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phy-guard.test.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phy-guard.test.ts"
+new file mode 100644
+index 0000000..0ee6a59
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phy-guard.test.ts"	
+@@ -0,0 +1,85 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import fs from "fs";
++import { parseCsiPacket } from "./udp-server";
++import { PhyGuard, shouldLogPhyMismatch } from "./phy-guard";
++
++// Same vector as tests/test_csi_header_offsets.py (built by hand from the firmware layout in csi_collector.c).
++const VECTOR_HEX = "010011c501020104008509000004030201d1a4060200000001000000443322110102030405060708";
++
++function build(opts: { node?: number; nSub?: number; freq?: number; seq?: number; rssi?: number; noise?: number; channel?: number } = {}): Buffer {
++  const { node = 2, nSub = 4, freq = 2437, seq = 0x01020304, rssi = -47, noise = -92, channel = 6 } = opts;
++  const b = Buffer.alloc(32 + 2 * nSub);
++  b.writeUInt32LE(0xc5110001, 0);
++  b[4] = 1;
++  b[5] = node;
++  b[6] = 1;
++  b.writeUInt16LE(nSub, 7);
++  b.writeUInt32LE(freq, 9);
++  b.writeUInt32LE(seq, 13);
++  b.writeInt8(rssi, 17);
++  b.writeInt8(noise, 18);
++  b[19] = channel;
++  b.writeBigUInt64LE(0x0000000100000002n, 20);
++  b.writeUInt32LE(0x11223344, 28);
++  for (let i = 0; i < 2 * nSub; i++) b[32 + i] = i + 1;
++  return b;
++}
++
++test("the hand-built frame equals the pinned vector and parseCsiPacket reads every field from the firmware offset", () => {
++  assert.equal(build().toString("hex"), VECTOR_HEX);
++  const p = parseCsiPacket(Buffer.from(VECTOR_HEX, "hex"));
++  assert.ok(p);
++  assert.deepEqual(
++    [p.schemaVersion, p.nodeId, p.numAntennas, p.numSubcarriers, p.freqMhz, p.seq, p.rssi, p.noiseDbm, p.channel, p.deviceTsMs],
++    [1, 2, 1, 4, 2437, 0x01020304, -47, -92, 6, 0x11223344],
++  );
++  assert.equal(p.deviceTsUs, 0x0000000100000002n);
++  assert.deepEqual(Array.from(p.iqData), [1, 2, 3, 4, 5, 6, 7, 8]);
++});
++
++test("RSSI is a signed byte at offset 17 including the extremes, and neighbouring bytes do not leak into it", () => {
++  for (const rssi of [-128, -100, -47, -1, 0, 1, 127]) assert.equal(parseCsiPacket(build({ rssi }))?.rssi, rssi);
++  const raw = build();
++  raw[16] = 0x55;
++  raw[19] = 11;
++  const p = parseCsiPacket(raw);
++  assert.deepEqual([p?.rssi, p?.noiseDbm, p?.channel], [-47, -92, 11]);
++});
++
++test("PhyGuard locks the first tuple per node and flags subcarrier-count, channel and frequency changes", () => {
++  const g = new PhyGuard();
++  const t = { nSubcarriers: 51, channel: 6, freqMhz: 2437 };
++  assert.deepEqual(g.observe(1, t), []);                                   // first frame locks
++  assert.deepEqual(g.observe(1, { ...t }), []);
++  assert.deepEqual(g.observe(1, { ...t, nSubcarriers: 52 }), ["nSubcarriers"]);
++  assert.deepEqual(g.observe(1, { ...t, channel: 11, freqMhz: 2462 }), ["channel", "freqMhz"]);
++  assert.deepEqual(g.observe(2, { nSubcarriers: 52, channel: 11, freqMhz: 2462 }), []);   // node 2 has its own lock
++  const s = g.snapshot()["1"];
++  assert.equal(s.frames, 4);
++  assert.equal(s.mismatchedFrames, 2);
++  assert.deepEqual(s.mismatchByField, { nSubcarriers: 1, channel: 1, freqMhz: 1 });
++  assert.equal(s.firstMismatchFrame, 3);
++  assert.deepEqual(s.locked, t);
++});
++
++test("reset forgets the lock; the log policy is first mismatch then every 1000th, never per frame", () => {
++  const g = new PhyGuard();
++  g.observe(1, { nSubcarriers: 51, channel: 6, freqMhz: 2437 });
++  g.reset(1);
++  assert.deepEqual(g.observe(1, { nSubcarriers: 52, channel: 6, freqMhz: 2437 }), []);   // re-locked on the new tuple
++  const base = { locked: { nSubcarriers: 1, channel: 1, freqMhz: 1 }, frames: 5000, mismatchByField: { nSubcarriers: 0, channel: 0, freqMhz: 0 }, firstMismatchFrame: 1 };
++  assert.equal(shouldLogPhyMismatch({ ...base, mismatchedFrames: 1 }), true);
++  assert.equal(shouldLogPhyMismatch({ ...base, mismatchedFrames: 2 }), false);
++  assert.equal(shouldLogPhyMismatch({ ...base, mismatchedFrames: 1000 }), true);
++});
++
++test("the guard is wired in SHADOW mode: the observe block in the UDP path contains no return, and says frames are not dropped", () => {
++  const src = fs.readFileSync("server/lib/udp-server.ts", "utf-8");
++  const start = src.indexOf("phyGuard.observe(");
++  const end = src.indexOf("// Forward only accepted raw packets", start);
++  assert.ok(start > 0 && end > start);
++  const block = src.slice(start, end);
++  assert.ok(!/\breturn\b/.test(block), "shadow mode must never drop a frame");
++  assert.ok(block.includes("NOT dropped"));
++});
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phy-guard.ts" "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phy-guard.ts"
+new file mode 100644
+index 0000000..36196d6
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\server\\lib\\phy-guard.ts"	
+@@ -0,0 +1,64 @@
++/**
++ * PHY-consistency guard, SHADOW MODE (PS-FIX-08): counts and logs frames whose PHY tuple differs from the one first seen for that
++ * node, and NEVER drops, alters or delays a frame. Enforcement would be a separate, approved change (PS-FIX-13).
++ *
++ * What the ADR-018 header actually carries (firmware/esp32-csi-node/main/csi_collector.c, csi_serialize_frame): subcarrier count
++ * (derived from the I/Q length), channel, centre frequency, sequence, RSSI, noise floor. It does NOT carry bandwidth, sig_mode
++ * or the transmitter address, so those cannot be locked or checked here; the guard locks (subcarrier count, channel, frequency)
++ * per node. Mixed PHY frames would change what "one subcarrier" means and so the features computed from them.
++ */
++export interface PhyTuple {
++  nSubcarriers: number;
++  channel: number;
++  freqMhz: number;
++}
++
++export type PhyField = keyof PhyTuple;
++
++export interface PhyNodeStats {
++  locked: PhyTuple;
++  frames: number;
++  mismatchedFrames: number;
++  mismatchByField: Record<PhyField, number>;
++  firstMismatchFrame: number | null;
++}
++
++export class PhyGuard {
++  private readonly nodes = new Map<number, PhyNodeStats>();
++
++  /** Observe one accepted frame. Returns the fields that differ from the node's locked tuple ([] = consistent / first frame). */
++  observe(nodeId: number, tuple: PhyTuple): PhyField[] {
++    let s = this.nodes.get(nodeId);
++    if (!s) {
++      s = { locked: { ...tuple }, frames: 0, mismatchedFrames: 0, mismatchByField: { nSubcarriers: 0, channel: 0, freqMhz: 0 }, firstMismatchFrame: null };
++      this.nodes.set(nodeId, s);
++    }
++    s.frames++;
++    const diff = (["nSubcarriers", "channel", "freqMhz"] as PhyField[]).filter((f) => tuple[f] !== s!.locked[f]);
++    if (diff.length > 0) {
++      s.mismatchedFrames++;
++      for (const f of diff) s.mismatchByField[f]++;
++      if (s.firstMismatchFrame === null) s.firstMismatchFrame = s.frames;
++    }
++    return diff;
++  }
++
++  /** Forget the locked tuple (e.g. after an operator deliberately changes the channel). */
++  reset(nodeId?: number): void {
++    if (nodeId === undefined) this.nodes.clear();
++    else this.nodes.delete(nodeId);
++  }
++
++  snapshot(): Record<string, PhyNodeStats> {
++    const out: Record<string, PhyNodeStats> = {};
++    for (const [id, s] of Array.from(this.nodes.entries())) out[String(id)] = { ...s, locked: { ...s.locked }, mismatchByField: { ...s.mismatchByField } };
++    return out;
++  }
++}
++
++/** Log policy: the first mismatch of a node, then every `every`-th mismatched frame (never per frame at 65 packets/s). */
++export function shouldLogPhyMismatch(stats: PhyNodeStats, every = 1000): boolean {
++  return stats.mismatchedFrames === 1 || stats.mismatchedFrames % every === 0;
++}
++
++export const phyGuard = new PhyGuard();
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_csi_header_offsets.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_csi_header_offsets.py"
+new file mode 100644
+index 0000000..0a58232
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_csi_header_offsets.py"	
+@@ -0,0 +1,58 @@
++"""PS-FIX-08: audit the ADR-018 header offsets (esp. RSSI) with frames built BY HAND from the firmware layout
++(firmware/esp32-csi-node/main/csi_collector.c, csi_serialize_frame), independent of either parser. The same hex vector is pinned in
++server/lib/phy-guard.test.ts, so the TS and Python parsers are checked against identical bytes."""
++from __future__ import annotations
++
++import pytest
++
++from phantom.protocol import CsiFrameV1, parse_csi_frame
++
++# magic@0 schema@4 node@5 ant@6 nsub@7(u16) freq@9(u32) seq@13(u32) rssi@17(i8) noise@18(i8) chan@19 ts_us@20(u64) ts_ms@28(u32) iq@32
++VECTOR_HEX = "010011c501020104008509000004030201d1a4060200000001000000443322110102030405060708"
++
++
++def build(node: int = 2, n_sub: int = 4, freq: int = 2437, seq: int = 0x01020304, rssi: int = -47, noise: int = -92, channel: int = 6) -> bytes:
++    buf = bytearray(32 + 2 * n_sub)
++    buf[0:4] = (0xC5110001).to_bytes(4, "little")
++    buf[4], buf[5], buf[6] = 1, node, 1
++    buf[7:9] = n_sub.to_bytes(2, "little")
++    buf[9:13] = freq.to_bytes(4, "little")
++    buf[13:17] = seq.to_bytes(4, "little")
++    buf[17] = rssi & 0xFF
++    buf[18] = noise & 0xFF
++    buf[19] = channel
++    buf[20:28] = (0x0000000100000002).to_bytes(8, "little")
++    buf[28:32] = (0x11223344).to_bytes(4, "little")
++    buf[32:] = bytes(range(1, 2 * n_sub + 1))
++    return bytes(buf)
++
++
++def test_the_hand_built_frame_is_the_pinned_vector() -> None:
++    assert build().hex() == VECTOR_HEX
++
++
++def test_every_header_field_is_read_from_the_firmware_offset() -> None:
++    f = parse_csi_frame(bytes.fromhex(VECTOR_HEX), "10.0.0.2", 5005)
++    assert isinstance(f, CsiFrameV1)
++    assert (f.schema_version, f.node_id, f.n_antennas, f.n_subcarriers) == (1, 2, 1, 4)
++    assert (f.freq_mhz, f.seq, f.rssi_dbm, f.noise_dbm, f.channel) == (2437, 0x01020304, -47, -92, 6)
++    assert (f.device_ts_us, f.device_ts_ms) == (0x0000000100000002, 0x11223344)
++    assert f.iq_bytes == bytes(range(1, 9))
++
++
++@pytest.mark.parametrize("rssi", [-128, -100, -47, -1, 0, 1, 127])
++def test_rssi_is_a_signed_byte_at_offset_17_including_the_extremes(rssi: int) -> None:
++    assert parse_csi_frame(build(rssi=rssi), "10.0.0.2", 5005).rssi_dbm == rssi
++
++
++def test_a_parser_reading_the_neighbouring_bytes_would_be_caught() -> None:
++    raw = bytearray(build(rssi=-47, noise=-92))
++    raw[16] = 0x55                                          # byte before RSSI (seq high byte): must not leak into RSSI
++    raw[19] = 11                                            # channel changes; noise and RSSI must not
++    f = parse_csi_frame(bytes(raw), "10.0.0.2", 5005)
++    assert (f.rssi_dbm, f.noise_dbm, f.channel) == (-47, -92, 11)
++
++
++def test_the_frequency_to_channel_pairing_matches_the_firmware_derivation() -> None:
++    for channel, freq in ((1, 2412), (6, 2437), (11, 2462), (14, 2484)):
++        assert parse_csi_frame(build(freq=freq, channel=channel), "10.0.0.2", 5005).freq_mhz == freq
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_head_norms.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_head_norms.py"
+new file mode 100644
+index 0000000..270856c
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_head_norms.py"	
+@@ -0,0 +1,64 @@
++"""PS-FIX-28: the measurement reuses the sidecar's own functions (extracted with ast) and slides windows like the sidecar."""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++torch = pytest.importorskip("torch", reason="torch not installed")
++
++from scripts.presence_eval import presence_head_norms as ph  # noqa: E402
++
++
++@pytest.fixture(scope="module")
++def code() -> dict:
++    return ph.load_sidecar_code(np.zeros(8), np.ones(8))
++
++
++def test_the_sidecar_functions_are_extracted_from_the_real_source_not_copied(code: dict) -> None:
++    assert {"estimate_vitals", "extract_features_8d", "Enc", "DEFAULT_FS"} <= set(code)
++    assert code["DEFAULT_FS"] == 20.0
++    assert code["extract_features_8d"].__code__.co_filename.startswith("scripts/ai_inference.py")
++
++
++def test_feature_extraction_gives_eight_finite_standardised_features(code: dict) -> None:
++    rng = np.random.default_rng(1)
++    amps = 12 + rng.standard_normal((100, 51))
++    feats, motion, mean, vitals = code["extract_features_8d"](amps, np.full(100, -40.0), 50.0, None)
++    assert feats.shape == (8,) and np.isfinite(feats).all() and mean.shape == (51,) and motion >= 0
++    assert set(vitals) == {"breathing", "heart_rate", "reliable"}
++
++
++def test_the_extracted_encoder_returns_both_the_normalised_and_the_unnormalised_activation(code: dict) -> None:
++    net = code["Enc"]().eval()
++    z, pre = net(torch.zeros(3, 8))
++    assert z.shape == pre.shape == (3, 128)
++
++
++def test_windows_slide_like_the_sidecar_100_frames_every_point_two_seconds(code: dict) -> None:
++    n = 400
++    t = np.arange(n) * 20                                    # 50 fps
++    amps = np.random.default_rng(2).standard_normal((n, 51)) + 12
++    feats, ends = ph.windows_for_node(t, amps, np.full(n, -40.0), code)
++    assert feats.shape[1] == 8 and feats.dtype == np.float32
++    assert np.all(np.diff(ends) == 200)                      # step = round(fs * 0.2) = 10 frames of 20 ms
++    assert ends[0] == t[99]
++    f2, e2 = ph.windows_for_node(t[:99], amps[:99], np.full(99, -40.0), code)
++    assert f2.shape == (0, 8) and e2.size == 0               # fewer than 100 frames: no window, nothing invented
++
++
++def test_estimate_fs_follows_the_sidecar_guard() -> None:
++    assert ph.estimate_fs(np.arange(0, 1000, 20.0), 20.0) == pytest.approx(50.0)   # 49 intervals over 0.98 s
++    assert ph.estimate_fs(np.array([5.0]), 20.0) == 20.0                          # too few samples
++    assert ph.estimate_fs(np.array([1000.0, 1000.0]), 20.0) == 20.0               # zero span
++    assert ph.estimate_fs(np.arange(0, 100, 1.0) * 1000, 20.0) == pytest.approx(1.0)   # 1 Hz is the lowest accepted rate
++    assert ph.estimate_fs(np.arange(0, 100, 1.0) * 2000, 20.0) == 20.0            # 0.5 Hz: below the guard -> default
++    assert ph.estimate_fs(np.arange(0, 100, 1.0) * 2.0, 20.0) == 20.0             # 500 Hz: above the guard -> default
++
++
++def test_quantiles_and_render_handle_an_empty_cell() -> None:
++    assert ph.q(np.zeros(0)) == [None, None, None]
++    res = {"head": {"weight_norm": 3.0, "bias": 8.0}, "pre_norm_all_windows_q05_q50_q95": [10.0, 20.0, 30.0], "auc_p_vs_empty": {},
++           "guard_unit_norm": {"ok": False}, "guard_with_measured_q05_norm": {"ok": True}, "note": "n",
++           "cells": {"empty/N1": {"windows": 0, "pre_norm_q05_q50_q95": [None] * 3, "logit_q05_q50_q95": [None] * 3, "p_q05_q50_q95": [None] * 3,
++                                  "share_p_gt_0.5": 0.0, "share_p_gt_0.99": 0.0, "l2_normalised_input_logit_min_max": [1.0, 2.0]}}}
++    assert "empty/N1" in ph.render(res)

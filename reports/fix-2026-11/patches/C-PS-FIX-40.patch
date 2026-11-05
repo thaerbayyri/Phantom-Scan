@@ -1,0 +1,16 @@
+--- a/scripts/presence_eval/periodicity.py
++++ b/scripts/presence_eval/periodicity.py
+@@ -32,8 +32,11 @@
+ from .tables import REC_CACHE, ROOM_DIR, load_tables
+ 
+ OUT_DIR = default_out_dir()
+-GRID_HZ = 50.0
+-GRIDS_HZ = (50.0, 64.0)   # 64 Hz moves the alias of the 33.3 Hz ping cadence (64 - 33.3 = 30.7 Hz) out of the 1-20 Hz band
++# PS-FIX-40: a point-wise linear resample folds the 33.3 Hz ping cadence (and its harmonics) onto |k*33.33 - n*fs|. On 50 Hz that is 16.67 Hz and on
++# 64 Hz the fundamental leaves 1-20 Hz (30.67 Hz) but harmonics 2, 4, 6 land at 2.67, 5.33, 8.0 Hz, all inside it. 100 Hz = 3 x 33.33 Hz is the grid
++# on which EVERY harmonic folds to 0 Hz (removed by detrending) or to 33.33 Hz (above the 20 Hz band): see scripts/presence_eval/alias_check.py.
++GRID_HZ = 100.0
++GRIDS_HZ = (50.0, 64.0, 100.0)   # the two older grids stay so that earlier results remain reproducible and comparable
+ PING_HZ = 1000.0 / 30.0
+ MAX_GAP_MS = 500
+ MIN_FRAME_RATE = 20.0

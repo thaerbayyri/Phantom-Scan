@@ -1,0 +1,216 @@
+--- a/JODDB_PHASE2_TECHNICAL_PROPOSAL.md
++++ b/JODDB_PHASE2_TECHNICAL_PROPOSAL.md
+@@ -61,7 +61,7 @@
+ | Subcarriers | 64 per packet, amplitude (+ raw phase, not yet SFO/PDD-sanitized for use) | README, ADR-058 |
+ | Localization | **1-D only** — target is placed along the N1–N2 axis using a cross-node motion-energy ratio (`balance = r2^p/(r1^p+r2^p)`); there is **no true 2-D position** and no spatial angle-of-arrival (single antenna per node makes AoA physically impossible) | README §Phantom Balance Fusion, `server/lib/node-fusion.ts` |
+ | Multi-target tracking | **Not implemented.** No multi-target data structures, IDs, or count logic exist anywhere in `server/`, `client/`, or `shared/` | verified by direct code search, this session |
+-| Detection logic today | Deterministic amplitude-variance / motion-energy threshold gate (`PHANTOM_MOTION_THRESHOLD`, currently an **unvalidated placeholder**, not yet calibrated on real hardware) | README §Honest Limitations |
++| Detection logic today | Deterministic amplitude-variance / motion-energy threshold gate (`PHANTOM_MOTION_THRESHOLD`, currently **provisional**: 0.6, set from one 60 s two-node empty-room recording; not validated against a fan negative control, a long empty soak or four-node operation, and its false-alarm and detection rates are `[TO BE MEASURED]`) | README §Honest Limitations |
+ | Measured accuracy | **`TO_BE_MEASURED`.** A full accuracy-scoring harness (recall, false-positive rate, precision, F1, time-to-first-detect) was built and unit-tested this cycle, and validated end-to-end against synthetic data — but has never been run against a real human subject on real hardware. No detection-rate or false-positive number for Phantom Scan exists yet. | `ACCURACY_HARNESS_REPORT.md`, `CURRENT_STATE.md` |
+ | AI/ML today | Optional, isolated advisory sidecar (`scripts/ai_inference.py`); explicitly **cannot** override or write the authoritative human/non-human verdict — enforced by an automated invariant test (`test_f1_ai_perturbations_do_not_change_deterministic_human_gate`) | `PhantomScan_HardwareReality_Alignment_Report.md` |
+ | Software/test state | 132 TypeScript + 81 Python tests passing at last full run; `tsc --noEmit` clean | README badges, remediation report |
+@@ -322,7 +322,7 @@
+ 
+ | Phase | Focus | Rough duration | Key deliverable | Go/no-go signal |
+ |---|---|---|---|---|
+-| **2.0 — Foundation** | Bring up N=4 nodes; generalize node geometry in schema/config; run real-hardware empty-room + fan negative-control calibration | 2–4 weeks | First real `PHANTOM_MOTION_THRESHOLD` calibrated on hardware, not a placeholder | Empty-room false-positive rate materially below the fan-negative-control ceiling |
++| **2.0 — Foundation** | Bring up N=4 nodes; generalize node geometry in schema/config; run real-hardware empty-room + fan negative-control calibration | 2–4 weeks | First `PHANTOM_MOTION_THRESHOLD` derived with the soak + negative-control protocol (the current 0.6 is provisional, from one 60 s recording), not a placeholder | Empty-room false-positive rate materially below the fan-negative-control ceiling |
+ | **2.1 — Single-human accuracy** | Run the S1–S8 measurement campaign through the existing harness | 2–3 weeks | First **measured** recall/FPR/F1/precision numbers for Phantom Scan | Recall and FPR at levels the team is willing to report to JODDB |
+ | **2.2 — N-node 2-D localization** | Extend node-fusion to weighted multilateration across N≥3 nodes | 3–5 weeks | Coarse room-zone position with measured position error (via extended `join-groundtruth.ts`) | Position error acceptable for a room-zone (not centimeter) claim |
+ | **2.3 — AI-assisted detection** | ACF/periodicity features first, then compact CNN-GRU as bounded confidence input | 4–8 weeks | Cross-subject, cross-room accuracy report; false-alarm rate vs. the deterministic-only baseline | **>90% cross-subject accuracy and a measurable improvement over the physics-only baseline**, or pivot back to physics-based features only |
+--- a/Phantom-Scan-Final-Project-Report-4Node.md
++++ b/Phantom-Scan-Final-Project-Report-4Node.md
+@@ -109,7 +109,7 @@
+ 
+ ## 1.8 Project Feasibility
+ 
+-Technical feasibility is demonstrated rather than assumed: the repository contains the complete firmware, host runtime, dashboard, and test suites for the 1–4-node system, and the current automated matrix passes in full — **256 TypeScript tests, 0 failures**, and **91 Python tests, 1 environmental skip** [19]. Economic feasibility remains strong: four sensing nodes are still four commodity ESP32-S3 development boards, together costing a small fraction of specialized radar hardware. Operational feasibility is supported by a single-command development stack (`npm run dev`) that auto-detects however many nodes are actually streaming, and by run guides for Windows and Ubuntu hosts [12]. The main residual feasibility risk has shifted somewhat since the two-node edition: it is still primarily a measurement problem (converting the detection chain into defensible accuracy numbers), but it now also includes a **specific, named open engineering question** — why four simultaneously self-pinging, same-channel nodes appear to saturate the motion metric in an empty room — that must be resolved before the room-mode threshold can be honestly recalibrated [20], [21].
++Technical feasibility is demonstrated rather than assumed: the repository contains the complete firmware, host runtime, dashboard, and test suites for the 1–4-node system, and the current automated matrix passes in full — **256 TypeScript tests, 0 failures**, and **91 Python tests, 1 environmental skip** [19]. Economic feasibility remains strong: four sensing nodes are still four commodity ESP32-S3 development boards, together costing a small fraction of specialized radar hardware. Operational feasibility is supported by a single-command development stack (`npm run dev`) that auto-detects however many nodes are actually streaming, and by run guides for Windows and Ubuntu hosts [12]. The main residual feasibility risk has shifted somewhat since the two-node edition: it is still primarily a measurement problem (converting the detection chain into defensible accuracy numbers), but it now also includes a **specific, named open engineering question** — why four simultaneously self-pinging, same-channel nodes appear to saturate the motion metric in an empty room — that must be resolved before the room-mode threshold (currently provisional) can be honestly recalibrated [20], [21].
+ 
+ ---
+ 
+@@ -342,7 +342,7 @@
+ | FR5 | The host shall compute a per-node motion metric — gain-normalized, per-subcarrier temporal standard deviation of CSI amplitude — independently for however many nodes (1–4) are currently live. | `node-fusion.ts`, `websocket.ts` |
+ | FR6 | The system shall emit **no target** when no live node's motion clears the calibrated gate, in every fusion mode. | `computeEnergyGatePassed`, `fuseTwoNodeTarget`, `fuseNodeTargets` |
+ | FR7 | With exactly two nodes live, the host shall fuse them into a 1-D on-axis position (`fuseTwoNodeTarget`, using whichever two node IDs are actually live, not a fixed pair). With three or four nodes live, the host shall fuse them into a 2-D perturbation-weighted centroid (`fuseNodeTargets`), each with per-node distance and trend readouts. | `node-fusion.ts`, `websocket.ts` |
+-| FR8 | With exactly one node live, the system shall enter an explicitly labeled degraded `single_node` state and shall not fabricate fused output, using the same validated per-node motion gate as the fused modes (not a separately under-calibrated scalar gate). | `target-state.ts`, `singleNodeMotionDetected` |
++| FR8 | With exactly one node live, the system shall enter an explicitly labeled degraded `single_node` state and shall not fabricate fused output, using the same per-node motion gate as the fused modes, whose 0.6 threshold is provisional (not the separate scalar gate with its short auto-calibration window). | `target-state.ts`, `singleNodeMotionDetected` |
+ | FR9 | Both fusion outputs shall be smoothed by a shared, natively 2-D constant-velocity Kalman filter before broadcast, with the filter reset whenever the active fusion mode changes. | `fused-position-kalman.ts` |
+ | FR10 | Targets shall become "stale" 1.5 s after the last live sample and shall be hard-cleared after 5 s, identically across all three fusion modes; disconnects clear all client state. | `target-state.ts`, `use-websocket.ts` |
+ | FR11 | The host shall publish live state (fused target, truthful target state, per-node telemetry for however many nodes are configured, temporal spectra, vitals, firmware feature states) over an authenticated WebSocket. | `websocket.ts`, `shared/schema.ts` |
+@@ -573,7 +573,7 @@
+ ```
+ *Listing 6.4 — Fusion-mode auto-selection: purely a function of how many of the up-to-four configured nodes are currently reporting, re-evaluated every tick.*
+ 
+-`computeFusedTarget()` then dispatches to `fuseNodeTargets` (≥3 active) or `fuseTwoNodeTarget` (exactly 2 active, whichever pair), applies the shared Kalman filter, and updates a single per-tick fused snapshot that every outgoing message reads — so the radar dot and the node labels can never disagree, regardless of live node count. A single-node presence gate (`singleNodeMotionDetected`) was also unified during this work to reuse the same validated per-node motion metric and threshold the fused paths use, after real empty-room single-node recordings showed the previously separate, under-calibrated scalar gate producing a ghost target on 98–99% of ticks with nobody in the room.
++`computeFusedTarget()` then dispatches to `fuseNodeTargets` (≥3 active) or `fuseTwoNodeTarget` (exactly 2 active, whichever pair), applies the shared Kalman filter, and updates a single per-tick fused snapshot that every outgoing message reads — so the radar dot and the node labels can never disagree, regardless of live node count. A single-node presence gate (`singleNodeMotionDetected`) was also unified during this work to reuse the same per-node motion metric and the same provisional threshold the fused paths use, after real empty-room single-node recordings showed the previously separate scalar gate (auto-calibrated over only its first ~100 samples) producing a ghost target on 98–99% of ticks with nobody in the room.
+ 
+ ### 6.3.7 Dashboard Rendering
+ 
+--- a/README.md
++++ b/README.md
+@@ -399,7 +399,7 @@
+ 
+ - **Not RF multilateration.** Even with 4 nodes, `fuseNodeTargets` is a perturbation-weighted centroid of node anchors, not true ranging or angle-of-arrival localization. With exactly 2 nodes the target is further restricted to the on-axis line between them — a person standing off-axis reads as a wrong on-line distance, not a wrong plane.
+ - **`trend` reflects smoothed balance movement** — a still person may still read `stable` even during small in-place motion.
+-- **Active investigation: 4-node empty-room false positives.** Multiple real empty-room recordings on the live 4-node rig (September 2026, several physical layouts, before and after a firmware reflash) show a persistent phantom "moving" target. A full code audit found no fusion/motion-computation bug and no single consistently-bad node (the effect shifts with physical repositioning, not with which board). The `motion_nX` metric is saturated (clamped at 1.0) on roughly half of all ticks in these recordings, which makes the existing data too "censored" to responsibly re-derive `DEFAULT_MOTION_THRESHOLD`/`MOTION_SATURATION_SCALE` — a correctly-calibrated threshold cannot be computed from clamped inputs. `raw_perturbation_n1..n4` (unclamped) now ships in every recording specifically to unblock this; leading unconfirmed hypothesis is RF self-interference among same-channel, same-AP nodes each self-pinging at 50 Hz, as an alternative to a genuinely-elevated real noise floor. See [Phantom Balance Fusion](#phantom-balance-fusion) for the calibration caveat and do not retune the threshold/scale constants independently of each other or without fresh uncensored data.
++- **Active investigation: 4-node empty-room false positives.** Multiple real empty-room recordings on the live 4-node rig (September 2026, several physical layouts, before and after a firmware reflash) show a persistent phantom "moving" target. A full code audit found no fusion/motion-computation bug and no single consistently-bad node (the effect shifts with physical repositioning, not with which board). The `motion_nX` metric is saturated (clamped at 1.0) on roughly half of all ticks in these recordings, which makes the existing data too "censored" to responsibly re-derive `DEFAULT_MOTION_THRESHOLD`/`MOTION_SATURATION_SCALE` — a correctly-calibrated threshold cannot be computed from clamped inputs (the current 0.6 stays provisional until then). `raw_perturbation_n1..n4` (unclamped) now ships in every recording specifically to unblock this; leading unconfirmed hypothesis is RF self-interference among same-channel, same-AP nodes each self-pinging at 50 Hz, as an alternative to a genuinely-elevated real noise floor. See [Phantom Balance Fusion](#phantom-balance-fusion) for the calibration caveat and do not retune the threshold/scale constants independently of each other or without fresh uncensored data.
+ - **Calibration placeholders, not fully validated thresholds.** `PHANTOM_TREND_DEADBAND_MPS` (0.05), the firmware's `EDGE_RESP_PERIOD_CV_MIN` (0.002), and the `FusedPositionKalman` Q/R constants (see [Fused Position Kalman Filter](#fused-position-kalman-filter)) are derived from real captured session data but not from a dedicated stationary-target calibration soak; `PHANTOM_MOTION_THRESHOLD` carries the more serious open issue described above.
+ - **Firmware calibration bootstrap hardening.** The firmware's per-node calibration window now rejects and retries a calibration sample whose max deviates more than `EDGE_CALIB_REJECT_SIGMA_MULT` (8σ) from its own running mean, closing a class of bug where one contaminated boot-time sample could poison a node's baseline for the rest of the session — fixed and covered by `test_edge_dsp_pure.c` this session, independent of the 4-node false-positive investigation above.
+ 
+--- a/docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md
++++ b/docs/SYSTEM_DESIGN_TECHNICAL_ARCHITECTURE.md
+@@ -458,7 +458,7 @@
+ |---|---|
+ | Total subcarriers $N$ | 52 (HT20) / 114 (HT40) |
+ | Selected subset $K$ | 8 (configurable, 6–12 range) |
+-| Variance threshold $\tau$ | 0.001 (auto-calibrated via noise floor) |
++| Variance threshold $\tau$ | 0.001 (design value, provisional: auto-calibrated via the noise floor in the design; top-K subcarrier selection, not the presence gate; not checked against the implementation `[UNVERIFIED]`) |
+ | Selection refresh interval | Every 300 frames (15 seconds) |
+ | Execution tier | Tier 1 (ESP32 Core 1) → Tier 2 (Server) |
+ 
+--- a/docs/presentations/JODDB-Sponsorship-Pitch-Script.md
++++ b/docs/presentations/JODDB-Sponsorship-Pitch-Script.md
+@@ -199,13 +199,13 @@
+ > With [FUNDING AMOUNT] over [TIMELINE], here's exactly what we'd deliver:
+ > **Phase one** — a validated real-hardware calibration campaign: empty-room baselines, negative controls, and thresholds backed by measured data instead of placeholders.
+ > **Phase two** — a pilot deployment at [PILOT SITE], proving the system in a real environment with real walls and real interference sources, not a lab bench.
+-> **Phase three**, looking further out — extending beyond two nodes toward a multi-node mesh, which is the architecture path toward genuine two-dimensional localization instead of the honest one-dimensional result we have today. I want to be clear that phase three is a research direction, not a promise — but it's the natural next step once the two-node foundation is calibrated and proven.
++> **Phase three**, looking further out — extending beyond two nodes toward a multi-node mesh, which is the architecture path toward genuine two-dimensional localization instead of the honest one-dimensional result we have today. I want to be clear that phase three is a research direction, not a promise — but it's the natural next step once the two-node foundation has actually been calibrated and validated, which it has not yet been (the detection threshold is provisional).
+ 
+ **AR:**
+ > بدعم بقيمة [FUNDING AMOUNT] على مدى [TIMELINE]، إليكم بالضبط ما سنقدّمه:
+ > **المرحلة الأولى** — حملة معايرة موثّقة على عتاد حقيقي: خطوط أساس لغرفة فارغة، اختبارات ضبط سلبية، وعتبات كشف مبنية على بيانات مقاسة فعليًا بدلًا من قيم افتراضية.
+ > **المرحلة الثانية** — نشر تجريبي في [PILOT SITE]، لإثبات عمل النظام في بيئة حقيقية بجدران حقيقية ومصادر تشويش حقيقية، لا على طاولة مختبر.
+-> **المرحلة الثالثة**، بمنظور أبعد — التوسع إلى ما هو أبعد من عقدتين نحو شبكة متعددة العقد، وهو المسار المعماري نحو تموضع ثنائي الأبعاد حقيقي بدلًا من النتيجة الصادقة أحادية البُعد التي نمتلكها اليوم. أود أن أوضح أن المرحلة الثالثة هي توجه بحثي، وليست وعدًا — لكنها الخطوة التالية الطبيعية بمجرد معايرة الأساس ثنائي العقدة وإثباته.
++> **المرحلة الثالثة**، بمنظور أبعد — التوسع إلى ما هو أبعد من عقدتين نحو شبكة متعددة العقد، وهو المسار المعماري نحو تموضع ثنائي الأبعاد حقيقي بدلًا من النتيجة الصادقة أحادية البُعد التي نمتلكها اليوم. أود أن أوضح أن المرحلة الثالثة هي توجه بحثي، وليست وعدًا — لكنها الخطوة التالية الطبيعية بمجرد معايرة الأساس ثنائي العقدة والتحقق منه فعليًا، وهو ما لم يتم بعد (عتبة الكشف الحالية مؤقتة).
+ 
+ ---
+ 
+--- a/generated_reports/Section-1.2-WiFi-Frequency-vs-CSI.md
++++ b/generated_reports/Section-1.2-WiFi-Frequency-vs-CSI.md
+@@ -78,7 +78,7 @@
+ deviation of each subcarrier's amplitude and averages across subcarriers, producing a
+ motion-energy score per node. In an empty room the channel is static and the score stays
+ near zero; a moving person continuously reshapes the multipath, the per-subcarrier
+-amplitudes fluctuate, and the score rises above the calibrated empty-room threshold.
++amplitudes fluctuate, and the score rises above the empty-room threshold (provisional: 0.6, set from one 60 s empty recording).
+ Comparing the two nodes' scores with the RuView balance ratio then places the person on
+ the axis between the nodes [15]. Phase information, although present in raw CSI, is
+ deliberately not used on the live detection path: with a single antenna per node, the
+@@ -101,5 +101,5 @@
+ 
+ - Channel → frequency mapping (2412 + (channel−1)·5 MHz): `firmware/esp32-csi-node/main/csi_collector.c`, frequency-derivation block.
+ - Raw CSI payload = int8 I/Q pairs per subcarrier; amplitude = √(I²+Q²), capped at 64 subcarriers (antenna 0): `server/lib/udp-server.ts`.
+-- Motion energy = per-subcarrier temporal standard deviation over the 1500 ms window; empty-room gate threshold 0.12 (calibratable): `server/lib/` fusion pipeline, `shared/schema.ts` comment on `amplitudes`.
++- Motion energy = per-subcarrier temporal standard deviation over the 1500 ms window; empty-room gate threshold 0.6 (provisional; set from one 60 s empty recording, false-alarm and detection rates [TO BE MEASURED]): `server/lib/` fusion pipeline, `shared/schema.ts` comment on `amplitudes`.
+ - Two-node RuView balance localization: report Chapter 6 / reference [15].
+--- a/generated_reports/Appendix.md
++++ b/generated_reports/Appendix.md
+@@ -68,7 +68,7 @@
+ | `server/auth/ws-auth.ts` | WebSocket handshake authentication - validates the operator's JWT/cookie session before any live data flows. |
+ | `server/index.ts` | Express application bootstrap: HTTP server, routes, WebSocket layer, and UDP ingest startup. |
+ | `server/lib/complex.ts` | Complex-number arithmetic helpers (add, multiply, conjugate, magnitude) used by the DSP chain. |
+-| `server/lib/node-fusion.ts` | **The detector.** Pure functions for per-subcarrier turbulence motion (`computeNodeMotionFromMatrix`), the empty-room gate (default 0.12), contrast-sharpened two-node balance fusion (`fuseTwoNodeTarget`, p = 2.0), display bias, and approach/recede trend hysteresis. |
++| `server/lib/node-fusion.ts` | **The detector.** Pure functions for per-subcarrier turbulence motion (`computeNodeMotionFromMatrix`), the empty-room gate (default 0.6, provisional), contrast-sharpened two-node balance fusion (`fuseTwoNodeTarget`, p = 2.0), display bias, and approach/recede trend hysteresis. |
+ | `server/lib/recording-export.ts` | CSV export of recorded sessions with the positional-fidelity column contract (gate state, balance, distances, ground-truth join). |
+ | `server/lib/session-store.ts` | Persistent store for scan sessions/cases and their recorded artifacts. |
+ | `server/lib/signal-processing.ts` | Legacy single-node DSP helpers: background clutter subtraction, motion gate, MUSIC AoA spectrum, point-cloud generation, PDP ranging, micro-Doppler classification. |
+@@ -291,4 +291,4 @@
+ - Recording is controlled from the dashboard top bar (REC); sessions are stored as JSONL/CSV under `data/sessions/` and can be exported as CSV.
+ - `scripts/replay_to_dashboard.py` replays a recorded session into the live ingest for demonstration or debugging without hardware.
+ 
+-**Tunable environment variables:** `PHANTOM_MOTION_THRESHOLD` (empty-room gate, default 0.12), `PHANTOM_MOTION_WINDOW_MS` (motion window, default 1500), `PHANTOM_BALANCE_CONTRAST` (balance exponent, default 2.0), `PHANTOM_TREND_DEADBAND_MPS` (trend deadband, default 0.05).
++**Tunable environment variables:** `PHANTOM_MOTION_THRESHOLD` (empty-room gate, default 0.6, provisional), `PHANTOM_MOTION_WINDOW_MS` (motion window, default 1500), `PHANTOM_BALANCE_CONTRAST` (balance exponent, default 2.0), `PHANTOM_TREND_DEADBAND_MPS` (trend deadband, default 0.05).
+--- a/scripts/build_academic_reports.py
++++ b/scripts/build_academic_reports.py
+@@ -438,7 +438,7 @@
+     add_heading(doc, "1.4 Limitations", 2)
+     add_bullet(doc, "The fused localization is one-dimensional: the target is placed on the 3 m line between the two node anchors. A person walking off-axis is projected onto that line, and movement perpendicular to the axis is not representable [12], [15].")
+     add_bullet(doc, "Each node uses a single antenna, so classical multi-antenna Angle-of-Arrival techniques run only on synthetic or replay inputs, not on the live path [12].")
+-    add_bullet(doc, "The detection gate threshold (default 0.12) is an engineering placeholder that must be calibrated per room from an empty-room baseline; the repository ships a calibration tool for this purpose [12].")
++    add_bullet(doc, "The detection gate threshold (default 0.6) is provisional: it was set from a single 60 s empty-room recording and has not been validated against a negative control or a long empty soak; the repository ships a calibration tool that refuses to produce a threshold from a single short run [12]. False-alarm and detection rates are [TO BE MEASURED].")
+     add_bullet(doc, "Headline live metrics such as detection rate, false-positive rate, and localization error are defined in measurement protocols but not yet populated from repeated live campaigns [20], [21].")
+     add_bullet(doc, "Two people in the sensing area blend into a single fused estimate; multi-target separation is out of the current scope [20].")
+ 
+@@ -761,7 +761,7 @@
+             ["FR3", "The host shall be the sole owner of UDP port 5005 and shall parse and validate CSI frames (magic 0xC5110001), heartbeats (0xC51100A1), and firmware feature-state packets (0xC5110006).", "server/lib/udp-server.ts"],
+             ["FR4", "The host shall pin each node identity to its source address and reject frames for a known node arriving from a foreign source, with rate-limited security logging.", "SourcePinningGuard in udp-server.ts"],
+             ["FR5", "The host shall compute a per-node motion metric as the windowed per-subcarrier temporal standard deviation of CSI amplitude (default window 1500 ms).", "node-fusion.ts, websocket.ts"],
+-            ["FR6", "The system shall emit NO target when neither node's motion clears the calibrated gate (default 0.12): an empty room must stay empty on screen.", "fuseTwoNodeTarget empty-room gate"],
++            ["FR6", "The system shall emit NO target when neither node's motion clears the gate (default 0.6, provisional): an empty room must stay empty on screen.", "fuseTwoNodeTarget empty-room gate"],
+             ["FR7", "With both nodes live, the host shall fuse the two motion energies into a one-dimensional position on the node axis, with distance-to-nearest-node and per-node approaching/receding/stable trends.", "node-fusion.ts, websocket.ts"],
+             ["FR8", "With one node live, the system shall enter an explicitly labeled degraded single-node state and shall not fabricate fused output [18].", "target-state.ts (node_mode)"],
+             ["FR9", "Targets shall become 'stale' 1.5 s after the last live sample and shall be hard-cleared after 5 s; disconnects clear all client state.", "target-state.ts, use-websocket.ts"],
+@@ -816,7 +816,7 @@
+                server/lib/websocket.ts  (50 ms loop)
+                - per-node 1500 ms amplitude window
+                - computeNodeMotionFromMatrix()  [node-fusion.ts]
+-               - fuseTwoNodeTarget(): gate 0.12, balance p=2.0
++               - fuseTwoNodeTarget(): gate 0.6 (provisional), balance p=2.0
+                - target-state.ts truth machine (none/stale/
+                  idle/moving/degraded), trends, distances
+                                v
+@@ -1000,7 +1000,7 @@
+ 
+ FUSION_EXCERPT = """// server/lib/node-fusion.ts - two-node balance fusion with empty-room gate
+ export function fuseTwoNodeTarget(input: FuseInput): FusedTarget | null {
+-  const threshold = input.motionThreshold ?? DEFAULT_MOTION_THRESHOLD; // 0.12
++  const threshold = input.motionThreshold ?? DEFAULT_MOTION_THRESHOLD; // 0.6 (provisional)
+   const present = Math.max(input.motion1, input.motion2) >= threshold
+                   && r1 + r2 > EPS;
+   if (!present) return null;              // empty room => NO target (no ghost)
+@@ -1119,13 +1119,13 @@
+     add_text_paragraph(
+         doc,
+         "Presence is then decided by an explicit empty-room gate: a fused target exists only if "
+-        "max(motion1, motion2) >= PHANTOM_MOTION_THRESHOLD (default 0.12). Below the gate the "
++        "max(motion1, motion2) >= PHANTOM_MOTION_THRESHOLD (default 0.6, provisional). Below the gate the "
+         "fusion returns null and the dashboard shows an empty scene - not a centered ghost. The "
+-        "threshold is documented in-code as a placeholder to be calibrated per room: "
++        "threshold is documented in-code as provisional (set from one 60 s empty-room recording): "
+         "scripts/calibrate-threshold.ts records an empty-room baseline through the exact "
+-        "production pipeline and reports mean + 3/4/5-sigma candidates, and the negative-control "
++        "production pipeline and reports descriptive statistics only (it refuses to suggest a threshold from a single run), and the negative-control "
+         "requirement (a fan or curtain must be rejected while a still, breathing person is still "
+-        "detected) is written into the measurement protocol [21].",
++        "detected) is written into the measurement protocol [21]; it has not yet been met.",
+     )
+ 
+     add_heading(doc, "6.3.4 Two-Node Balance Fusion and 1-D Localization", 3)
+@@ -1439,7 +1439,7 @@
+     add_heading(doc, "8.3 Limitations and Recommendations for Future Work", 2)
+     add_text_paragraph(doc, "Principal limitations of the current system:")
+     add_bullet(doc, "One-dimensional localization: the target is a projection onto the 3 m node axis; off-axis position and perpendicular movement are not representable [15], [20].")
+-    add_bullet(doc, "Uncalibrated default gate: the 0.12 motion threshold is a placeholder pending per-room empty-room calibration and negative-control validation [21].")
++    add_bullet(doc, "Provisional default gate: the 0.6 motion threshold (set from one 60 s empty recording) is pending the live empty-room soak and negative-control validation [21]; its false-alarm and detection rates are [TO BE MEASURED].")
+     add_bullet(doc, "Single-target assumption: multiple people blend into one fused estimate.")
+     add_bullet(doc, "Pending metrology: detection rate, localization error, and vitals accuracy are protocol-defined but unmeasured [20], [21].")
+     add_bullet(doc, "Single-antenna nodes: true Angle-of-Arrival remains replay/synthetic-only on this hardware.")
+--- a/server/lib/websocket.ts
++++ b/server/lib/websocket.ts
+@@ -1814,9 +1814,10 @@
+    * samples, ~2.4s at ~42fps) whenever `motionGateEnabled` is false — the
+    * live config default (`websocket.ts` config, `motionGateEnabled: false`).
+    * That short, single-session auto-calibration window is far less robust
+-   * than the two-node fused gate's threshold (DEFAULT_MOTION_THRESHOLD,
+-   * empirically calibrated against a real empty-room + fan negative control
+-   * — see node-fusion.ts). Real empty-room recordings in single_node mode
++   * than the two-node fused gate's threshold (DEFAULT_MOTION_THRESHOLD, 0.6:
++   * PROVISIONAL, set from one 60 s empty-room recording and never validated
++   * against a fan negative control: a fan produced a confident false target at
++   * 0.6, see LIVE_HARDWARE_TEST_REPORT.md finding 5 and node-fusion.ts). Real empty-room recordings in single_node mode
+    * (`data/sessions/emty_room_test_2026-07-20T18-18-51-892Z.csv`,
+    * `emty_2026-07-20T18-21-17-566Z.csv`) show `motionResult.motionDetected`
+    * true on 98-99% of ticks with nobody in the room — a continuous ghost
+--- a/tests/behavioral/fusion-invariants.test.ts
++++ b/tests/behavioral/fusion-invariants.test.ts
+@@ -111,7 +111,7 @@
+   const t = fuseTwoNodeTarget({
+     r1: 1e-4,
+     r2: 1e-4,
+-    motion1: 1, // clears the default 0.12 threshold, so `present` is true
++    motion1: 1, // clears the 0.12 threshold passed explicitly below (NOT the code default, 0.6), so `present` is true
+     motion2: 0,
+     motionThreshold: 0.12,
+     anchors: ANCHORS,

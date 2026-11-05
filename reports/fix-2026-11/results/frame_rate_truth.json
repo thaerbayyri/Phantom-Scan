@@ -1,0 +1,3934 @@
+{
+ "provenance": {
+  "command": "python -m scripts.presence_eval.frame_rate",
+  "commit": "744ce43e9772f40bcc0d372e40b077644a9a8939",
+  "branch": "feat/two-node-radar-live-detection",
+  "working_tree_dirty": true,
+  "eval_code_sha256_16": "0a600d5bae253b8b",
+  "date_utc": "2026-11-03T19:36:10Z",
+  "python": "3.13.15",
+  "numpy": "2.4.4",
+  "inputs": [
+   "room1__s10__still__20261027T212107Z.jsonl",
+   "room1__s1__empty__20261018T175601Z.jsonl",
+   "room1__s1__empty__20261018T180250Z.jsonl",
+   "room1__s1__empty_fan__20261018T203921Z.jsonl",
+   "room1__s1__still__20261027T193610Z.jsonl",
+   "room1__s1__two_people__20261018T173055Z.jsonl",
+   "room1__s1__walking__20261017T204650Z.jsonl",
+   "room1__s2__still__20261025T195835Z.jsonl",
+   "room1__s3__two_people__20261025T201209Z.jsonl",
+   "room1__s5__empty_fan__20261027T193823Z.jsonl",
+   "room1__s6__empty__20261027T194207Z.jsonl",
+   "room1__s7__walking__20261027T194537Z.jsonl",
+   "room1__s8__empty__20261027T195356Z.jsonl",
+   "room1__s9__empty__20261027T204759Z.jsonl"
+  ]
+ },
+ "firmware_constants": {
+  "CSI_PING_INTERVAL_MS": 30,
+  "CSI_PING_TIMEOUT_MS": 20,
+  "CSI_MIN_SEND_INTERVAL_MS": 10,
+  "CSI_PING_SLOTS": 4
+ },
+ "firmware_expectation_fps": "~33 echo replies/s + ~10 Hz AP beacons = 'roughly 40 fps' (csi_ping_pure.h comment, not measured)",
+ "limits": [
+  "t is the recorder host's clock (ms), not a device timestamp: gaps of a few ms may be host batching",
+  "the header has no rate/bandwidth/transmitter: the frame TYPES being counted are not observable",
+  "no firmware or setting is changed by this analysis"
+ ],
+ "recordings": {
+  "room1__s10__still__20261027T212107Z.jsonl": {
+   "label": "still",
+   "subject": "s10",
+   "nodes": {
+    "1": {
+     "frames": 23893,
+     "duration_s": 362.744,
+     "rate": {
+      "seconds": 362,
+      "median_fps": 66.0,
+      "mean_fps": 65.86740331491713,
+      "cv": 0.041429123418069334,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 23892,
+      "gap_ms_quantiles": {
+       "q01": 4.0,
+       "q05": 9.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 17.0,
+       "q95": 22.0,
+       "q99": 29.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.004855181650761761,
+       "2": 0.005985267034990792,
+       "5": 0.013184329482672024,
+       "10": 0.08601205424409844
+      },
+      "share_gap_gt_ms": {
+       "100": 4.1855014230704836e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0028042859534572243
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 245,
+       "median_rel_change": 0.15154562651424217
+      },
+      "5-15ms": {
+       "n": 9971,
+       "median_rel_change": 0.14174201882521006
+      },
+      "15-30ms": {
+       "n": 13469,
+       "median_rel_change": 0.14000750465634557
+      },
+      "30-60ms": {
+       "n": 204,
+       "median_rel_change": 0.10173138756531289
+      },
+      "60-infms": {
+       "n": 3,
+       "median_rel_change": 0.12166744780458134
+      }
+     },
+     "phase_lock": {
+      "windows": 73,
+      "mean_best_R": {
+       "30ms": 0.0865245234519205,
+       "27ms": 0.048982517632519,
+       "33ms": 0.036715096255068316
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "2": {
+     "frames": 23373,
+     "duration_s": 362.743,
+     "rate": {
+      "seconds": 362,
+      "median_fps": 65.0,
+      "mean_fps": 64.43370165745857,
+      "cv": 0.041133723896618964,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 23372,
+      "gap_ms_quantiles": {
+       "q01": 4.0,
+       "q05": 9.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 17.0,
+       "q95": 24.0,
+       "q99": 30.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.005262707513263735,
+       "2": 0.00663186719151121,
+       "5": 0.013905527982200924,
+       "10": 0.08762621940783843
+      },
+      "share_gap_gt_ms": {
+       "100": 8.557247989046722e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0031233955160020537
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 244,
+       "median_rel_change": 0.21762319579421624
+      },
+      "5-15ms": {
+       "n": 9293,
+       "median_rel_change": 0.3311908713210764
+      },
+      "15-30ms": {
+       "n": 13545,
+       "median_rel_change": 0.32750272586691503
+      },
+      "30-60ms": {
+       "n": 284,
+       "median_rel_change": 0.09622385401440951
+      },
+      "60-infms": {
+       "n": 6,
+       "median_rel_change": 0.18762423708241277
+      }
+     },
+     "phase_lock": {
+      "windows": 73,
+      "mean_best_R": {
+       "30ms": 0.09504018778892141,
+       "27ms": 0.05371817077842678,
+       "33ms": 0.038276452400060015
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "3": {
+     "frames": 21581,
+     "duration_s": 362.752,
+     "rate": {
+      "seconds": 362,
+      "median_fps": 60.0,
+      "mean_fps": 59.51381215469613,
+      "cv": 0.07172696500630346,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 21580,
+      "gap_ms_quantiles": {
+       "q01": 2.0,
+       "q05": 8.0,
+       "q25": 13.0,
+       "q50": 16.0,
+       "q75": 20.0,
+       "q95": 30.0,
+       "q99": 37.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.009267840593141797,
+       "2": 0.012048192771084338,
+       "5": 0.024513438368860056,
+       "10": 0.11682113067655236
+      },
+      "share_gap_gt_ms": {
+       "100": 4.633920296570899e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.005607043558850788
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 401,
+       "median_rel_change": 0.19940216963649773
+      },
+      "5-15ms": {
+       "n": 7958,
+       "median_rel_change": 0.1998323410723039
+      },
+      "15-30ms": {
+       "n": 12126,
+       "median_rel_change": 0.1957862292445667
+      },
+      "30-60ms": {
+       "n": 1087,
+       "median_rel_change": 0.12551140810610925
+      },
+      "60-infms": {
+       "n": 8,
+       "median_rel_change": 0.16567905697485064
+      }
+     },
+     "phase_lock": {
+      "windows": 73,
+      "mean_best_R": {
+       "30ms": 0.1507737002607553,
+       "27ms": 0.06731444539953163,
+       "33ms": 0.05336031537667251
+      }
+     },
+     "median_frames_per_ping_interval": 1.8
+    },
+    "4": {
+     "frames": 20943,
+     "duration_s": 362.748,
+     "rate": {
+      "seconds": 362,
+      "median_fps": 58.0,
+      "mean_fps": 57.726519337016576,
+      "cv": 0.08149646879715142,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 20942,
+      "gap_ms_quantiles": {
+       "q01": 4.0,
+       "q05": 9.0,
+       "q25": 13.0,
+       "q50": 16.0,
+       "q75": 20.0,
+       "q95": 30.0,
+       "q99": 39.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.004822844045458886,
+       "2": 0.006637379428898863,
+       "5": 0.01446853213637666,
+       "10": 0.10433578454779868
+      },
+      "share_gap_gt_ms": {
+       "100": 4.775093114315729e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0018622863145831344
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 228,
+       "median_rel_change": 0.18406206850717177
+      },
+      "5-15ms": {
+       "n": 7550,
+       "median_rel_change": 0.2087951965868715
+      },
+      "15-30ms": {
+       "n": 11843,
+       "median_rel_change": 0.209840003448383
+      },
+      "30-60ms": {
+       "n": 1316,
+       "median_rel_change": 0.11775068302865226
+      },
+      "60-infms": {
+       "n": 5,
+       "median_rel_change": 0.1769428616790154
+      }
+     },
+     "phase_lock": {
+      "windows": 73,
+      "mean_best_R": {
+       "30ms": 0.174285908605374,
+       "27ms": 0.06652400881219576,
+       "33ms": 0.05162487243707825
+      }
+     },
+     "median_frames_per_ping_interval": 1.74
+    }
+   }
+  },
+  "room1__s1__empty__20261018T175601Z.jsonl": {
+   "label": "empty",
+   "subject": "s1",
+   "nodes": {
+    "1": {
+     "frames": 9734,
+     "duration_s": 150.833,
+     "rate": {
+      "seconds": 150,
+      "median_fps": 65.0,
+      "mean_fps": 64.51333333333334,
+      "cv": 0.03170315801548261,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 9733,
+      "gap_ms_quantiles": {
+       "q01": 2.0,
+       "q05": 8.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 24.0,
+       "q99": 30.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.008527689304428234,
+       "2": 0.011507243398746533,
+       "5": 0.0258912976471797,
+       "10": 0.11702455563546697
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.003904243296003288
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 191,
+       "median_rel_change": 0.2796410598357904
+      },
+      "5-15ms": {
+       "n": 3845,
+       "median_rel_change": 0.28610782723570827
+      },
+      "15-30ms": {
+       "n": 5570,
+       "median_rel_change": 0.28366504491316946
+      },
+      "30-60ms": {
+       "n": 127,
+       "median_rel_change": 0.2311011575886658
+      },
+      "60-infms": {
+       "n": 0,
+       "median_rel_change": null
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.07464300652775435,
+       "27ms": 0.06267572673379974,
+       "33ms": 0.04775760633694323
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "2": {
+     "frames": 9628,
+     "duration_s": 150.835,
+     "rate": {
+      "seconds": 150,
+      "median_fps": 64.0,
+      "mean_fps": 63.81333333333333,
+      "cv": 0.03801609833863488,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 9627,
+      "gap_ms_quantiles": {
+       "q01": 2.0,
+       "q05": 8.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 32.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.009971953879713306,
+       "2": 0.012880440427963021,
+       "5": 0.02586475537550639,
+       "10": 0.10231640178664174
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00010387451958034694,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.004674353381115612
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 193,
+       "median_rel_change": 0.1778588110488997
+      },
+      "5-15ms": {
+       "n": 3773,
+       "median_rel_change": 0.12470748285967664
+      },
+      "15-30ms": {
+       "n": 5476,
+       "median_rel_change": 0.1266321098753972
+      },
+      "30-60ms": {
+       "n": 175,
+       "median_rel_change": 0.2000834447610295
+      },
+      "60-infms": {
+       "n": 10,
+       "median_rel_change": 0.2690510275152299
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.06820411355106613,
+       "27ms": 0.05935479512645341,
+       "33ms": 0.046579758991186035
+      }
+     },
+     "median_frames_per_ping_interval": 1.92
+    },
+    "3": {
+     "frames": 9642,
+     "duration_s": 150.834,
+     "rate": {
+      "seconds": 150,
+      "median_fps": 65.0,
+      "mean_fps": 63.913333333333334,
+      "cv": 0.042903533961129135,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 9641,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 7.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 32.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.01172077585312727,
+       "2": 0.01597344673789026,
+       "5": 0.03267295923659371,
+       "10": 0.12270511357742973
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00041489472046468207,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.004563841925111503
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 257,
+       "median_rel_change": 0.12099534828981426
+      },
+      "5-15ms": {
+       "n": 3808,
+       "median_rel_change": 0.11000971067843696
+      },
+      "15-30ms": {
+       "n": 5389,
+       "median_rel_change": 0.11023295973678106
+      },
+      "30-60ms": {
+       "n": 170,
+       "median_rel_change": 0.11603356371350601
+      },
+      "60-infms": {
+       "n": 17,
+       "median_rel_change": 0.10718045041533876
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.07762981713744124,
+       "27ms": 0.064473582097123,
+       "33ms": 0.05048093012041711
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "4": {
+     "frames": 9650,
+     "duration_s": 150.833,
+     "rate": {
+      "seconds": 150,
+      "median_fps": 64.0,
+      "mean_fps": 63.96666666666667,
+      "cv": 0.036748046299664376,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 9649,
+      "gap_ms_quantiles": {
+       "q01": 0.480000000000004,
+       "q05": 6.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 26.0,
+       "q99": 35.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.018862058244377655,
+       "2": 0.023422116281479947,
+       "5": 0.0429060006218261,
+       "10": 0.1447818426779977
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00031091304798424707,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.010052855218157321
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 344,
+       "median_rel_change": 0.15821443292654802
+      },
+      "5-15ms": {
+       "n": 3759,
+       "median_rel_change": 0.14244957381501136
+      },
+      "15-30ms": {
+       "n": 5306,
+       "median_rel_change": 0.14299321750989663
+      },
+      "30-60ms": {
+       "n": 221,
+       "median_rel_change": 0.15748712266901474
+      },
+      "60-infms": {
+       "n": 19,
+       "median_rel_change": 0.3121026664895717
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.10274218790906718,
+       "27ms": 0.06388779230196527,
+       "33ms": 0.0549602139991277
+      }
+     },
+     "median_frames_per_ping_interval": 1.92
+    }
+   }
+  },
+  "room1__s1__empty__20261018T180250Z.jsonl": {
+   "label": "empty",
+   "subject": "s1",
+   "nodes": {
+    "1": {
+     "frames": 19861,
+     "duration_s": 299.995,
+     "rate": {
+      "seconds": 299,
+      "median_fps": 66.0,
+      "mean_fps": 66.20401337792642,
+      "cv": 0.028474482199502178,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 19860,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 26.0,
+       "q99": 32.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.027190332326283987,
+       "2": 0.03348439073514602,
+       "5": 0.058862034239677744,
+       "10": 0.20060422960725074
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.012537764350453172
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 942,
+       "median_rel_change": 0.2801848132643191
+      },
+      "5-15ms": {
+       "n": 8360,
+       "median_rel_change": 0.2915580888506011
+      },
+      "15-30ms": {
+       "n": 10141,
+       "median_rel_change": 0.28972366536549865
+      },
+      "30-60ms": {
+       "n": 408,
+       "median_rel_change": 0.26429553226697267
+      },
+      "60-infms": {
+       "n": 9,
+       "median_rel_change": 0.30252229185144436
+      }
+     },
+     "phase_lock": {
+      "windows": 60,
+      "mean_best_R": {
+       "30ms": 0.120115517515417,
+       "27ms": 0.06369497173388305,
+       "33ms": 0.05663640813483383
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "2": {
+     "frames": 19657,
+     "duration_s": 299.976,
+     "rate": {
+      "seconds": 299,
+      "median_fps": 66.0,
+      "mean_fps": 65.53177257525084,
+      "cv": 0.035083476183598,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 19656,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 26.0,
+       "q99": 34.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.027421652421652423,
+       "2": 0.03423890923890924,
+       "5": 0.059625559625559627,
+       "10": 0.19775132275132276
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00030525030525030525,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.011803011803011803
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 959,
+       "median_rel_change": 0.20752688220357882
+      },
+      "5-15ms": {
+       "n": 8345,
+       "median_rel_change": 0.1837105283345652
+      },
+      "15-30ms": {
+       "n": 9837,
+       "median_rel_change": 0.18097766252170963
+      },
+      "30-60ms": {
+       "n": 486,
+       "median_rel_change": 0.21757224565515199
+      },
+      "60-infms": {
+       "n": 29,
+       "median_rel_change": 0.2187940643076295
+      }
+     },
+     "phase_lock": {
+      "windows": 60,
+      "mean_best_R": {
+       "30ms": 0.12617322827944827,
+       "27ms": 0.06955083551933058,
+       "33ms": 0.05972632975172335
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "3": {
+     "frames": 19639,
+     "duration_s": 299.949,
+     "rate": {
+      "seconds": 299,
+      "median_fps": 66.0,
+      "mean_fps": 65.47157190635451,
+      "cv": 0.04061779479869893,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 19638,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 4.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 27.0,
+       "q99": 35.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.03564517771667176,
+       "2": 0.043130665037172826,
+       "5": 0.07225786739993889,
+       "10": 0.22527752316936553
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0006619818718810469,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.019095630919645584
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1148,
+       "median_rel_change": 0.1496271036512538
+      },
+      "5-15ms": {
+       "n": 8157,
+       "median_rel_change": 0.13143780721460632
+      },
+      "15-30ms": {
+       "n": 9744,
+       "median_rel_change": 0.13151495257578624
+      },
+      "30-60ms": {
+       "n": 547,
+       "median_rel_change": 0.15255470777271224
+      },
+      "60-infms": {
+       "n": 42,
+       "median_rel_change": 0.11080018385850782
+      }
+     },
+     "phase_lock": {
+      "windows": 60,
+      "mean_best_R": {
+       "30ms": 0.1402449607158631,
+       "27ms": 0.0724251971684435,
+       "33ms": 0.062126887952433436
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "4": {
+     "frames": 19749,
+     "duration_s": 299.986,
+     "rate": {
+      "seconds": 299,
+      "median_fps": 66.0,
+      "mean_fps": 65.82943143812709,
+      "cv": 0.031848700836113956,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 19748,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 3.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 27.0,
+       "q99": 35.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.039801498885963134,
+       "2": 0.0476503949767065,
+       "5": 0.07909661737897508,
+       "10": 0.22417459995948957
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0006076564715414219,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.020964148268179057
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1279,
+       "median_rel_change": 0.2643691276992611
+      },
+      "5-15ms": {
+       "n": 8115,
+       "median_rel_change": 0.15444552093819383
+      },
+      "15-30ms": {
+       "n": 9721,
+       "median_rel_change": 0.15482528390976513
+      },
+      "30-60ms": {
+       "n": 603,
+       "median_rel_change": 0.2674771873744433
+      },
+      "60-infms": {
+       "n": 30,
+       "median_rel_change": 0.36009862227892714
+      }
+     },
+     "phase_lock": {
+      "windows": 60,
+      "mean_best_R": {
+       "30ms": 0.13618216746988035,
+       "27ms": 0.07223956067457396,
+       "33ms": 0.0603226063860373
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    }
+   }
+  },
+  "room1__s1__empty_fan__20261018T203921Z.jsonl": {
+   "label": "empty_fan",
+   "subject": "s1",
+   "nodes": {
+    "1": {
+     "frames": 17077,
+     "duration_s": 275.072,
+     "rate": {
+      "seconds": 275,
+      "median_fps": 62.0,
+      "mean_fps": 62.08,
+      "cv": 0.0407306201785544,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 17076,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 6.0,
+       "q25": 11.0,
+       "q50": 16.0,
+       "q75": 20.0,
+       "q95": 28.0,
+       "q99": 36.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.018154134457718435,
+       "2": 0.02307331927851956,
+       "5": 0.044624033731553055,
+       "10": 0.19366362145701568
+      },
+      "share_gap_gt_ms": {
+       "100": 5.856172405715624e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.011185289294916842
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 615,
+       "median_rel_change": 0.10544835490301682
+      },
+      "5-15ms": {
+       "n": 7060,
+       "median_rel_change": 0.0834996695153236
+      },
+      "15-30ms": {
+       "n": 8768,
+       "median_rel_change": 0.08097642176228748
+      },
+      "30-60ms": {
+       "n": 630,
+       "median_rel_change": 0.0674444125800133
+      },
+      "60-infms": {
+       "n": 3,
+       "median_rel_change": 0.08786780589816821
+      }
+     },
+     "phase_lock": {
+      "windows": 55,
+      "mean_best_R": {
+       "30ms": 0.31071591891164085,
+       "27ms": 0.05991827883559543,
+       "33ms": 0.052888194867567045
+      }
+     },
+     "median_frames_per_ping_interval": 1.86
+    },
+    "2": {
+     "frames": 16998,
+     "duration_s": 275.072,
+     "rate": {
+      "seconds": 275,
+      "median_fps": 62.0,
+      "mean_fps": 61.79636363636364,
+      "cv": 0.04193307597715707,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 16997,
+      "gap_ms_quantiles": {
+       "q01": 3.0,
+       "q05": 8.0,
+       "q25": 12.0,
+       "q50": 16.0,
+       "q75": 19.0,
+       "q95": 27.0,
+       "q99": 34.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.007060069424016002,
+       "2": 0.009942931105489205,
+       "5": 0.02323939518738601,
+       "10": 0.12590457139495206
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00017650173560040006,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.003941872095075602
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 298,
+       "median_rel_change": 0.17035605829678713
+      },
+      "5-15ms": {
+       "n": 7210,
+       "median_rel_change": 0.12543935788868948
+      },
+      "15-30ms": {
+       "n": 9015,
+       "median_rel_change": 0.12261707924992334
+      },
+      "30-60ms": {
+       "n": 457,
+       "median_rel_change": 0.09764786608838531
+      },
+      "60-infms": {
+       "n": 17,
+       "median_rel_change": 0.27590805245871586
+      }
+     },
+     "phase_lock": {
+      "windows": 55,
+      "mean_best_R": {
+       "30ms": 0.2946355346732329,
+       "27ms": 0.05267491344787833,
+       "33ms": 0.04250140132982906
+      }
+     },
+     "median_frames_per_ping_interval": 1.86
+    },
+    "3": {
+     "frames": 15598,
+     "duration_s": 275.073,
+     "rate": {
+      "seconds": 275,
+      "median_fps": 58.0,
+      "mean_fps": 56.70545454545454,
+      "cv": 0.08481572056489894,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 15597,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 6.0,
+       "q25": 12.0,
+       "q50": 17.0,
+       "q75": 21.0,
+       "q95": 32.0,
+       "q99": 41.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.019555042636404438,
+       "2": 0.02532538308649099,
+       "5": 0.04558568955568378,
+       "10": 0.14265563890491761
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0005129191511188049,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0105148425979355
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 600,
+       "median_rel_change": 0.22309569881768454
+      },
+      "5-15ms": {
+       "n": 5673,
+       "median_rel_change": 0.22351804437525796
+      },
+      "15-30ms": {
+       "n": 7819,
+       "median_rel_change": 0.21903087106853092
+      },
+      "30-60ms": {
+       "n": 1467,
+       "median_rel_change": 0.08590432795322389
+      },
+      "60-infms": {
+       "n": 38,
+       "median_rel_change": 0.1839203205389406
+      }
+     },
+     "phase_lock": {
+      "windows": 55,
+      "mean_best_R": {
+       "30ms": 0.293484806582252,
+       "27ms": 0.06829935568757853,
+       "33ms": 0.0583039286143655
+      }
+     },
+     "median_frames_per_ping_interval": 1.74
+    },
+    "4": {
+     "frames": 16771,
+     "duration_s": 275.072,
+     "rate": {
+      "seconds": 275,
+      "median_fps": 61.0,
+      "mean_fps": 60.97090909090909,
+      "cv": 0.04433879310414266,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 16770,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 7.0,
+       "q25": 12.0,
+       "q50": 16.0,
+       "q75": 19.0,
+       "q95": 29.0,
+       "q99": 38.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.015742397137745976,
+       "2": 0.020512820512820513,
+       "5": 0.03577817531305903,
+       "10": 0.1471675611210495
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0002981514609421586,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.009063804412641622
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 480,
+       "median_rel_change": 0.17497617662334974
+      },
+      "5-15ms": {
+       "n": 6744,
+       "median_rel_change": 0.17107526700165282
+      },
+      "15-30ms": {
+       "n": 8845,
+       "median_rel_change": 0.16595364006454896
+      },
+      "30-60ms": {
+       "n": 676,
+       "median_rel_change": 0.09579254474887541
+      },
+      "60-infms": {
+       "n": 25,
+       "median_rel_change": 0.18619219164655315
+      }
+     },
+     "phase_lock": {
+      "windows": 55,
+      "mean_best_R": {
+       "30ms": 0.27021845531728217,
+       "27ms": 0.060378930660382024,
+       "33ms": 0.04739007187607051
+      }
+     },
+     "median_frames_per_ping_interval": 1.83
+    }
+   }
+  },
+  "room1__s1__still__20261027T193610Z.jsonl": {
+   "label": "still",
+   "subject": "s1",
+   "nodes": {
+    "1": {
+     "frames": 6164,
+     "duration_s": 94.458,
+     "rate": {
+      "seconds": 94,
+      "median_fps": 65.0,
+      "mean_fps": 65.23404255319149,
+      "cv": 0.024841583854311306,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 6163,
+      "gap_ms_quantiles": {
+       "q01": 4.0,
+       "q05": 8.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 17.0,
+       "q95": 23.0,
+       "q99": 30.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.0032451728054518902,
+       "2": 0.004867759208177835,
+       "5": 0.01573908810644167,
+       "10": 0.11114716858672724
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0019471036832711343
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 66,
+       "median_rel_change": 0.1277095626823876
+      },
+      "5-15ms": {
+       "n": 2627,
+       "median_rel_change": 0.12151918998580014
+      },
+      "15-30ms": {
+       "n": 3389,
+       "median_rel_change": 0.1180813394202409
+      },
+      "30-60ms": {
+       "n": 81,
+       "median_rel_change": 0.08719396290336018
+      },
+      "60-infms": {
+       "n": 0,
+       "median_rel_change": null
+      }
+     },
+     "phase_lock": {
+      "windows": 19,
+      "mean_best_R": {
+       "30ms": 0.1633611930413356,
+       "27ms": 0.05333238711749082,
+       "33ms": 0.041528197622679563
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "2": {
+     "frames": 6194,
+     "duration_s": 94.464,
+     "rate": {
+      "seconds": 94,
+      "median_fps": 66.0,
+      "mean_fps": 65.56382978723404,
+      "cv": 0.02628239390246272,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 6193,
+      "gap_ms_quantiles": {
+       "q01": 4.0,
+       "q05": 9.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 17.0,
+       "q95": 23.0,
+       "q99": 28.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.002906507347004683,
+       "2": 0.004198288390117875,
+       "5": 0.013886646213466818,
+       "10": 0.09752946875504602
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0016147263038914905
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 63,
+       "median_rel_change": 0.13298571787681548
+      },
+      "5-15ms": {
+       "n": 2545,
+       "median_rel_change": 0.09579804072759478
+      },
+      "15-30ms": {
+       "n": 3544,
+       "median_rel_change": 0.09599843294067197
+      },
+      "30-60ms": {
+       "n": 41,
+       "median_rel_change": 0.09716485556851691
+      },
+      "60-infms": {
+       "n": 0,
+       "median_rel_change": null
+      }
+     },
+     "phase_lock": {
+      "windows": 19,
+      "mean_best_R": {
+       "30ms": 0.111932912460691,
+       "27ms": 0.06191912121599043,
+       "33ms": 0.0375031876860314
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "3": {
+     "frames": 5536,
+     "duration_s": 94.444,
+     "rate": {
+      "seconds": 94,
+      "median_fps": 61.0,
+      "mean_fps": 58.6063829787234,
+      "cv": 0.21123672914133626,
+      "share_seconds_below_half_median": 0.05319148936170213,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 5535,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 29.0,
+       "q99": 40.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.0906955736224029,
+       "2": 0.09232158988256549,
+       "5": 0.11291779584462511,
+       "10": 0.1866305329719964
+      },
+      "share_gap_gt_ms": {
+       "100": 0.004516711833785004,
+       "250": 0.003071364046973803,
+       "1000": 0.0001806684733514002
+      },
+      "share_zero_gap": 0.08057813911472449
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 575,
+       "median_rel_change": 0.15105037826142861
+      },
+      "5-15ms": {
+       "n": 1874,
+       "median_rel_change": 0.13157124525188912
+      },
+      "15-30ms": {
+       "n": 2817,
+       "median_rel_change": 0.13073879397906843
+      },
+      "30-60ms": {
+       "n": 240,
+       "median_rel_change": 0.12385847139468056
+      },
+      "60-infms": {
+       "n": 29,
+       "median_rel_change": 0.20911598690778915
+      }
+     },
+     "phase_lock": {
+      "windows": 19,
+      "mean_best_R": {
+       "30ms": 0.20072652646907668,
+       "27ms": 0.11920635408500188,
+       "33ms": 0.09633548715230024
+      }
+     },
+     "median_frames_per_ping_interval": 1.83
+    },
+    "4": {
+     "frames": 5159,
+     "duration_s": 94.437,
+     "rate": {
+      "seconds": 94,
+      "median_fps": 57.0,
+      "mean_fps": 54.57446808510638,
+      "cv": 0.1374980806357822,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 5158,
+      "gap_ms_quantiles": {
+       "q01": 3.0,
+       "q05": 9.0,
+       "q25": 13.0,
+       "q50": 16.0,
+       "q75": 22.0,
+       "q95": 32.0,
+       "q99": 39.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.004265219077161691,
+       "2": 0.007367196587824738,
+       "5": 0.02055060100814269,
+       "10": 0.09247770453664211
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0023264831329972858
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 78,
+       "median_rel_change": 0.16562500221928134
+      },
+      "5-15ms": {
+       "n": 1668,
+       "median_rel_change": 0.15925675102025233
+      },
+      "15-30ms": {
+       "n": 2829,
+       "median_rel_change": 0.1538221132535669
+      },
+      "30-60ms": {
+       "n": 579,
+       "median_rel_change": 0.10303987243008642
+      },
+      "60-infms": {
+       "n": 4,
+       "median_rel_change": 0.1760671858432299
+      }
+     },
+     "phase_lock": {
+      "windows": 19,
+      "mean_best_R": {
+       "30ms": 0.2120550005434337,
+       "27ms": 0.0796772494616437,
+       "33ms": 0.0563628936641774
+      }
+     },
+     "median_frames_per_ping_interval": 1.71
+    }
+   }
+  },
+  "room1__s1__two_people__20261018T173055Z.jsonl": {
+   "label": "two_people",
+   "subject": "s1",
+   "nodes": {
+    "1": {
+     "frames": 70710,
+     "duration_s": 1086.923,
+     "rate": {
+      "seconds": 1086,
+      "median_fps": 66.0,
+      "mean_fps": 65.05616942909761,
+      "cv": 0.03330261637402935,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 70709,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 8.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 24.0,
+       "q99": 31.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.012798936486161592,
+       "2": 0.01612241723118698,
+       "5": 0.030038608946527316,
+       "10": 0.12728224129884455
+      },
+      "share_gap_gt_ms": {
+       "100": 2.8284942510854348e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.006943953386414742
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1720,
+       "median_rel_change": 0.2814051800473967
+      },
+      "5-15ms": {
+       "n": 29584,
+       "median_rel_change": 0.3067094238845464
+      },
+      "15-30ms": {
+       "n": 38330,
+       "median_rel_change": 0.2998124417018334
+      },
+      "30-60ms": {
+       "n": 1016,
+       "median_rel_change": 0.236655829834895
+      },
+      "60-infms": {
+       "n": 59,
+       "median_rel_change": 0.2682012382153291
+      }
+     },
+     "phase_lock": {
+      "windows": 218,
+      "mean_best_R": {
+       "30ms": 0.06848211873257133,
+       "27ms": 0.0633581057181833,
+       "33ms": 0.04910556002653417
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "2": {
+     "frames": 70136,
+     "duration_s": 1086.923,
+     "rate": {
+      "seconds": 1086,
+      "median_fps": 65.0,
+      "mean_fps": 64.52578268876611,
+      "cv": 0.03664759773833217,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 70135,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 8.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 34.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.015028159977186853,
+       "2": 0.018735296214443573,
+       "5": 0.03129678477222499,
+       "10": 0.12237827047836315
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00012832394667427105,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.00835531475012476
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1865,
+       "median_rel_change": 0.17538230528973248
+      },
+      "5-15ms": {
+       "n": 28903,
+       "median_rel_change": 0.16706295259841888
+      },
+      "15-30ms": {
+       "n": 37891,
+       "median_rel_change": 0.16865578820130658
+      },
+      "30-60ms": {
+       "n": 1386,
+       "median_rel_change": 0.13210491805679292
+      },
+      "60-infms": {
+       "n": 90,
+       "median_rel_change": 0.15016254015412311
+      }
+     },
+     "phase_lock": {
+      "windows": 218,
+      "mean_best_R": {
+       "30ms": 0.08209646090129256,
+       "27ms": 0.06026814336248538,
+       "33ms": 0.04759240618326517
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "3": {
+     "frames": 70098,
+     "duration_s": 1086.913,
+     "rate": {
+      "seconds": 1086,
+      "median_fps": 65.0,
+      "mean_fps": 64.49171270718232,
+      "cv": 0.042854902182335584,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 70097,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 6.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 36.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.02101373810576772,
+       "2": 0.02662025478979129,
+       "5": 0.044766537797623296,
+       "10": 0.14952137751972266
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00027105296945661013,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.011598213903590738
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 2646,
+       "median_rel_change": 0.18688482413016716
+      },
+      "5-15ms": {
+       "n": 28738,
+       "median_rel_change": 0.18291914666215608
+      },
+      "15-30ms": {
+       "n": 37005,
+       "median_rel_change": 0.18478408115260625
+      },
+      "30-60ms": {
+       "n": 1571,
+       "median_rel_change": 0.17360760346842546
+      },
+      "60-infms": {
+       "n": 137,
+       "median_rel_change": 0.16952715330707363
+      }
+     },
+     "phase_lock": {
+      "windows": 218,
+      "mean_best_R": {
+       "30ms": 0.07821689053609945,
+       "27ms": 0.06768723531125849,
+       "33ms": 0.05297521850032626
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "4": {
+     "frames": 69856,
+     "duration_s": 1086.925,
+     "rate": {
+      "seconds": 1086,
+      "median_fps": 65.0,
+      "mean_fps": 64.26611418047882,
+      "cv": 0.04164277015711882,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 69855,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 26.0,
+       "q99": 37.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.024135709684346144,
+       "2": 0.030119533319017965,
+       "5": 0.05061913964641042,
+       "10": 0.16063273924558014
+      },
+      "share_gap_gt_ms": {
+       "100": 0.000501037864147162,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.013513706964426312
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 2957,
+       "median_rel_change": 0.15100648366105274
+      },
+      "5-15ms": {
+       "n": 28468,
+       "median_rel_change": 0.14211340905528821
+      },
+      "15-30ms": {
+       "n": 36387,
+       "median_rel_change": 0.14070641778284942
+      },
+      "30-60ms": {
+       "n": 1868,
+       "median_rel_change": 0.12577388408446438
+      },
+      "60-infms": {
+       "n": 175,
+       "median_rel_change": 0.14037284317731735
+      }
+     },
+     "phase_lock": {
+      "windows": 218,
+      "mean_best_R": {
+       "30ms": 0.09000196093103843,
+       "27ms": 0.06862205540198546,
+       "33ms": 0.056442051917582135
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    }
+   }
+  },
+  "room1__s1__walking__20261017T204650Z.jsonl": {
+   "label": "walking",
+   "subject": "s1",
+   "nodes": {
+    "1": {
+     "frames": 4720,
+     "duration_s": 415.832,
+     "rate": {
+      "seconds": 415,
+      "median_fps": 12.0,
+      "mean_fps": 11.349397590361447,
+      "cv": 0.36161980590191295,
+      "share_seconds_below_half_median": 0.11566265060240964,
+      "share_empty_seconds": 0.004819277108433735
+     },
+     "interarrival": {
+      "n_gaps": 4719,
+      "gap_ms_quantiles": {
+       "q01": 3.0,
+       "q05": 13.0,
+       "q25": 20.0,
+       "q50": 22.0,
+       "q75": 29.0,
+       "q95": 600.0999999999995,
+       "q99": 1002.8199999999997
+      },
+      "share_gap_le_ms": {
+       "1": 0.006993006993006993,
+       "2": 0.008900190718372537,
+       "5": 0.012926467471922018,
+       "10": 0.03072684890866709
+      },
+      "share_gap_gt_ms": {
+       "100": 0.12947658402203857,
+       "250": 0.09917355371900827,
+       "1000": 0.010383555838101292
+      },
+      "share_zero_gap": 0.003178639542275906
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 56,
+       "median_rel_change": 0.10426856749306501
+      },
+      "5-15ms": {
+       "n": 266,
+       "median_rel_change": 0.0872485203422062
+      },
+      "15-30ms": {
+       "n": 3273,
+       "median_rel_change": 0.08325200339452152
+      },
+      "30-60ms": {
+       "n": 403,
+       "median_rel_change": 0.07848411578282607
+      },
+      "60-infms": {
+       "n": 721,
+       "median_rel_change": 0.4350740385991643
+      }
+     },
+     "phase_lock": {
+      "windows": 83,
+      "mean_best_R": {
+       "30ms": 0.17585737654989583,
+       "27ms": 0.1641174822112427,
+       "33ms": 0.15673120161792367
+      }
+     },
+     "median_frames_per_ping_interval": 0.36
+    },
+    "2": {
+     "frames": 4923,
+     "duration_s": 415.823,
+     "rate": {
+      "seconds": 415,
+      "median_fps": 12.0,
+      "mean_fps": 11.83855421686747,
+      "cv": 0.3538409418906108,
+      "share_seconds_below_half_median": 0.10602409638554217,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 4922,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 10.0,
+       "q25": 19.0,
+       "q50": 22.0,
+       "q75": 30.0,
+       "q95": 514.8999999999996,
+       "q99": 956.79
+      },
+      "share_gap_le_ms": {
+       "1": 0.027224705404307194,
+       "2": 0.02945956928078017,
+       "5": 0.03514831369362048,
+       "10": 0.051198699715562776
+      },
+      "share_gap_gt_ms": {
+       "100": 0.14242177976432344,
+       "250": 0.10077204388459976,
+       "1000": 0.006704591629418936
+      },
+      "share_zero_gap": 0.021332791548151157
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 162,
+       "median_rel_change": 0.13164372491863063
+      },
+      "5-15ms": {
+       "n": 258,
+       "median_rel_change": 0.13818410751889443
+      },
+      "15-30ms": {
+       "n": 3189,
+       "median_rel_change": 0.12437024415052551
+      },
+      "30-60ms": {
+       "n": 505,
+       "median_rel_change": 0.08833130274614381
+      },
+      "60-infms": {
+       "n": 808,
+       "median_rel_change": 0.24966223930516585
+      }
+     },
+     "phase_lock": {
+      "windows": 83,
+      "mean_best_R": {
+       "30ms": 0.20208839854844166,
+       "27ms": 0.17540138781879547,
+       "33ms": 0.16917113593984576
+      }
+     },
+     "median_frames_per_ping_interval": 0.36
+    },
+    "3": {
+     "frames": 4841,
+     "duration_s": 415.838,
+     "rate": {
+      "seconds": 415,
+      "median_fps": 12.0,
+      "mean_fps": 11.63855421686747,
+      "cv": 0.352167157726937,
+      "share_seconds_below_half_median": 0.10361445783132531,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 4840,
+      "gap_ms_quantiles": {
+       "q01": 4.390000000000001,
+       "q05": 14.0,
+       "q25": 20.0,
+       "q50": 22.0,
+       "q75": 29.0,
+       "q95": 560.0500000000002,
+       "q99": 990.6099999999997
+      },
+      "share_gap_le_ms": {
+       "1": 0.006611570247933884,
+       "2": 0.008264462809917356,
+       "5": 0.010537190082644627,
+       "10": 0.02231404958677686
+      },
+      "share_gap_gt_ms": {
+       "100": 0.13491735537190083,
+       "250": 0.10020661157024793,
+       "1000": 0.007231404958677686
+      },
+      "share_zero_gap": 0.0049586776859504135
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 49,
+       "median_rel_change": 0.12958881268569078
+      },
+      "5-15ms": {
+       "n": 200,
+       "median_rel_change": 0.12130914595029543
+      },
+      "15-30ms": {
+       "n": 3386,
+       "median_rel_change": 0.11242294674861192
+      },
+      "30-60ms": {
+       "n": 440,
+       "median_rel_change": 0.10226139744684529
+      },
+      "60-infms": {
+       "n": 765,
+       "median_rel_change": 0.41824884623187275
+      }
+     },
+     "phase_lock": {
+      "windows": 83,
+      "mean_best_R": {
+       "30ms": 0.1787042717160923,
+       "27ms": 0.1549588315965158,
+       "33ms": 0.16016927702390718
+      }
+     },
+     "median_frames_per_ping_interval": 0.36
+    },
+    "4": {
+     "frames": 4916,
+     "duration_s": 415.838,
+     "rate": {
+      "seconds": 415,
+      "median_fps": 12.0,
+      "mean_fps": 11.821686746987952,
+      "cv": 0.3543122752893901,
+      "share_seconds_below_half_median": 0.09879518072289156,
+      "share_empty_seconds": 0.0024096385542168677
+     },
+     "interarrival": {
+      "n_gaps": 4915,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 12.0,
+       "q25": 19.0,
+       "q50": 22.0,
+       "q75": 30.0,
+       "q95": 524.0,
+       "q99": 968.7199999999993
+      },
+      "share_gap_le_ms": {
+       "1": 0.014242115971515769,
+       "2": 0.015259409969481181,
+       "5": 0.018311291963377416,
+       "10": 0.038046795523906406
+      },
+      "share_gap_gt_ms": {
+       "100": 0.13835198372329605,
+       "250": 0.10071210579857579,
+       "1000": 0.006917599186164801
+      },
+      "share_zero_gap": 0.009359104781281791
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 81,
+       "median_rel_change": 0.1547943537323799
+      },
+      "5-15ms": {
+       "n": 322,
+       "median_rel_change": 0.128210842315568
+      },
+      "15-30ms": {
+       "n": 3202,
+       "median_rel_change": 0.12208224616232707
+      },
+      "30-60ms": {
+       "n": 534,
+       "median_rel_change": 0.09298138873365211
+      },
+      "60-infms": {
+       "n": 776,
+       "median_rel_change": 0.31566629969004856
+      }
+     },
+     "phase_lock": {
+      "windows": 83,
+      "mean_best_R": {
+       "30ms": 0.1929946742658943,
+       "27ms": 0.1741015737166641,
+       "33ms": 0.16751612462343485
+      }
+     },
+     "median_frames_per_ping_interval": 0.36
+    }
+   }
+  },
+  "room1__s2__still__20261025T195835Z.jsonl": {
+   "label": "still",
+   "subject": "s2",
+   "nodes": {
+    "1": {
+     "frames": 12911,
+     "duration_s": 227.972,
+     "rate": {
+      "seconds": 227,
+      "median_fps": 59.0,
+      "mean_fps": 56.647577092511014,
+      "cv": 0.2014995255702065,
+      "share_seconds_below_half_median": 0.04405286343612335,
+      "share_empty_seconds": 0.004405286343612335
+     },
+     "interarrival": {
+      "n_gaps": 12910,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 12.0,
+       "q50": 16.0,
+       "q75": 20.0,
+       "q95": 32.0,
+       "q99": 66.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.07591014717273431,
+       "2": 0.07939581719597212,
+       "5": 0.09519752130131681,
+       "10": 0.20193648334624323
+      },
+      "share_gap_gt_ms": {
+       "100": 0.005267234701781564,
+       "250": 0.001316808675445391,
+       "1000": 0.00030983733539891554
+      },
+      "share_zero_gap": 0.05747482571649884
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1144,
+       "median_rel_change": 0.1966863678436208
+      },
+      "5-15ms": {
+       "n": 4409,
+       "median_rel_change": 0.13490489597116345
+      },
+      "15-30ms": {
+       "n": 6425,
+       "median_rel_change": 0.12789639590894103
+      },
+      "30-60ms": {
+       "n": 772,
+       "median_rel_change": 0.1152091057291923
+      },
+      "60-infms": {
+       "n": 160,
+       "median_rel_change": 0.21549629673400322
+      }
+     },
+     "phase_lock": {
+      "windows": 46,
+      "mean_best_R": {
+       "30ms": 0.24268749205582485,
+       "27ms": 0.10337770881246072,
+       "33ms": 0.09046754199603656
+      }
+     },
+     "median_frames_per_ping_interval": 1.77
+    },
+    "2": {
+     "frames": 14060,
+     "duration_s": 227.976,
+     "rate": {
+      "seconds": 227,
+      "median_fps": 63.0,
+      "mean_fps": 61.709251101321584,
+      "cv": 0.06383831877578754,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 14059,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 30.0,
+       "q99": 61.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.07817056689664983,
+       "2": 0.08172700761078312,
+       "5": 0.09737534675296963,
+       "10": 0.18415250017782203
+      },
+      "share_gap_gt_ms": {
+       "100": 0.003200796642719966,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.056334020911871396
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1274,
+       "median_rel_change": 0.12747617867290967
+      },
+      "5-15ms": {
+       "n": 5035,
+       "median_rel_change": 0.12432967904514085
+      },
+      "15-30ms": {
+       "n": 7000,
+       "median_rel_change": 0.1234775327081889
+      },
+      "30-60ms": {
+       "n": 600,
+       "median_rel_change": 0.10605299337216242
+      },
+      "60-infms": {
+       "n": 150,
+       "median_rel_change": 0.12884306378114285
+      }
+     },
+     "phase_lock": {
+      "windows": 46,
+      "mean_best_R": {
+       "30ms": 0.18036200985484854,
+       "27ms": 0.07871893314712552,
+       "33ms": 0.06753753643902317
+      }
+     },
+     "median_frames_per_ping_interval": 1.89
+    },
+    "3": {
+     "frames": 14309,
+     "duration_s": 227.952,
+     "rate": {
+      "seconds": 227,
+      "median_fps": 65.0,
+      "mean_fps": 62.75330396475771,
+      "cv": 0.08571822395698882,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 14308,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 30.0,
+       "q99": 65.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.07471344702264468,
+       "2": 0.08016494268940452,
+       "5": 0.09693877551020408,
+       "10": 0.21868884540117417
+      },
+      "share_gap_gt_ms": {
+       "100": 0.003844003354766564,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.055213866368465196
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1279,
+       "median_rel_change": 0.15434390445821444
+      },
+      "5-15ms": {
+       "n": 5409,
+       "median_rel_change": 0.15145523717398118
+      },
+      "15-30ms": {
+       "n": 6882,
+       "median_rel_change": 0.1522587608276046
+      },
+      "30-60ms": {
+       "n": 562,
+       "median_rel_change": 0.12869585220600155
+      },
+      "60-infms": {
+       "n": 176,
+       "median_rel_change": 0.1462012151541242
+      }
+     },
+     "phase_lock": {
+      "windows": 46,
+      "mean_best_R": {
+       "30ms": 0.20162769274689396,
+       "27ms": 0.07793928193498893,
+       "33ms": 0.06773775033549587
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "4": {
+     "frames": 11299,
+     "duration_s": 227.969,
+     "rate": {
+      "seconds": 227,
+      "median_fps": 49.0,
+      "mean_fps": 49.5374449339207,
+      "cv": 0.08497629839464076,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 11298,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 12.0,
+       "q50": 18.0,
+       "q75": 26.0,
+       "q95": 38.0,
+       "q99": 74.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.08284652150823155,
+       "2": 0.08647548238626306,
+       "5": 0.1008143034165339,
+       "10": 0.17843866171003717
+      },
+      "share_gap_gt_ms": {
+       "100": 0.005133651973800672,
+       "250": 0.0002655337227827934,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.061780846167463266
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1072,
+       "median_rel_change": 0.14052147505523485
+      },
+      "5-15ms": {
+       "n": 2779,
+       "median_rel_change": 0.158519555077659
+      },
+      "15-30ms": {
+       "n": 5530,
+       "median_rel_change": 0.150220780694522
+      },
+      "30-60ms": {
+       "n": 1715,
+       "median_rel_change": 0.11997429768669758
+      },
+      "60-infms": {
+       "n": 202,
+       "median_rel_change": 0.148197795149757
+      }
+     },
+     "phase_lock": {
+      "windows": 46,
+      "mean_best_R": {
+       "30ms": 0.2976785312202722,
+       "27ms": 0.0992088858906705,
+       "33ms": 0.08238488477506561
+      }
+     },
+     "median_frames_per_ping_interval": 1.47
+    }
+   }
+  },
+  "room1__s3__two_people__20261025T201209Z.jsonl": {
+   "label": "two_people",
+   "subject": "s3",
+   "nodes": {
+    "1": {
+     "frames": 12326,
+     "duration_s": 244.996,
+     "rate": {
+      "seconds": 244,
+      "median_fps": 52.5,
+      "mean_fps": 50.27049180327869,
+      "cv": 0.18384098889903974,
+      "share_seconds_below_half_median": 0.020491803278688523,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 12325,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 8.0,
+       "q25": 13.0,
+       "q50": 18.0,
+       "q75": 25.0,
+       "q95": 37.0,
+       "q99": 58.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.011926977687626775,
+       "2": 0.014036511156186612,
+       "5": 0.02620689655172414,
+       "10": 0.1430425963488844
+      },
+      "share_gap_gt_ms": {
+       "100": 0.001379310344827586,
+       "250": 8.113590263691683e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.006490872210953347
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 249,
+       "median_rel_change": 0.11525566335750045
+      },
+      "5-15ms": {
+       "n": 3862,
+       "median_rel_change": 0.12283775880945262
+      },
+      "15-30ms": {
+       "n": 6238,
+       "median_rel_change": 0.13045207957299282
+      },
+      "30-60ms": {
+       "n": 1862,
+       "median_rel_change": 0.136345477071535
+      },
+      "60-infms": {
+       "n": 114,
+       "median_rel_change": 0.15071714147206788
+      }
+     },
+     "phase_lock": {
+      "windows": 49,
+      "mean_best_R": {
+       "30ms": 0.23188122833859864,
+       "27ms": 0.07987152885264728,
+       "33ms": 0.07335969274395004
+      }
+     },
+     "median_frames_per_ping_interval": 1.575
+    },
+    "2": {
+     "frames": 16117,
+     "duration_s": 244.991,
+     "rate": {
+      "seconds": 244,
+      "median_fps": 66.0,
+      "mean_fps": 65.78688524590164,
+      "cv": 0.02937009909877377,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 16116,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 6.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 24.0,
+       "q99": 31.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.01551253412757508,
+       "2": 0.0192355423181931,
+       "5": 0.03927773641102011,
+       "10": 0.19955323901712585
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0008066517746339042,
+       "250": 6.205013651030033e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.007880367336808141
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 490,
+       "median_rel_change": 0.09156657781882016
+      },
+      "5-15ms": {
+       "n": 7213,
+       "median_rel_change": 0.09045055514577006
+      },
+      "15-30ms": {
+       "n": 8134,
+       "median_rel_change": 0.08818277494252505
+      },
+      "30-60ms": {
+       "n": 263,
+       "median_rel_change": 0.07521237938212595
+      },
+      "60-infms": {
+       "n": 16,
+       "median_rel_change": 0.09222407563348184
+      }
+     },
+     "phase_lock": {
+      "windows": 49,
+      "mean_best_R": {
+       "30ms": 0.23012565612755628,
+       "27ms": 0.05498828317496693,
+       "33ms": 0.04740697683047711
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "3": {
+     "frames": 16269,
+     "duration_s": 244.997,
+     "rate": {
+      "seconds": 244,
+      "median_fps": 67.0,
+      "mean_fps": 66.39754098360656,
+      "cv": 0.024778173546098282,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 16268,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 6.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 24.0,
+       "q99": 30.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.016166707646914188,
+       "2": 0.020223752151462996,
+       "5": 0.038910745020899924,
+       "10": 0.2060486845340546
+      },
+      "share_gap_gt_ms": {
+       "100": 0.000799114826653553,
+       "250": 6.147037128104254e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.009036144578313253
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 481,
+       "median_rel_change": 0.1197866045874915
+      },
+      "5-15ms": {
+       "n": 7314,
+       "median_rel_change": 0.1118498762160741
+      },
+      "15-30ms": {
+       "n": 8309,
+       "median_rel_change": 0.11409133415761105
+      },
+      "30-60ms": {
+       "n": 148,
+       "median_rel_change": 0.11313850380246501
+      },
+      "60-infms": {
+       "n": 16,
+       "median_rel_change": 0.1242489413149406
+      }
+     },
+     "phase_lock": {
+      "windows": 49,
+      "mean_best_R": {
+       "30ms": 0.21967793759274318,
+       "27ms": 0.05794320107791601,
+       "33ms": 0.05029354985862335
+      }
+     },
+     "median_frames_per_ping_interval": 2.01
+    },
+    "4": {
+     "frames": 13054,
+     "duration_s": 244.986,
+     "rate": {
+      "seconds": 244,
+      "median_fps": 53.0,
+      "mean_fps": 53.295081967213115,
+      "cv": 0.07935930267821553,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 13053,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 7.0,
+       "q25": 12.0,
+       "q50": 18.0,
+       "q75": 25.0,
+       "q95": 33.0,
+       "q99": 38.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.013713322607829618,
+       "2": 0.015935034091779668,
+       "5": 0.028575806328047192,
+       "10": 0.15735846165632422
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0009959396307362292,
+       "250": 7.661074082586379e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.007354631119282923
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 303,
+       "median_rel_change": 0.14018059443674558
+      },
+      "5-15ms": {
+       "n": 4365,
+       "median_rel_change": 0.13269408504400804
+      },
+      "15-30ms": {
+       "n": 6625,
+       "median_rel_change": 0.12930560183981762
+      },
+      "30-60ms": {
+       "n": 1742,
+       "median_rel_change": 0.11034283900850786
+      },
+      "60-infms": {
+       "n": 18,
+       "median_rel_change": 0.1390459597997558
+      }
+     },
+     "phase_lock": {
+      "windows": 49,
+      "mean_best_R": {
+       "30ms": 0.32848479402074443,
+       "27ms": 0.0720230794235785,
+       "33ms": 0.0569963086757328
+      }
+     },
+     "median_frames_per_ping_interval": 1.59
+    }
+   }
+  },
+  "room1__s5__empty_fan__20261027T193823Z.jsonl": {
+   "label": "empty_fan",
+   "subject": "s5",
+   "nodes": {
+    "1": {
+     "frames": 12747,
+     "duration_s": 201.661,
+     "rate": {
+      "seconds": 201,
+      "median_fps": 64.0,
+      "mean_fps": 63.19900497512438,
+      "cv": 0.0708158973303239,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 12746,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 28.0,
+       "q99": 48.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.035462105758669385,
+       "2": 0.03828652126157226,
+       "5": 0.05311470265181233,
+       "10": 0.15510748470108268
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0015691197238349285,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.028244155029028713
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 589,
+       "median_rel_change": 0.1017821782350901
+      },
+      "5-15ms": {
+       "n": 5064,
+       "median_rel_change": 0.10024818563119559
+      },
+      "15-30ms": {
+       "n": 6566,
+       "median_rel_change": 0.10055191227875304
+      },
+      "30-60ms": {
+       "n": 449,
+       "median_rel_change": 0.09354146459152378
+      },
+      "60-infms": {
+       "n": 78,
+       "median_rel_change": 0.10261993113879284
+      }
+     },
+     "phase_lock": {
+      "windows": 41,
+      "mean_best_R": {
+       "30ms": 0.09856339501719848,
+       "27ms": 0.07154517693464021,
+       "33ms": 0.05413852655965951
+      }
+     },
+     "median_frames_per_ping_interval": 1.92
+    },
+    "2": {
+     "frames": 12946,
+     "duration_s": 201.661,
+     "rate": {
+      "seconds": 201,
+      "median_fps": 66.0,
+      "mean_fps": 64.18407960199005,
+      "cv": 0.07337597652840955,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 12945,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 13.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 48.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.03244495944380069,
+       "2": 0.036693704132869834,
+       "5": 0.05276168404789494,
+       "10": 0.143375820780224
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0009269988412514484,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.02410196987253766
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 582,
+       "median_rel_change": 0.09891124764279421
+      },
+      "5-15ms": {
+       "n": 5116,
+       "median_rel_change": 0.08263014744385769
+      },
+      "15-30ms": {
+       "n": 6867,
+       "median_rel_change": 0.08039019466626623
+      },
+      "30-60ms": {
+       "n": 302,
+       "median_rel_change": 0.09302943857065446
+      },
+      "60-infms": {
+       "n": 78,
+       "median_rel_change": 0.09173774721675056
+      }
+     },
+     "phase_lock": {
+      "windows": 41,
+      "mean_best_R": {
+       "30ms": 0.07000566367023064,
+       "27ms": 0.07861505122255417,
+       "33ms": 0.051880346407529636
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "3": {
+     "frames": 12198,
+     "duration_s": 201.664,
+     "rate": {
+      "seconds": 201,
+      "median_fps": 63.0,
+      "mean_fps": 60.482587064676615,
+      "cv": 0.17979170818542048,
+      "share_seconds_below_half_median": 0.03980099502487562,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 12197,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 1.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 29.0,
+       "q99": 55.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.05468557842092318,
+       "2": 0.05755513650897762,
+       "5": 0.08182339919652373,
+       "10": 0.18020824792981882
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0035254570796097403,
+       "250": 0.0012298106091661884,
+       "1000": 8.198737394441256e-05
+      },
+      "share_zero_gap": 0.04747068951381487
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 878,
+       "median_rel_change": 0.12711736467077708
+      },
+      "5-15ms": {
+       "n": 4515,
+       "median_rel_change": 0.11902223694290735
+      },
+      "15-30ms": {
+       "n": 6221,
+       "median_rel_change": 0.11650182631624048
+      },
+      "30-60ms": {
+       "n": 479,
+       "median_rel_change": 0.11149541124138047
+      },
+      "60-infms": {
+       "n": 104,
+       "median_rel_change": 0.12221630817763096
+      }
+     },
+     "phase_lock": {
+      "windows": 41,
+      "mean_best_R": {
+       "30ms": 0.10616466527610309,
+       "27ms": 0.10572040996060333,
+       "33ms": 0.07560130714694802
+      }
+     },
+     "median_frames_per_ping_interval": 1.89
+    },
+    "4": {
+     "frames": 9787,
+     "duration_s": 201.66,
+     "rate": {
+      "seconds": 201,
+      "median_fps": 48.0,
+      "mean_fps": 48.46766169154229,
+      "cv": 0.0984882746757233,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 9786,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 4.0,
+       "q25": 13.0,
+       "q50": 18.0,
+       "q75": 28.0,
+       "q95": 37.0,
+       "q99": 59.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.03750255466993664,
+       "2": 0.04383813611281422,
+       "5": 0.05916615573267934,
+       "10": 0.1298794195789904
+      },
+      "share_gap_gt_ms": {
+       "100": 0.002656856734109953,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.029225424075209484
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 527,
+       "median_rel_change": 0.1623220247929683
+      },
+      "5-15ms": {
+       "n": 2570,
+       "median_rel_change": 0.17015715541763887
+      },
+      "15-30ms": {
+       "n": 4668,
+       "median_rel_change": 0.15899902337334043
+      },
+      "30-60ms": {
+       "n": 1924,
+       "median_rel_change": 0.09940816598305713
+      },
+      "60-infms": {
+       "n": 97,
+       "median_rel_change": 0.1522427189173463
+      }
+     },
+     "phase_lock": {
+      "windows": 41,
+      "mean_best_R": {
+       "30ms": 0.25521651325705114,
+       "27ms": 0.08813987411884716,
+       "33ms": 0.07679857207947856
+      }
+     },
+     "median_frames_per_ping_interval": 1.44
+    }
+   }
+  },
+  "room1__s6__empty__20261027T194207Z.jsonl": {
+   "label": "empty",
+   "subject": "s6",
+   "nodes": {
+    "1": {
+     "frames": 9939,
+     "duration_s": 153.308,
+     "rate": {
+      "seconds": 153,
+      "median_fps": 65.0,
+      "mean_fps": 64.81699346405229,
+      "cv": 0.03996909964473402,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 9938,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 4.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 28.0,
+       "q99": 40.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.035017106057556854,
+       "2": 0.040853290400482994,
+       "5": 0.06993358824713222,
+       "10": 0.2136244717246931
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0004024954719259408,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.022841618031797142
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 568,
+       "median_rel_change": 0.10341768410779431
+      },
+      "5-15ms": {
+       "n": 4167,
+       "median_rel_change": 0.10036979531721707
+      },
+      "15-30ms": {
+       "n": 4810,
+       "median_rel_change": 0.100531137975855
+      },
+      "30-60ms": {
+       "n": 375,
+       "median_rel_change": 0.10011382257835406
+      },
+      "60-infms": {
+       "n": 18,
+       "median_rel_change": 0.10365582585302807
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.06859655634825895,
+       "27ms": 0.07908296274961975,
+       "33ms": 0.06333286881874062
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    },
+    "2": {
+     "frames": 10161,
+     "duration_s": 153.309,
+     "rate": {
+      "seconds": 153,
+      "median_fps": 66.0,
+      "mean_fps": 66.27450980392157,
+      "cv": 0.036072842364222216,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 10160,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 26.0,
+       "q99": 37.409999999999854
+      },
+      "share_gap_le_ms": {
+       "1": 0.029625984251968503,
+       "2": 0.03543307086614173,
+       "5": 0.06171259842519685,
+       "10": 0.20570866141732283
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0001968503937007874,
+       "250": 9.84251968503937e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.018011811023622048
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 502,
+       "median_rel_change": 0.09217079282003665
+      },
+      "5-15ms": {
+       "n": 4448,
+       "median_rel_change": 0.08849066241791378
+      },
+      "15-30ms": {
+       "n": 4936,
+       "median_rel_change": 0.08584909384524157
+      },
+      "30-60ms": {
+       "n": 260,
+       "median_rel_change": 0.09469599484864069
+      },
+      "60-infms": {
+       "n": 14,
+       "median_rel_change": 0.0922418083067529
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.07013345548559446,
+       "27ms": 0.07416480603127391,
+       "33ms": 0.06149054531528413
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "3": {
+     "frames": 9161,
+     "duration_s": 153.314,
+     "rate": {
+      "seconds": 153,
+      "median_fps": 64.0,
+      "mean_fps": 59.73202614379085,
+      "cv": 0.2415091874547791,
+      "share_seconds_below_half_median": 0.058823529411764705,
+      "share_empty_seconds": 0.006535947712418301
+     },
+     "interarrival": {
+      "n_gaps": 9160,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 7.0,
+       "q50": 13.0,
+       "q75": 18.0,
+       "q95": 31.0,
+       "q99": 86.40999999999985
+      },
+      "share_gap_le_ms": {
+       "1": 0.18897379912663756,
+       "2": 0.19770742358078602,
+       "5": 0.23155021834061135,
+       "10": 0.3548034934497817
+      },
+      "share_gap_gt_ms": {
+       "100": 0.009061135371179039,
+       "250": 0.005240174672489083,
+       "1000": 0.0003275109170305677
+      },
+      "share_zero_gap": 0.1640829694323144
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1989,
+       "median_rel_change": 0.1367690686229181
+      },
+      "5-15ms": {
+       "n": 3139,
+       "median_rel_change": 0.13589180862220532
+      },
+      "15-30ms": {
+       "n": 3493,
+       "median_rel_change": 0.13591431570995735
+      },
+      "30-60ms": {
+       "n": 420,
+       "median_rel_change": 0.13027606899385086
+      },
+      "60-infms": {
+       "n": 119,
+       "median_rel_change": 0.14072133096459424
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.16207055975805337,
+       "27ms": 0.1657407364221402,
+       "33ms": 0.1601401382216846
+      }
+     },
+     "median_frames_per_ping_interval": 1.92
+    },
+    "4": {
+     "frames": 8188,
+     "duration_s": 153.317,
+     "rate": {
+      "seconds": 153,
+      "median_fps": 54.0,
+      "mean_fps": 53.39869281045752,
+      "cv": 0.0643523255438847,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 8187,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 4.0,
+       "q25": 12.0,
+       "q50": 17.0,
+       "q75": 24.0,
+       "q95": 37.0,
+       "q99": 47.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.032368388909246364,
+       "2": 0.038964211554904114,
+       "5": 0.06375961890802492,
+       "10": 0.17649932820324904
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0004885794552339074,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.01819958470746305
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 431,
+       "median_rel_change": 0.16883558748890337
+      },
+      "5-15ms": {
+       "n": 2619,
+       "median_rel_change": 0.17403356812532478
+      },
+      "15-30ms": {
+       "n": 3891,
+       "median_rel_change": 0.16541529280360048
+      },
+      "30-60ms": {
+       "n": 1221,
+       "median_rel_change": 0.09616526983396241
+      },
+      "60-infms": {
+       "n": 25,
+       "median_rel_change": 0.1837022293600157
+      }
+     },
+     "phase_lock": {
+      "windows": 31,
+      "mean_best_R": {
+       "30ms": 0.14001831643547344,
+       "27ms": 0.09134419233598032,
+       "33ms": 0.08368800336224276
+      }
+     },
+     "median_frames_per_ping_interval": 1.62
+    }
+   }
+  },
+  "room1__s7__walking__20261027T194537Z.jsonl": {
+   "label": "walking",
+   "subject": "s7",
+   "nodes": {
+    "1": {
+     "frames": 13737,
+     "duration_s": 212.399,
+     "rate": {
+      "seconds": 212,
+      "median_fps": 66.0,
+      "mean_fps": 64.68867924528301,
+      "cv": 0.1369206270952121,
+      "share_seconds_below_half_median": 0.02358490566037736,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 13736,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 3.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 28.0,
+       "q99": 40.649999999999636
+      },
+      "share_gap_le_ms": {
+       "1": 0.03691030867792661,
+       "2": 0.04324403028538148,
+       "5": 0.07760629004076879,
+       "10": 0.24992719860221316
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0019656377402446127,
+       "250": 0.00021840419336051253,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.023296447291788
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 859,
+       "median_rel_change": 0.11511430762792282
+      },
+      "5-15ms": {
+       "n": 5908,
+       "median_rel_change": 0.11193498801336432
+      },
+      "15-30ms": {
+       "n": 6449,
+       "median_rel_change": 0.11116495158479073
+      },
+      "30-60ms": {
+       "n": 467,
+       "median_rel_change": 0.1104521892640605
+      },
+      "60-infms": {
+       "n": 53,
+       "median_rel_change": 0.14297624458303934
+      }
+     },
+     "phase_lock": {
+      "windows": 43,
+      "mean_best_R": {
+       "30ms": 0.0850173991226526,
+       "27ms": 0.0818724540252675,
+       "33ms": 0.06939494999995048
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "2": {
+     "frames": 14356,
+     "duration_s": 212.394,
+     "rate": {
+      "seconds": 212,
+      "median_fps": 68.0,
+      "mean_fps": 67.58962264150944,
+      "cv": 0.03762858070074722,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 14355,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 5.0,
+       "q25": 11.0,
+       "q50": 14.0,
+       "q75": 19.0,
+       "q95": 26.0,
+       "q99": 33.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.021455938697318006,
+       "2": 0.028979449669104842,
+       "5": 0.061790316962730754,
+       "10": 0.24444444444444444
+      },
+      "share_gap_gt_ms": {
+       "100": 6.966213862765588e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.012190874259839777
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 677,
+       "median_rel_change": 0.10501878377083244
+      },
+      "5-15ms": {
+       "n": 6577,
+       "median_rel_change": 0.10684112895327717
+      },
+      "15-30ms": {
+       "n": 6822,
+       "median_rel_change": 0.10467912980585116
+      },
+      "30-60ms": {
+       "n": 272,
+       "median_rel_change": 0.10102461927674528
+      },
+      "60-infms": {
+       "n": 7,
+       "median_rel_change": 0.10162019833716178
+      }
+     },
+     "phase_lock": {
+      "windows": 43,
+      "mean_best_R": {
+       "30ms": 0.0909864295579884,
+       "27ms": 0.07095886784448646,
+       "33ms": 0.06489629179362856
+      }
+     },
+     "median_frames_per_ping_interval": 2.04
+    },
+    "3": {
+     "frames": 12457,
+     "duration_s": 212.395,
+     "rate": {
+      "seconds": 212,
+      "median_fps": 64.5,
+      "mean_fps": 58.70283018867924,
+      "cv": 0.2766771055402886,
+      "share_seconds_below_half_median": 0.10377358490566038,
+      "share_empty_seconds": 0.0047169811320754715
+     },
+     "interarrival": {
+      "n_gaps": 12456,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 0.0,
+       "q25": 7.0,
+       "q50": 13.0,
+       "q75": 19.0,
+       "q95": 34.0,
+       "q99": 98.90000000000146
+      },
+      "share_gap_le_ms": {
+       "1": 0.16666666666666666,
+       "2": 0.17718368657675015,
+       "5": 0.22422928709055875,
+       "10": 0.3794155427103404
+      },
+      "share_gap_gt_ms": {
+       "100": 0.009794476557482338,
+       "250": 0.00401412973667309,
+       "1000": 0.0003211303789338471
+      },
+      "share_zero_gap": 0.13784521515735387
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 2539,
+       "median_rel_change": 0.15298972382341547
+      },
+      "5-15ms": {
+       "n": 4350,
+       "median_rel_change": 0.14199469978924856
+      },
+      "15-30ms": {
+       "n": 4610,
+       "median_rel_change": 0.14234740422812137
+      },
+      "30-60ms": {
+       "n": 747,
+       "median_rel_change": 0.13985134067216956
+      },
+      "60-infms": {
+       "n": 210,
+       "median_rel_change": 0.17158077974978664
+      }
+     },
+     "phase_lock": {
+      "windows": 43,
+      "mean_best_R": {
+       "30ms": 0.1636742138782048,
+       "27ms": 0.16506859855640885,
+       "33ms": 0.16213412373860886
+      }
+     },
+     "median_frames_per_ping_interval": 1.935
+    },
+    "4": {
+     "frames": 12940,
+     "duration_s": 212.39,
+     "rate": {
+      "seconds": 212,
+      "median_fps": 61.0,
+      "mean_fps": 60.91509433962264,
+      "cv": 0.0705953848157037,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 12939,
+      "gap_ms_quantiles": {
+       "q01": 0.0,
+       "q05": 4.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 21.0,
+       "q95": 32.0,
+       "q99": 41.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.030450575778653684,
+       "2": 0.03810186258598037,
+       "5": 0.07079372439910349,
+       "10": 0.2297704613957802
+      },
+      "share_gap_gt_ms": {
+       "100": 7.728572532653218e-05,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.015689002241286033
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 742,
+       "median_rel_change": 0.15233160641090812
+      },
+      "5-15ms": {
+       "n": 5032,
+       "median_rel_change": 0.1583729252281651
+      },
+      "15-30ms": {
+       "n": 6218,
+       "median_rel_change": 0.15556628784859453
+      },
+      "30-60ms": {
+       "n": 933,
+       "median_rel_change": 0.13107377996728375
+      },
+      "60-infms": {
+       "n": 14,
+       "median_rel_change": 0.12769803426153414
+      }
+     },
+     "phase_lock": {
+      "windows": 43,
+      "mean_best_R": {
+       "30ms": 0.09225851402201748,
+       "27ms": 0.08253660547901635,
+       "33ms": 0.07798205215218333
+      }
+     },
+     "median_frames_per_ping_interval": 1.83
+    }
+   }
+  },
+  "room1__s8__empty__20261027T195356Z.jsonl": {
+   "label": "empty",
+   "subject": "s8",
+   "nodes": {
+    "1": {
+     "frames": 145595,
+     "duration_s": 3208.893,
+     "rate": {
+      "seconds": 3208,
+      "median_fps": 39.5,
+      "mean_fps": 45.36751870324189,
+      "cv": 0.2403555486869337,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 145594,
+      "gap_ms_quantiles": {
+       "q01": 5.0,
+       "q05": 11.0,
+       "q25": 15.0,
+       "q50": 20.0,
+       "q75": 30.0,
+       "q95": 34.0,
+       "q99": 39.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.005165048010220202,
+       "2": 0.006181573416486943,
+       "5": 0.01066664835089358,
+       "10": 0.04721348407214583
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00030221025591713944,
+       "250": 2.0605244721623144e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0027336291330686702
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1270,
+       "median_rel_change": 0.09750745315885667
+      },
+      "5-15ms": {
+       "n": 32808,
+       "median_rel_change": 0.09813639057617485
+      },
+      "15-30ms": {
+       "n": 71668,
+       "median_rel_change": 0.08297290778517671
+      },
+      "30-60ms": {
+       "n": 39735,
+       "median_rel_change": 0.06313850084529884
+      },
+      "60-infms": {
+       "n": 113,
+       "median_rel_change": 0.07406424733280939
+      }
+     },
+     "phase_lock": {
+      "windows": 642,
+      "mean_best_R": {
+       "30ms": 0.5019041023807158,
+       "27ms": 0.07093760851129899,
+       "33ms": 0.05867501170909
+      }
+     },
+     "median_frames_per_ping_interval": 1.185
+    },
+    "2": {
+     "frames": 214319,
+     "duration_s": 3208.92,
+     "rate": {
+      "seconds": 3208,
+      "median_fps": 67.0,
+      "mean_fps": 66.78802992518703,
+      "cv": 0.022421527102058025,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 214318,
+      "gap_ms_quantiles": {
+       "q01": 2.0,
+       "q05": 8.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 22.0,
+       "q99": 27.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.008314747244748458,
+       "2": 0.010475088420011386,
+       "5": 0.021188140986757996,
+       "10": 0.1284119859274536
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0002053024011049002,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.00467062962513648
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 3498,
+       "median_rel_change": 0.13902290458339275
+      },
+      "5-15ms": {
+       "n": 96458,
+       "median_rel_change": 0.13976650368678106
+      },
+      "15-30ms": {
+       "n": 113080,
+       "median_rel_change": 0.13813544466434585
+      },
+      "30-60ms": {
+       "n": 1206,
+       "median_rel_change": 0.1325074531024539
+      },
+      "60-infms": {
+       "n": 76,
+       "median_rel_change": 0.13674782126488003
+      }
+     },
+     "phase_lock": {
+      "windows": 642,
+      "mean_best_R": {
+       "30ms": 0.14738602340257903,
+       "27ms": 0.05485679480357522,
+       "33ms": 0.041918896041854024
+      }
+     },
+     "median_frames_per_ping_interval": 2.01
+    },
+    "3": {
+     "frames": 210311,
+     "duration_s": 3208.924,
+     "rate": {
+      "seconds": 3208,
+      "median_fps": 66.0,
+      "mean_fps": 65.53865336658355,
+      "cv": 0.039195625655072446,
+      "share_seconds_below_half_median": 0.0012468827930174563,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 210310,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 6.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 33.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.014307450905805716,
+       "2": 0.01918596357757596,
+       "5": 0.043378821739337166,
+       "10": 0.17877894536636393
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0003280871095050164,
+       "250": 1.4264656935000713e-05,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.007246445722980362
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 6903,
+       "median_rel_change": 0.30781725977081353
+      },
+      "5-15ms": {
+       "n": 91394,
+       "median_rel_change": 0.30011939367867907
+      },
+      "15-30ms": {
+       "n": 107907,
+       "median_rel_change": 0.2919327209541519
+      },
+      "30-60ms": {
+       "n": 3961,
+       "median_rel_change": 0.1382748808245211
+      },
+      "60-infms": {
+       "n": 145,
+       "median_rel_change": 0.30935290571421864
+      }
+     },
+     "phase_lock": {
+      "windows": 642,
+      "mean_best_R": {
+       "30ms": 0.12473507212216751,
+       "27ms": 0.06545826916933037,
+       "33ms": 0.054711198155738563
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "4": {
+     "frames": 207255,
+     "duration_s": 3208.922,
+     "rate": {
+      "seconds": 3208,
+      "median_fps": 65.0,
+      "mean_fps": 64.58759351620948,
+      "cv": 0.03390247898822575,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 207254,
+      "gap_ms_quantiles": {
+       "q01": 2.0,
+       "q05": 8.0,
+       "q25": 12.0,
+       "q50": 15.0,
+       "q75": 18.0,
+       "q95": 25.0,
+       "q99": 32.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.009842994586352977,
+       "2": 0.01295994287203142,
+       "5": 0.02614183562199041,
+       "10": 0.12914105397242032
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00023159987262007006,
+       "250": 4.824997346251459e-06,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.005481196985341658
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 4223,
+       "median_rel_change": 0.36478405060188207
+      },
+      "5-15ms": {
+       "n": 89384,
+       "median_rel_change": 0.3615858887003811
+      },
+      "15-30ms": {
+       "n": 109783,
+       "median_rel_change": 0.36256125008288753
+      },
+      "30-60ms": {
+       "n": 3757,
+       "median_rel_change": 0.1787830150678009
+      },
+      "60-infms": {
+       "n": 107,
+       "median_rel_change": 0.3437015776258824
+      }
+     },
+     "phase_lock": {
+      "windows": 642,
+      "mean_best_R": {
+       "30ms": 0.12996548836961744,
+       "27ms": 0.06146456350877388,
+       "33ms": 0.04693913784844744
+      }
+     },
+     "median_frames_per_ping_interval": 1.95
+    }
+   }
+  },
+  "room1__s9__empty__20261027T204759Z.jsonl": {
+   "label": "empty",
+   "subject": "s9",
+   "nodes": {
+    "1": {
+     "frames": 34344,
+     "duration_s": 722.9,
+     "rate": {
+      "seconds": 722,
+      "median_fps": 44.0,
+      "mean_fps": 47.51800554016621,
+      "cv": 0.1974291978051179,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 34343,
+      "gap_ms_quantiles": {
+       "q01": 4.0,
+       "q05": 9.0,
+       "q25": 14.0,
+       "q50": 19.0,
+       "q75": 29.0,
+       "q95": 37.0,
+       "q99": 42.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.004979180619049005,
+       "2": 0.006085665201059896,
+       "5": 0.0144716536120898,
+       "10": 0.08569431907521183
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0003202981684768366,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0027079754243950734
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 362,
+       "median_rel_change": 0.09121681393504305
+      },
+      "5-15ms": {
+       "n": 9468,
+       "median_rel_change": 0.0853576843606138
+      },
+      "15-30ms": {
+       "n": 16893,
+       "median_rel_change": 0.07743447971380679
+      },
+      "30-60ms": {
+       "n": 7581,
+       "median_rel_change": 0.06155513502118314
+      },
+      "60-infms": {
+       "n": 39,
+       "median_rel_change": 0.07099075671318911
+      }
+     },
+     "phase_lock": {
+      "windows": 145,
+      "mean_best_R": {
+       "30ms": 0.40477074235890875,
+       "27ms": 0.07682889089524388,
+       "33ms": 0.06773518327104319
+      }
+     },
+     "median_frames_per_ping_interval": 1.32
+    },
+    "2": {
+     "frames": 48964,
+     "duration_s": 722.915,
+     "rate": {
+      "seconds": 722,
+      "median_fps": 68.0,
+      "mean_fps": 67.73130193905817,
+      "cv": 0.029933989562163116,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 48963,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 7.0,
+       "q25": 11.0,
+       "q50": 14.0,
+       "q75": 19.0,
+       "q95": 24.0,
+       "q99": 28.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.010048403896820048,
+       "2": 0.013418295447582869,
+       "5": 0.034515858913873744,
+       "10": 0.24728876907052263
+      },
+      "share_gap_gt_ms": {
+       "100": 0.000265506607029798,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.0068419010273063335
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1224,
+       "median_rel_change": 0.14296355170547592
+      },
+      "5-15ms": {
+       "n": 24411,
+       "median_rel_change": 0.148836969018535
+      },
+      "15-30ms": {
+       "n": 22944,
+       "median_rel_change": 0.1481955727591423
+      },
+      "30-60ms": {
+       "n": 358,
+       "median_rel_change": 0.12598351152316606
+      },
+      "60-infms": {
+       "n": 26,
+       "median_rel_change": 0.09140873650659573
+      }
+     },
+     "phase_lock": {
+      "windows": 145,
+      "mean_best_R": {
+       "30ms": 0.25917885410940356,
+       "27ms": 0.05820416308053331,
+       "33ms": 0.05104115405235163
+      }
+     },
+     "median_frames_per_ping_interval": 2.04
+    },
+    "3": {
+     "frames": 47532,
+     "duration_s": 722.903,
+     "rate": {
+      "seconds": 722,
+      "median_fps": 66.0,
+      "mean_fps": 65.75346260387812,
+      "cv": 0.03153419642810464,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 47531,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 5.0,
+       "q25": 11.0,
+       "q50": 15.0,
+       "q75": 19.0,
+       "q95": 26.0,
+       "q99": 33.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.017777871284004123,
+       "2": 0.024489280679977278,
+       "5": 0.05493257032252635,
+       "10": 0.20851654709557974
+      },
+      "share_gap_gt_ms": {
+       "100": 0.00023142791020597085,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.00969893332772296
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 2051,
+       "median_rel_change": 0.3746223166062291
+      },
+      "5-15ms": {
+       "n": 21100,
+       "median_rel_change": 0.29911526705056324
+      },
+      "15-30ms": {
+       "n": 23359,
+       "median_rel_change": 0.28425317686887297
+      },
+      "30-60ms": {
+       "n": 1002,
+       "median_rel_change": 0.3007203711412836
+      },
+      "60-infms": {
+       "n": 19,
+       "median_rel_change": 0.12916382714959218
+      }
+     },
+     "phase_lock": {
+      "windows": 145,
+      "mean_best_R": {
+       "30ms": 0.15143158874366164,
+       "27ms": 0.06955560465742527,
+       "33ms": 0.05760478805463084
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    },
+    "4": {
+     "frames": 47875,
+     "duration_s": 722.916,
+     "rate": {
+      "seconds": 722,
+      "median_fps": 66.0,
+      "mean_fps": 66.22437673130194,
+      "cv": 0.03486777215952708,
+      "share_seconds_below_half_median": 0.0,
+      "share_empty_seconds": 0.0
+     },
+     "interarrival": {
+      "n_gaps": 47874,
+      "gap_ms_quantiles": {
+       "q01": 1.0,
+       "q05": 7.0,
+       "q25": 11.0,
+       "q50": 14.0,
+       "q75": 19.0,
+       "q95": 25.0,
+       "q99": 32.0
+      },
+      "share_gap_le_ms": {
+       "1": 0.010214312570497557,
+       "2": 0.013619083427330075,
+       "5": 0.033170405648159755,
+       "10": 0.19611897898650624
+      },
+      "share_gap_gt_ms": {
+       "100": 0.0002297698124242804,
+       "250": 0.0,
+       "1000": 0.0
+      },
+      "share_zero_gap": 0.006454442912645695
+     },
+     "duplicate_share": 0.0,
+     "pair_similarity": {
+      "0-5ms": {
+       "n": 1180,
+       "median_rel_change": 0.40521638805359117
+      },
+      "5-15ms": {
+       "n": 23468,
+       "median_rel_change": 0.4179966630444014
+      },
+      "15-30ms": {
+       "n": 22400,
+       "median_rel_change": 0.4178456000071411
+      },
+      "30-60ms": {
+       "n": 805,
+       "median_rel_change": 0.3509641053803102
+      },
+      "60-infms": {
+       "n": 21,
+       "median_rel_change": 0.42293960816328485
+      }
+     },
+     "phase_lock": {
+      "windows": 145,
+      "mean_best_R": {
+       "30ms": 0.23278451453261198,
+       "27ms": 0.05889830552601376,
+       "33ms": 0.04850695455909338
+      }
+     },
+     "median_frames_per_ping_interval": 1.98
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,8 @@
+# footprint 01-PS-FIX-01
+changed (3):
+  M package.json
+  M pyproject.toml
+  M tests/test_esp_capture_e2e.py
+added (1):
+  A server/test-setup.ts
+removed (0):

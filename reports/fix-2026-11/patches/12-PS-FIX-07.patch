@@ -1,0 +1,268 @@
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\frame_rate.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\frame_rate.py"
+new file mode 100644
+index 0000000..1742bd3
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\scripts\\presence_eval\\frame_rate.py"	
+@@ -0,0 +1,183 @@
++"""PS-FIX-07: frame-rate truth. What do the recordings say about the real arrival process of CSI frames?
++
++    PRESENCE_EVAL_OUT=reports/fix-2026-11 python -m scripts.presence_eval.frame_rate
++
++Firmware source (csi_ping_pure.h) expects ~33 echo replies/s per node plus ~10 Hz of AP beacons, "roughly 40 fps"; the recordings
++run 64-67 fps per node. This measures, per recording and node, using only the recorded host timestamps and amplitudes:
++  * inter-arrival quantiles and the share of very short / very long gaps,
++  * the share of consecutive frames whose 51 amplitudes are bit-identical (duplicates),
++  * frames per 1 s bin (spread, share of seconds far below the median),
++  * how different consecutive amplitude vectors are as a function of the gap between them (are close pairs near-duplicates?),
++  * how strongly arrivals lock to the 30 ms ping period (Rayleigh R, scanned over 30 +/- 0.5 ms, against control bands).
++
++LIMITS (stated in the output): ``t`` is the recorder host's wall clock when the datagram was written, ms resolution, not a device
++timestamp, so gaps of a few ms can be host batching rather than radio behaviour; the header carries no rate/bandwidth/transmitter,
++so WHICH frame types are counted is not observable here. Nothing here changes a threshold or the firmware.
++"""
++from __future__ import annotations
++
++import re
++from pathlib import Path
++
++import numpy as np
++
++from .jsonutil import dump_json
++from .provenance import REPO_ROOT, default_out_dir, provenance
++from .recordings import NodeSeries, group_recordings, load_recording
++from .tables import REC_CACHE, ROOM_DIR
++
++OUT_DIR = default_out_dir()
++FIRMWARE_PING_H = REPO_ROOT / "firmware" / "esp32-csi-node" / "main" / "csi_ping_pure.h"
++GAP_QUANTILES = (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
++SHORT_GAPS_MS = (1, 2, 5, 10)
++LONG_GAPS_MS = (100, 250, 1000)
++GAP_CLASSES_MS = ((0, 5), (5, 15), (15, 30), (30, 60), (60, 1e12))
++LOW_RATE_FRACTION = 0.5
++PHASE_WINDOW_S = 5.0
++PHASE_MIN_FRAMES = 30
++PING_PERIOD_MS = 30.0
++PHASE_BAND_MS = 0.5
++PHASE_STEP_MS = 0.05
++CONTROL_PERIODS_MS = (27.0, 33.0)
++
++
++def firmware_constants(path: Path = FIRMWARE_PING_H) -> dict[str, int]:
++    """Read the timing #defines from the firmware header (static analysis; nothing is flashed or run)."""
++    found = {m.group(1): int(m.group(2)) for m in re.finditer(r"#define\s+(CSI_[A-Z_]+)\s+(\d+)U?\b", path.read_text(encoding="utf-8"))}
++    return {k: found[k] for k in ("CSI_PING_INTERVAL_MS", "CSI_PING_TIMEOUT_MS", "CSI_MIN_SEND_INTERVAL_MS", "CSI_PING_SLOTS")}
++
++
++def interarrival_stats(t_ms: np.ndarray) -> dict:
++    gaps = np.diff(t_ms.astype(np.float64))
++    if gaps.size == 0:
++        return {"n_gaps": 0}
++    out: dict = {"n_gaps": int(gaps.size), "gap_ms_quantiles": {f"q{int(q * 100):02d}": float(np.quantile(gaps, q)) for q in GAP_QUANTILES}}
++    out["share_gap_le_ms"] = {str(g): float(np.mean(gaps <= g)) for g in SHORT_GAPS_MS}
++    out["share_gap_gt_ms"] = {str(g): float(np.mean(gaps > g)) for g in LONG_GAPS_MS}
++    out["share_zero_gap"] = float(np.mean(gaps == 0))
++    return out
++
++
++def duplicate_share(a: np.ndarray) -> float:
++    """Fraction of consecutive frame pairs whose amplitude vectors are bit-identical."""
++    if len(a) < 2:
++        return float("nan")
++    return float(np.mean(np.all(a[1:] == a[:-1], axis=1)))
++
++
++def per_second_counts(t_ms: np.ndarray) -> np.ndarray:
++    """Frames per whole second since the first frame; the partial last second is dropped."""
++    sec = ((t_ms - t_ms[0]) // 1000).astype(np.int64)
++    if sec[-1] == 0:
++        return np.array([], dtype=np.int64)
++    return np.bincount(sec)[:-1]
++
++
++def rate_spread(t_ms: np.ndarray) -> dict:
++    counts = per_second_counts(t_ms)
++    if counts.size == 0:
++        return {"seconds": 0}
++    med = float(np.median(counts))
++    return {"seconds": int(counts.size), "median_fps": med, "mean_fps": float(counts.mean()),
++            "cv": float(counts.std() / counts.mean()) if counts.mean() > 0 else float("nan"),
++            "share_seconds_below_half_median": float(np.mean(counts < LOW_RATE_FRACTION * med)),
++            "share_empty_seconds": float(np.mean(counts == 0))}
++
++
++def pair_similarity(t_ms: np.ndarray, a: np.ndarray) -> dict:
++    """Relative amplitude change between consecutive frames, by the gap between them. Close pairs that are near-duplicates would
++    mean the effective independent sample rate is below the frame rate."""
++    if len(t_ms) < 3:
++        return {}
++    gaps = np.diff(t_ms.astype(np.float64))
++    prev = a[:-1].astype(np.float64)
++    d = np.linalg.norm(a[1:].astype(np.float64) - prev, axis=1) / np.maximum(np.linalg.norm(prev, axis=1), 1e-9)
++    out = {}
++    for lo, hi in GAP_CLASSES_MS:
++        sel = (gaps >= lo) & (gaps < hi)
++        key = f"{lo:g}-{'inf' if hi > 1e9 else f'{hi:g}'}ms"
++        out[key] = {"n": int(sel.sum()), "median_rel_change": float(np.median(d[sel])) if sel.any() else None}
++    return out
++
++
++def _best_rayleigh(t: np.ndarray, centre_ms: float) -> float:
++    periods = np.arange(centre_ms - PHASE_BAND_MS, centre_ms + PHASE_BAND_MS + 1e-9, PHASE_STEP_MS)
++    ph = 2 * np.pi * (t[None, :] / periods[:, None])
++    r = np.abs(np.exp(1j * ph).mean(axis=1))
++    return float(r.max())
++
++
++def phase_lock(t_ms: np.ndarray) -> dict:
++    """Mean over 5 s windows of the best Rayleigh R within period +/- 0.5 ms; control bands use the same scan, so scanning bias cancels."""
++    t = t_ms.astype(np.float64)
++    edges = np.arange(t[0], t[-1], PHASE_WINDOW_S * 1000)
++    res: dict[float, list[float]] = {p: [] for p in (PING_PERIOD_MS, *CONTROL_PERIODS_MS)}
++    for lo in edges:
++        seg = t[(t >= lo) & (t < lo + PHASE_WINDOW_S * 1000)]
++        if len(seg) < PHASE_MIN_FRAMES:
++            continue
++        for p in res:
++            res[p].append(_best_rayleigh(seg, p))
++    mean = {f"{p:g}ms": (float(np.mean(v)) if v else None) for p, v in res.items()}
++    return {"windows": len(res[PING_PERIOD_MS]), "mean_best_R": mean}
++
++
++def node_summary(s: NodeSeries) -> dict:
++    spread = rate_spread(s.t)
++    out = {"frames": int(len(s.t)), "duration_s": float((s.t[-1] - s.t[0]) / 1000.0) if len(s.t) > 1 else 0.0,
++           "rate": spread, "interarrival": interarrival_stats(s.t), "duplicate_share": duplicate_share(s.a),
++           "pair_similarity": pair_similarity(s.t, s.a), "phase_lock": phase_lock(s.t) if len(s.t) > PHASE_MIN_FRAMES else {}}
++    fps = spread.get("median_fps")
++    out["median_frames_per_ping_interval"] = (fps * firmware_constants()["CSI_PING_INTERVAL_MS"] / 1000.0) if fps else None
++    return out
++
++
++def run(room_dir: Path = ROOM_DIR) -> dict:
++    recs = {}
++    groups = group_recordings(room_dir)
++    for name, paths in groups.items():
++        rec = load_recording(paths, REC_CACHE)
++        recs[name] = {"label": rec.label, "subject": rec.subject, "nodes": {str(n): node_summary(s) for n, s in sorted(rec.nodes.items())}}
++    return {"provenance": provenance("python -m scripts.presence_eval.frame_rate", sorted(groups)),
++            "firmware_constants": firmware_constants(),
++            "firmware_expectation_fps": "~33 echo replies/s + ~10 Hz AP beacons = 'roughly 40 fps' (csi_ping_pure.h comment, not measured)",
++            "limits": ["t is the recorder host's clock (ms), not a device timestamp: gaps of a few ms may be host batching",
++                       "the header has no rate/bandwidth/transmitter: the frame TYPES being counted are not observable",
++                       "no firmware or setting is changed by this analysis"],
++            "recordings": recs}
++
++
++def _f(v: float | None, spec: str = ".2f") -> str:
++    return "n/a" if v is None or v != v else format(v, spec)
++
++
++def render(res: dict) -> str:
++    fw = res["firmware_constants"]
++    lines = ["# PS-FIX-07 — frame-rate truth (measured from recordings)", "",
++             f"Firmware constants (static, `csi_ping_pure.h`): ping interval {fw['CSI_PING_INTERVAL_MS']} ms, timeout {fw['CSI_PING_TIMEOUT_MS']} ms, "
++             f"send gate {fw['CSI_MIN_SEND_INTERVAL_MS']} ms. Header expectation: {res['firmware_expectation_fps']}.", "",
++             "| recording | node | frames | median fps | frames/ping | gap q05 / q50 / q95 ms | ≤5 ms | >100 ms | dup | s<½med | R30 / R27 / R33 |",
++             "|--|--|--|--|--|--|--|--|--|--|--|"]
++    for name, rec in res["recordings"].items():
++        for node, n in rec["nodes"].items():
++            q = n["interarrival"].get("gap_ms_quantiles", {})
++            ia = n["interarrival"]
++            ph = n["phase_lock"].get("mean_best_R", {})
++            lines.append(f"| {name.replace('.jsonl', '')} | {node} | {n['frames']} | {_f(n['rate'].get('median_fps'), '.1f')} | "
++                         f"{_f(n['median_frames_per_ping_interval'])} | {_f(q.get('q05'), '.0f')} / {_f(q.get('q50'), '.0f')} / {_f(q.get('q95'), '.0f')} | "
++                         f"{_f(ia.get('share_gap_le_ms', {}).get('5'))} | {_f(ia.get('share_gap_gt_ms', {}).get('100'), '.3f')} | "
++                         f"{_f(n['duplicate_share'], '.3f')} | {_f(n['rate'].get('share_seconds_below_half_median'), '.3f')} | "
++                         f"{_f(ph.get('30ms'))} / {_f(ph.get('27ms'))} / {_f(ph.get('33ms'))} |")
++    lines += ["", "Limits: " + "; ".join(res["limits"]) + "."]
++    return "\n".join(lines) + "\n"
++
++
++def main() -> None:
++    res = run()
++    dump_json(OUT_DIR / "results" / "frame_rate_truth.json", res)
++    (OUT_DIR / "results" / "frame_rate_truth.md").write_text(render(res), encoding="utf-8")
++    print(render(res))
++
++
++if __name__ == "__main__":
++    main()
+diff --git "a/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_frame_rate.py" "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_frame_rate.py"
+new file mode 100644
+index 0000000..9543bc0
+--- /dev/null
++++ "b/D:\\WIFI csi\\phanotm\\phantom scan\\tests\\test_presence_eval_frame_rate.py"	
+@@ -0,0 +1,73 @@
++"""PS-FIX-07: the frame-rate analysis, on synthetic arrival processes whose truth is known."""
++from __future__ import annotations
++
++import numpy as np
++
++from scripts.presence_eval import frame_rate as fr
++
++
++def test_firmware_constants_are_read_from_the_header_not_typed_in() -> None:
++    c = fr.firmware_constants()
++    assert c == {"CSI_PING_INTERVAL_MS": 30, "CSI_PING_TIMEOUT_MS": 20, "CSI_MIN_SEND_INTERVAL_MS": 10, "CSI_PING_SLOTS": 4}
++
++
++def test_interarrival_stats_on_a_regular_15_ms_stream() -> None:
++    t = np.arange(0, 60_000, 15, dtype=np.int64)
++    s = fr.interarrival_stats(t)
++    assert s["gap_ms_quantiles"]["q50"] == 15.0
++    assert s["share_gap_le_ms"]["10"] == 0.0 and s["share_gap_le_ms"]["5"] == 0.0
++    assert s["share_gap_gt_ms"]["100"] == 0.0 and s["share_zero_gap"] == 0.0
++
++
++def test_bursts_and_stalls_are_counted() -> None:
++    t = np.array([0, 1, 1, 100, 400, 1500], dtype=np.int64)
++    s = fr.interarrival_stats(t)
++    assert s["share_zero_gap"] == 0.2          # one of five gaps is exactly 0
++    assert s["share_gap_le_ms"]["2"] == 0.4    # gaps 1 and 0
++    assert s["share_gap_gt_ms"]["1000"] == 0.2 # gap 1100
++
++
++def test_duplicate_share_counts_only_bit_identical_consecutive_vectors() -> None:
++    a = np.array([[1.0, 2.0], [1.0, 2.0], [1.0, 2.5], [1.0, 2.5], [9.0, 9.0]])
++    assert fr.duplicate_share(a) == 0.5
++    assert np.isnan(fr.duplicate_share(a[:1]))
++
++
++def test_per_second_counts_drop_the_partial_last_second() -> None:
++    t = np.concatenate([np.arange(0, 3000, 100), [3050]]).astype(np.int64)    # 10 frames in each of seconds 0-2, then 1 in second 3
++    assert fr.per_second_counts(t).tolist() == [10, 10, 10]
++    assert fr.per_second_counts(np.array([0, 10, 20], dtype=np.int64)).size == 0
++
++
++def test_rate_spread_flags_seconds_far_below_the_median() -> None:
++    t = np.concatenate([np.concatenate([np.arange(s * 1000, s * 1000 + 1000, 20) for s in range(9)]),   # 50 fps for 9 s
++                        np.arange(9000, 10000, 500), [10000]]).astype(np.int64)                           # 2 fps in the 10th second
++    r = fr.rate_spread(t)
++    assert r["median_fps"] == 50.0 and r["share_seconds_below_half_median"] == 0.1 and r["share_empty_seconds"] == 0.0
++
++
++def test_pair_similarity_separates_near_duplicate_pairs_from_distinct_frames() -> None:
++    rng = np.random.default_rng(0)
++    base = 10 + rng.standard_normal((200, 51))
++    a = np.repeat(base, 2, axis=0) + 1e-6 * rng.standard_normal((400, 51))   # every frame twice -> close pair is a near-duplicate
++    t = np.cumsum(np.tile([28, 2], 200)).astype(np.int64)                     # diffs 2, 28, 2, ...: 2 ms inside a pair, 28 ms between pairs
++    sim = fr.pair_similarity(t, a)
++    assert sim["0-5ms"]["median_rel_change"] < 1e-4
++    assert sim["15-30ms"]["median_rel_change"] > 0.05
++
++
++def test_phase_lock_sees_a_30_ms_comb_but_not_random_arrivals() -> None:
++    rng = np.random.default_rng(1)
++    locked = np.cumsum(30.0 + 0.5 * rng.standard_normal(2000)).astype(np.int64)
++    random = np.cumsum(rng.exponential(30.0, 2000)).astype(np.int64)
++    r_locked = fr.phase_lock(locked)["mean_best_R"]
++    r_random = fr.phase_lock(random)["mean_best_R"]
++    assert r_locked["30ms"] > 0.8 and r_locked["30ms"] > 3 * r_locked["27ms"]
++    assert r_random["30ms"] < 0.4 and abs(r_random["30ms"] - r_random["27ms"]) < 0.1
++
++
++def test_node_summary_reports_frames_per_ping_interval() -> None:
++    rng = np.random.default_rng(2)
++    t = np.arange(0, 20_000, 15, dtype=np.int64)
++    s = fr.node_summary(fr.NodeSeries(t=t, rssi=np.full(len(t), -40, np.float32), a=(10 + rng.standard_normal((len(t), 51))).astype(np.float32)))
++    assert abs(s["median_frames_per_ping_interval"] - 2.0) < 0.1 and s["duplicate_share"] == 0.0

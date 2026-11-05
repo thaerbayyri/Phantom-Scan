@@ -1,0 +1,20 @@
+# footprint 10-PS-FIX-27
+changed (13):
+  M scripts/presence_eval/epoch_eval.py
+  M scripts/presence_eval/epochs.py
+  M scripts/presence_eval/movement.py
+  M server/audit/logger.ts
+  M server/auth/service.ts
+  M server/lib/dataset-recorder.ts
+  M server/lib/phase-test-logger.ts
+  M server/lib/runtime-settings.ts
+  M server/lib/session-store.ts
+  M server/lib/websocket.ts
+  M tests/e2e_guard.py
+  M tests/test_presence_eval_epochs.py
+  M tests/test_presence_eval_movement.py
+added (3):
+  A scripts/presence_eval/epoch_sensitivity.py
+  A server/lib/data-dir.test.ts
+  A server/lib/data-dir.ts
+removed (0):

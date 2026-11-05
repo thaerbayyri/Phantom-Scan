@@ -1,0 +1,6 @@
+# footprint 12-PS-FIX-07
+changed (0):
+added (2):
+  A scripts/presence_eval/frame_rate.py
+  A tests/test_presence_eval_frame_rate.py
+removed (0):

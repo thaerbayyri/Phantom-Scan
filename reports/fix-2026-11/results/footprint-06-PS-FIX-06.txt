@@ -1,0 +1,7 @@
+# footprint 06-PS-FIX-06
+changed (1):
+  M scripts/ai_inference.py
+added (2):
+  A phantom/presence_guard.py
+  A tests/test_presence_guard.py
+removed (0):

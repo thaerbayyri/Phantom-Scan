@@ -1,0 +1,6 @@
+# footprint 14-PS-FIX-09
+changed (0):
+added (2):
+  A scripts/presence_eval/periodicity.py
+  A tests/test_presence_eval_periodicity.py
+removed (0):

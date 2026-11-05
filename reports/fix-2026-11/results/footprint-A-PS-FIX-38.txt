@@ -1,0 +1,17 @@
+Item A / PS-FIX-38 footprint (2026-11-04)
+edited tracked files (backups in .tmp/fix-backups/A-PS-FIX-38/):
+  MEASUREMENT_PLAN.md
+  Phantom-Scan-Final-Project-Report-4Node.md
+  README.md
+  docs/PHANTOM_SCAN_PRELIMINARY_TECHNICAL_DELIVERABLE.md
+  docs/SPATIAL_CALIBRATION.md
+  scripts/build_academic_reports.py
+  scripts/calibrate-threshold.ts
+  server/lib/node-fusion.ts
+  server/lib/tracking.test.ts
+  server/lib/tracking.ts
+new files:
+  tests/test_doc_lint_threshold_rule.py
+  reports/fix-2026-11/09-WAVE3-addendum.md
+report/ledger/gate/test-report edits (backups in .tmp/fix-backups/W3-corrections/): 00-summary.md 80-issues-ledger.md 89-merge-gate.md 90-test-report.md 99-final-report.md
+patch: reports/fix-2026-11/patches/A-PS-FIX-38.patch (line endings normalised to LF for readability)
