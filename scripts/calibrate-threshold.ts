@@ -11,17 +11,36 @@
  * never apply it from a single run) for PHANTOM_SPATIAL_ENERGY_THRESHOLD via
  * calibrateEnergyThreshold (server/lib/tracking.ts).
  *
- * Usage:
- *   npx tsx scripts/calibrate-threshold.ts --seconds 120
- *   npx tsx scripts/calibrate-threshold.ts --seconds 120 --spatial
- *   PHANTOM_ALLOW_LEGACY_CSI=1 npx tsx scripts/calibrate-threshold.ts --seconds 120
+ * PS-FIX-11 — a single short run can no longer produce a recommendation. This tool COLLECTS runs and EVALUATES them offline; it never
+ * writes a setting (the rules and their tests are in scripts/accuracy/calibration-soak.ts):
+ *   1. EMPTY soak  >= 60 min (--min-soak-minutes, shorter is refused), room genuinely empty, nodes not moved:
+ *        npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600 --out .tmp/cal/empty1.json
+ *   2. FAN negative control >= 5 min (--min-fan-minutes), same link state:
+ *        npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --out .tmp/cal/fan.json
+ *   3. optional OCCUPIED run (walking) for misses:  --label occupied --seconds 300 --out .tmp/cal/walk.json
+ *   4. evaluate (no socket): npx tsx scripts/calibrate-threshold.ts --evaluate --empty .tmp/cal/empty1.json[,more] --fan .tmp/cal/fan.json
+ *        [--occupied .tmp/cal/walk.json] [--target-fa-per-hour 1]
+ * Evaluation uses per-node/fused 10 s BLOCK MAXIMA on HELD-OUT empty blocks, reports false alarms/hour and misses separately, and
+ * REFUSES to print a candidate when the soak is too short, the fan control is missing, the runs span a link-state change or calendar
+ * day (pooling), or the empty-vs-empty control shows drift.
  *
- * Run twice per MEASUREMENT_PLAN / REAL_TEST_REPORT:
- *   1. Empty room  -> threshold = mean + k*sigma (start k=4)
- *   2. Fan on-axis -> fan's max motion must stay BELOW the chosen threshold;
- *      if it doesn't, raise k and re-run the empty-room soak.
+ * Other usage (legacy options still work for the descriptive statistics):
+ *   npx tsx scripts/calibrate-threshold.ts --label fan --seconds 300 --spatial
+ *   PHANTOM_ALLOW_LEGACY_CSI=1 npx tsx scripts/calibrate-threshold.ts --label empty --seconds 3600
  */
 import dgram from "dgram";
+import fs from "fs";
+import path from "path";
+import {
+  BlockAccumulator,
+  DEFAULT_MIN_FAN_MIN,
+  DEFAULT_MIN_SOAK_MIN,
+  DEFAULT_TARGET_FALSE_ALARMS_PER_HOUR,
+  evaluateCalibration,
+  renderEvaluation,
+  type CalibrationRun,
+  type RunLabel,
+} from "./accuracy/calibration-soak";
 import { parseCsiPacket } from "../server/lib/udp-server";
 import { computeAgcNormalizedPerturbation, computeNodeMotionFromMatrix } from "../server/lib/node-fusion";
 import { reduceCsiFrame } from "../server/lib/csi-subcarriers";
@@ -39,6 +58,41 @@ const ALLOW_LEGACY_CSI =
   process.env.PHANTOM_ALLOW_LEGACY_CSI === "true";
 
 const SPATIAL = process.argv.includes("--spatial");
+
+function argValue(name: string): string | undefined {
+  const i = process.argv.indexOf(name);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+const LABEL = (argValue("--label") ?? "empty") as RunLabel;
+const OUT_PATH = argValue("--out");
+const MIN_SOAK_MIN = Number(argValue("--min-soak-minutes") ?? DEFAULT_MIN_SOAK_MIN);
+const MIN_FAN_MIN = Number(argValue("--min-fan-minutes") ?? DEFAULT_MIN_FAN_MIN);
+
+function loadRuns(list: string | undefined): CalibrationRun[] {
+  return (list ?? "").split(",").filter(Boolean).map((p) => JSON.parse(fs.readFileSync(p, "utf-8")) as CalibrationRun);
+}
+
+if (process.argv.includes("--evaluate")) {
+  // Offline: reads run files, prints the evaluation, writes nothing, binds no socket, never touches a setting.
+  const ev = evaluateCalibration(
+    { empty: loadRuns(argValue("--empty")), fan: loadRuns(argValue("--fan")), occupied: loadRuns(argValue("--occupied")) },
+    { minSoakMin: MIN_SOAK_MIN, minFanMin: MIN_FAN_MIN, targetFalseAlarmsPerHour: Number(argValue("--target-fa-per-hour") ?? DEFAULT_TARGET_FALSE_ALARMS_PER_HOUR) },
+  );
+  console.log(renderEvaluation(ev));
+  process.exit(ev.recommendationAllowed ? 0 : 3);
+}
+
+if (!["empty", "fan", "occupied"].includes(LABEL)) {
+  console.error(`--label must be empty, fan or occupied (got "${LABEL}")`);
+  process.exit(2);
+}
+const REQUIRED_S = LABEL === "empty" ? MIN_SOAK_MIN * 60 : LABEL === "fan" ? MIN_FAN_MIN * 60 : 0;
+if (SECONDS < REQUIRED_S) {
+  console.error(`Refusing to start: a "${LABEL}" run must last >= ${REQUIRED_S / 60} min (--seconds ${REQUIRED_S}); got ${SECONDS} s. A short run cannot give a trustworthy calibration (PS-FIX-11).`);
+  process.exit(2);
+}
+const startedAt = Date.now();
+const blocks = new BlockAccumulator(LABEL, startedAt);
 
 const windows = new Map<number, { t: number; amps: number[] }[]>();
 const samples: number[] = [];
@@ -68,6 +122,7 @@ sock.on("message", (msg) => {
   const { amplitudes: amps } = reduceCsiFrame(parsed.iqData, parsed.numSubcarriers, parsed.numAntennas);
 
   const t = Date.now();
+  blocks.addFrame(nodeId, t, parsed.rssi);
   let win = windows.get(nodeId);
   if (!win) {
     win = [];
@@ -112,16 +167,22 @@ function sampleRoomRise(nowMs: number): void {
     warmingUp ||= update.warmingUp;
     maxRise = Math.max(maxRise, update.z);
   }
-  if (!warmingUp) roomRiseSamples.push(maxRise);
+  if (!warmingUp) {
+    roomRiseSamples.push(maxRise);
+    blocks.addSample("roomZ", nowMs, maxRise);
+  }
 }
 
-const startedAt = Date.now();
 const tick = setInterval(() => {
   // Sample at ~5 Hz once both windows have content.
   const m1 = motionFor(1);
   const m2 = motionFor(2);
   if ((windows.get(1)?.length ?? 0) > 5 && (windows.get(2)?.length ?? 0) > 5) {
     samples.push(Math.max(m1, m2));
+    blocks.addSample("motion.fused", Date.now(), Math.max(m1, m2));
+  }
+  for (const id of [1, 2, 3, 4]) {
+    if ((windows.get(id)?.length ?? 0) > 5) blocks.addSample(`motion.n${id}`, Date.now(), motionFor(id));
   }
   sampleRoomRise(Date.now());
   const elapsed = (Date.now() - startedAt) / 1000;
@@ -155,16 +216,14 @@ function report(elapsedS: number) {
     const { mean, sigma, max } = stats(samples);
     console.log(`\n-- fused_two_node (nodes 1+2, ${samples.length} samples) --`);
     console.log(`max(motion1,motion2): mean=${mean.toFixed(4)} sigma=${sigma.toFixed(4)} max=${max.toFixed(4)}`);
-    console.log(`suggested PHANTOM_MOTION_THRESHOLD: mean+3s=${(mean + 3 * sigma).toFixed(4)}  mean+4s=${(mean + 4 * sigma).toFixed(4)}  mean+5s=${(mean + 5 * sigma).toFixed(4)}`);
-    console.log("(empty room: pick mean+k*sigma; fan run: observed max must stay BELOW your chosen threshold)");
+    console.log("(descriptive only: no threshold is suggested from a single run; collect an empty soak + a fan run and use --evaluate)");
   }
 
   if (roomRiseSamples.length > 0) {
     const { mean, sigma, max } = stats(roomRiseSamples);
     console.log(`\n-- fused_room (3-4 nodes, ${roomRiseSamples.length} post-warm-up samples) --`);
     console.log(`max node z (excess in units of the node's own scatter): mean=${mean.toFixed(2)} sigma=${sigma.toFixed(2)} max=${max.toFixed(2)}`);
-    console.log(`suggested PHANTOM_ROOM_TIER_STILL (z): max observed in an EMPTY run=${max.toFixed(2)} -> pick at least ${Math.ceil(max + 1)}  (current ${DEFAULT_TIER_THRESHOLDS.still}; must stay < PHANTOM_ROOM_TIER_MOVING=${DEFAULT_TIER_THRESHOLDS.moving})`);
-    console.log("(run >=5 min empty; the observed max must stay BELOW the chosen still threshold, and a fan run below moving)");
+    console.log(`(descriptive only; current PHANTOM_ROOM_TIER_STILL=${DEFAULT_TIER_THRESHOLDS.still}, PHANTOM_ROOM_TIER_MOVING=${DEFAULT_TIER_THRESHOLDS.moving} are NOT changed or suggested here; use --evaluate on an empty soak + a fan run)`);
   }
 
   if (SPATIAL) {
@@ -180,7 +239,13 @@ function report(elapsedS: number) {
     console.log(`\n=== Spatial energy calibration (${cal3.sampleCount} per-packet samples) ===`);
     console.log(`per-packet energy: mean=${cal3.mean.toFixed(2)} sigma=${cal3.sigma.toFixed(2)} max=${cal3.max.toFixed(2)}`);
     console.log(`suggested PHANTOM_SPATIAL_ENERGY_THRESHOLD: mean+3s=${cal3.suggestedThreshold.toFixed(2)}  mean+4s=${cal4.suggestedThreshold.toFixed(2)}`);
-    console.log("(apply via env PHANTOM_SPATIAL_ENERGY_THRESHOLD — see docs/SPATIAL_CALIBRATION.md)");
+    console.log("(apply via env PHANTOM_SPATIAL_ENERGY_THRESHOLD — see docs/SPATIAL_CALIBRATION.md; NOT drift- or pooling-checked: the PS-FIX-11 refusal rules do not cover this quantity)");
+  }
+  if (OUT_PATH) {
+    const run = blocks.finish({ command: process.argv.slice(1).join(" "), label: LABEL, node: process.version, note: "collected by scripts/calibrate-threshold.ts; room state is operator-asserted, not verified" });
+    fs.mkdirSync(path.dirname(path.resolve(OUT_PATH)), { recursive: true });
+    fs.writeFileSync(OUT_PATH, JSON.stringify(run), { flag: "wx" });   // exclusive: never overwrite an earlier run
+    console.log(`\nrun file written: ${OUT_PATH} (${Object.values(run.metrics)[0]?.length ?? 0} complete 10 s blocks)`);
   }
   process.exit(0);
 }
