@@ -107,6 +107,8 @@ import {
   isSampleFresh,
 } from "./target-state";
 import { loadRuntimeSettings, saveRuntimeSettings } from "./runtime-settings";
+import { DemoSession, type DemoMode, type DemoStatus } from "./demo-session";
+import type { WalkerFrame } from "./demo-walker";
 import {
   buildRecordingRow,
   buildRecordingSessionMeta,
@@ -174,6 +176,21 @@ export class SignalProcessingServer {
   // motion (each node sees a different static channel).
   /** Node anchors + room size — config/room.json or PHANTOM_ROOM_CONFIG, else defaults. */
   private room: RoomGeometry = getRoomGeometry();
+  /** Stamped on every TargetState: "live" except while a demo runs. */
+  private targetSourceMode: TargetState["source_mode"] = "live";
+  private demoTearingDown = false;
+  private demoStartedProcessing = false;
+  private demo = new DemoSession(
+    {
+      ingestSample: (sample) => this.acceptSample(sample),
+      publishWalkerFrame: (frame) => this.publishWalkerFrame(frame),
+      onStatus: (status) => this.onDemoStatus(status),
+    },
+    {
+      room: this.room,
+      datasetDir: process.env.PHANTOM_DEMO_DATASET_DIR || path.join("data", "datasets", "room1"),
+    },
+  );
   private datasetRecorder = new DatasetRecorder();
   private lastDatasetStatusMs = 0;
   private backgroundSubtractors = new Map<number, BackgroundSubtractor>();
@@ -366,6 +383,7 @@ export class SignalProcessingServer {
       this.sendToClient(clientId, "targetState", this.currentTargetState);
       this.sendToClient(clientId, "targetDebug", this.currentTargetDebug);
       this.sendDatasetStatusTo(clientId);
+      this.sendToClient(clientId, "demoStatus", this.demo.status());
       this.sendToClient(clientId, "recordingStatus", {
         isRecording: this.isRecording,
         sampleCount: this.recordingBuffer.length,
@@ -386,6 +404,8 @@ export class SignalProcessingServer {
       ws.on("close", () => {
         console.log(`Client disconnected: ${clientId}`);
         this.clients.delete(clientId);
+        // A demo has no audience once the last dashboard closes.
+        if (this.clients.size === 0) this.stopDemoSession();
       });
 
       ws.on("error", (error: Error) => {
@@ -413,8 +433,24 @@ export class SignalProcessingServer {
           dataSource: this.status.dataSource,
         });
         break;
+      case "startDemo":
+        this.handleStartDemo(client, message.data).catch((error: unknown) => {
+          console.error("[DEMO] start failed:", error);
+        });
+        break;
+      case "stopDemo":
+        this.stopDemoSession();
+        void this.auditClientAction(client, "demo_stopped");
+        break;
       case "stopProcessing":
-        this.stopProcessing();
+        // Stopping the scan during a demo ends the demo (which stops processing
+        // itself); a second stopProcessing() here would run in live mode and
+        // could save the demo's report as a real session.
+        if (this.demo.isActive()) {
+          this.stopDemoSession();
+        } else {
+          this.stopProcessing();
+        }
         void this.auditClientAction(client, "processing_stopped");
         break;
       case "updateConfig":
@@ -519,6 +555,9 @@ export class SignalProcessingServer {
           this.nodeBaselines.clear();
           this.roomPresence.reset();
           this.clearFusedSnapshot();
+          // The detector reset above is real work that needs no sidecar, so the
+          // server acknowledges it itself; a sidecar ack (if any) just repeats it.
+          this.broadcast("calibrationAck", { source: "detector", atMs: Date.now() });
           this.broadcastToAI("calibrateBaseline", null);
           void this.auditClientAction(client, "ai_baseline_calibration_requested");
         }
@@ -531,6 +570,144 @@ export class SignalProcessingServer {
         }
         break;
     }
+  }
+
+  // ── Demo mode ──────────────────────────────────────────────────
+
+  /** A live packet this recent means real hardware is streaming; a demo would mix with it. */
+  private static readonly DEMO_LIVE_BLOCK_MS = 5000;
+
+  /** True while a demo runs (external samples are dropped meanwhile). */
+  isDemoActive(): boolean {
+    return this.demo.isActive();
+  }
+
+  private async handleStartDemo(client: WSClient | undefined, data: unknown): Promise<void> {
+    const mode = (data as { mode?: unknown } | null)?.mode;
+    if (mode !== "synthetic" && mode !== "replay") {
+      this.sendDemoError(client, 'startDemo needs mode "synthetic" or "replay"');
+      return;
+    }
+    if (this.demo.isActive()) {
+      this.sendDemoError(client, "A demo is already running - stop it first");
+      return;
+    }
+    if (this.status.isProcessing) {
+      // A running scan owns the recording and the session report; a demo would
+      // feed its data into both.
+      this.sendDemoError(client, "Stop the scan before starting a demo");
+      return;
+    }
+    const nowMs = Date.now();
+    const liveStreaming = Array.from(this.hardwareNodeLastSeenMs.values()).some(
+      (seenMs) => nowMs - seenMs <= SignalProcessingServer.DEMO_LIVE_BLOCK_MS,
+    );
+    if (liveStreaming) {
+      this.sendDemoError(
+        client,
+        "Live ESP32 nodes are streaming - demo mode is unavailable while live data is arriving",
+      );
+      return;
+    }
+
+    this.prepareForDemo(mode);
+    const result = await this.demo.start(mode);
+    if (!result.ok) {
+      this.teardownDemo();
+      this.sendDemoError(client, result.error);
+      return;
+    }
+    void this.auditClientAction(client, "demo_started", { mode });
+  }
+
+  private sendDemoError(client: WSClient | undefined, message: string): void {
+    console.warn(`[DEMO] ${message}`);
+    if (client) {
+      this.sendToClient(client.id, "error", message);
+    }
+  }
+
+  /** Forget all live-derived detector state so a demo (and the return to live) starts clean. */
+  private resetDetectionState(): void {
+    this.hardwareSampleQueue = [];
+    this.nextHardwareQueueIndex = 0;
+    this.hardwareNodeLastSeenMs.clear();
+    this.nodeAmpWindow.clear();
+    this.nodeBaselines.clear();
+    this.roomPresence.reset();
+    this.lastRoomTier = "absent";
+    this.clearFusedSnapshot();
+    this.fusedKalman.reset();
+  }
+
+  private prepareForDemo(mode: DemoMode): void {
+    this.targetSourceMode = mode === "replay" ? "replay" : "synthetic";
+    this.status.source = this.targetSourceMode;
+    this.status.synthetic_enabled = mode === "synthetic";
+    this.resetDetectionState();
+    if (this.status.isProcessing) {
+      this.clearTargetArtifacts("demo_started");
+    } else {
+      this.demoStartedProcessing = true;
+      this.startProcessing();
+    }
+    this.broadcast("status", this.status);
+  }
+
+  /** Stop the demo (if any) and put the server back on live data. Idempotent. */
+  private teardownDemo(): void {
+    if (this.demoTearingDown) return;
+    this.demoTearingDown = true;
+    try {
+      this.demo.stop();
+      // Stop processing while still labelled as a demo so stopProcessing()
+      // skips its session auto-save (a demo is not a session).
+      if (this.demoStartedProcessing) {
+        this.demoStartedProcessing = false;
+        this.stopProcessing();
+      }
+      this.targetSourceMode = "live";
+      this.status.source = "live";
+      this.status.synthetic_enabled = false;
+      // The demo's report counters must not survive into live mode, or a later
+      // stopProcessing() would save them as a real session.
+      this.reportFrameCount = 0;
+      this.reportStartTime = 0;
+      this.resetDetectionState();
+      this.clearTargetArtifacts("demo_stopped");
+      // stopProcessing() broadcast the nodes while the replay still looked live;
+      // send them again now that it is cleared so no beacon stays "active".
+      this.broadcastNodes();
+      this.broadcast("status", this.status);
+    } finally {
+      this.demoTearingDown = false;
+    }
+  }
+
+  private stopDemoSession(): void {
+    if (this.demo.isActive() || this.targetSourceMode !== "live") {
+      this.teardownDemo();
+    }
+  }
+
+  private onDemoStatus(status: DemoStatus): void {
+    this.broadcast("demoStatus", status);
+    // The session ends itself on a tick failure; unwind host state to match.
+    if (!status.active && this.targetSourceMode !== "live") {
+      this.teardownDemo();
+    }
+  }
+
+  /** Synthetic demo: broadcast one simulated scene, labelled synthetic end to end. */
+  private publishWalkerFrame(frame: WalkerFrame): void {
+    this.currentRadialTarget = frame.radialTarget;
+    this.lastTruthfulTargetUpdateMs = Date.now();
+    this.broadcast("radialTarget", frame.radialTarget);
+    this.broadcastTargetState(frame.targetState);
+    this.broadcast("nodes", frame.nodes);
+    this.broadcast("signalField", frame.signalField);
+    this.currentVitalSigns = frame.vitalSigns;
+    this.broadcast("vitalSigns", frame.vitalSigns);
   }
 
   private async auditClientAction(client: WSClient | undefined, eventType: string, details?: Record<string, unknown>) {
@@ -631,8 +808,11 @@ export class SignalProcessingServer {
       this.processFrame();
     }, 50);
 
-    // Auto-start recording
-    this.startRecording();
+    // Auto-start recording (never for a demo: simulated/replayed data must not
+    // be exported as a recording).
+    if (this.targetSourceMode === "live") {
+      this.startRecording();
+    }
 
     console.log("[WS] Processing started, interval created");
   }
@@ -650,8 +830,9 @@ export class SignalProcessingServer {
     // Auto-stop recording
     this.stopRecording();
 
-    // Auto-save session to persistent storage
-    if (this.reportFrameCount > 0 && this.reportStartTime > 0) {
+    // Auto-save session to persistent storage - never for a demo, which would
+    // otherwise appear in the operator's session history as a real session.
+    if (this.targetSourceMode === "live" && this.reportFrameCount > 0 && this.reportStartTime > 0) {
       try {
         // Add session stopped event
         const elapsed = (Date.now() - this.reportStartTime) / 1000;
@@ -869,7 +1050,8 @@ export class SignalProcessingServer {
    * Everything the frontend renders about the target originates here.
    */
   private processFrame() {
-    if (!this.status.isProcessing || this.isStopping) {
+    // The synthetic demo publishes its own scene; the live pipeline stays paused.
+    if (!this.status.isProcessing || this.isStopping || this.demo.isSynthetic()) {
       return;
     }
 
@@ -1279,6 +1461,7 @@ export class SignalProcessingServer {
         this.broadcastTargetState(
           buildTargetState({
             dataSource: this.status.dataSource,
+            sourceMode: this.targetSourceMode,
             nowMs: this.lastTruthfulTargetUpdateMs,
             lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
             nodeMode,
@@ -1403,6 +1586,7 @@ export class SignalProcessingServer {
       this.broadcastTargetState(
         emptyTargetState({
           dataSource: this.status.dataSource,
+          sourceMode: this.targetSourceMode,
           nowMs: Date.now(),
           lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
           nodeMode: this.resolveLiveNodeMode(),
@@ -1562,6 +1746,7 @@ export class SignalProcessingServer {
       this.broadcastTargetState(
         buildTargetState({
           dataSource: this.status.dataSource,
+          sourceMode: this.targetSourceMode,
           nowMs,
           lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs,
           nodeMode: this.resolveLiveNodeMode(),
@@ -1581,6 +1766,7 @@ export class SignalProcessingServer {
     this.broadcastTargetState(
       emptyTargetState({
         dataSource: this.status.dataSource,
+        sourceMode: this.targetSourceMode,
         nowMs,
         lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
         nodeMode: this.resolveLiveNodeMode(),
@@ -1750,6 +1936,7 @@ export class SignalProcessingServer {
     this.broadcast("vitalSigns", null);
     this.currentTargetState = emptyTargetState({
       dataSource: this.status.dataSource,
+      sourceMode: this.targetSourceMode,
       nowMs: Date.now(),
       lastTruthfulUpdateMs: this.lastTruthfulTargetUpdateMs || undefined,
       nodeMode: this.resolveLiveNodeMode(),
@@ -2470,8 +2657,19 @@ export class SignalProcessingServer {
     this.broadcast("datasetStatus", status);
   }
 
+  /**
+   * Entry point for EXTERNAL samples (UDP, HTTP). While a demo runs they are
+   * dropped so live and demo data can never mix; the demo itself feeds
+   * acceptSample() directly.
+   */
   ingestSample(sample: CSISample): void {
-    if (this.datasetRecorder.isRecording && sample.amplitudes && sample.amplitudes.length > 0) {
+    if (this.demo.isActive()) return;
+    this.acceptSample(sample);
+  }
+
+  private acceptSample(sample: CSISample): void {
+    // Demo replays must never be written out as training data.
+    if (!this.demo.isActive() && this.datasetRecorder.isRecording && sample.amplitudes && sample.amplitudes.length > 0) {
       try {
         this.datasetRecorder.record({
           tMs: sample.timestamp ?? Date.now(),

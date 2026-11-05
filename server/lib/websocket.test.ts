@@ -836,6 +836,17 @@ test("Calibrate Empty Room re-warms the real detector's baselines, not only the 
   assert.equal(server.roomPresence.tier, "absent");
 });
 
+test("Calibrate Empty Room is acknowledged by the server itself, so it works with no AI sidecar", () => {
+  const server = newProcessingServer();
+  const dashboard = makeClient("dashboard");
+  wireClient(server, dashboard);
+  // No AI client is registered: nothing else can send a calibrationAck.
+  server.handleMessage("dashboard", { type: "calibrateBaseline", data: null });
+  const acks = dashboard.sent.filter((m: Captured) => m.type === "calibrationAck");
+  assert.equal(acks.length, 1);
+  assert.equal((acks[0].data as { source: string }).source, "detector");
+});
+
 test("fused_room radialTarget carries a bounded position uncertainty radius", () => {
   const { server, dashboard } = newFourNodeRoomServer();
   server.computeFusedTarget = () => ({

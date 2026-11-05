@@ -2,6 +2,7 @@ import dgram from "dgram";
 import { signalServer } from "./websocket";
 import { phaseTestLogger } from "./phase-test-logger";
 import { reduceCsiFrame } from "./csi-subcarriers";
+import { phyGuard, shouldLogPhyGuardFault, shouldLogPhyMismatch } from "./phy-guard";
 import type { CSISample } from "@shared/schema";
 import { mapRuntimeNodeIdToHardwareId } from "@shared/schema";
 
@@ -567,6 +568,7 @@ export function startUDPServer() {
     });
 
     let packetCount = 0;
+    let phyGuardFaults = 0;
     let compressedFrameCount = 0;
     let lastLogTime = Date.now();
     let lastUnknownMagicLogMs = 0;
@@ -663,6 +665,34 @@ export function startUDPServer() {
             return;
         }
 
+        // PS-FIX-08, SHADOW MODE: count/log a change of this node's (subcarrier count, channel, frequency) tuple. Never drops.
+        // Item D: the observation is ISOLATED, so a fault in the guard itself (an exception from observe/snapshot/logging) can never
+        // drop or delay a frame. Faults are counted and logged once, then once per 1000, never per frame.
+        try {
+            const phyDiff = phyGuard.observe(parsed.nodeId, {
+                nSubcarriers: parsed.numSubcarriers,
+                channel: parsed.channel ?? 0,
+                freqMhz: parsed.freqMhz ?? 0,
+            });
+            if (phyDiff.length > 0) {
+                const phyStats = phyGuard.snapshot()[String(parsed.nodeId)];
+                if (shouldLogPhyMismatch(phyStats)) {
+                    console.warn(
+                        `[PHY] node ${parsed.nodeId}: ${phyDiff.join(",")} differs from the first-seen tuple ` +
+                            `(${phyStats.mismatchedFrames} mismatched of ${phyStats.frames} frames; shadow mode, frames are NOT dropped)`,
+                    );
+                }
+            }
+        } catch (err) {
+            phyGuardFaults++;
+            if (shouldLogPhyGuardFault(phyGuardFaults)) {
+                console.error(
+                    `[PHY] guard fault #${phyGuardFaults} on node ${parsed.nodeId}: ${err instanceof Error ? err.message : String(err)} ` +
+                        `(the frame is still ingested; logged once per 1000 faults)`,
+                );
+            }
+        }
+
         // Forward only accepted raw packets to the local Python AI sidecar.
         pyForwardSocket.send(msg, PY_SIDECAR_PORT, PY_SIDECAR_HOST, (err) => {
             // The sidecar being down/not-yet-started is expected and not
@@ -747,6 +777,16 @@ export function startUDPServer() {
             server.setRecvBufferSize(UDP_RECV_BUFFER_BYTES);
         } catch (err) {
             console.warn(`[UDP] Could not enlarge receive buffer: ${err instanceof Error ? err.message : err}`);
+        }
+    });
+
+    // Closing the ingest socket also releases the sidecar-forward socket (it was leaked before; the live server never closes normally,
+    // so this changes nothing at runtime, but a test or a clean shutdown no longer hangs on it).
+    server.on("close", () => {
+        try {
+            pyForwardSocket.close();
+        } catch {
+            /* already closed by the error handler */
         }
     });
 

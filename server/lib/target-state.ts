@@ -41,6 +41,8 @@ export interface BuildTargetStateInput {
   radialTarget?: RadialTarget | null;
   motionStatus?: MotionStatus | null;
   reason?: string;
+  /** Demo mode only: label the state "replay"/"synthetic" instead of "live". */
+  sourceMode?: SourceMode;
 }
 
 /**
@@ -68,7 +70,7 @@ export function resolveNodeMode(sourceMode: SourceMode): NodeMode {
  * simply empty; `reason` tells the UI/debug panel why nothing is drawn.
  */
 export function emptyTargetState(input: BuildTargetStateInput): TargetState {
-  const sourceMode = resolveSourceMode(input.dataSource);
+  const sourceMode = input.sourceMode ?? resolveSourceMode(input.dataSource);
   const nodeMode = input.nodeMode ?? resolveNodeMode(sourceMode);
   const lastUpdate = input.lastTruthfulUpdateMs ?? input.nowMs;
   const dataAge = Math.max(0, input.nowMs - lastUpdate);
@@ -112,7 +114,7 @@ export function buildTargetState(input: BuildTargetStateInput): TargetState {
     return emptyTargetState(input);
   }
 
-  const sourceMode = resolveSourceMode(input.dataSource);
+  const sourceMode = input.sourceMode ?? resolveSourceMode(input.dataSource);
   const nodeMode = input.nodeMode ?? resolveNodeMode(sourceMode);
   const lastUpdate = input.lastTruthfulUpdateMs ?? input.nowMs;
   const dataAge = Math.max(0, input.nowMs - lastUpdate);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { RadialTarget, TargetState } from "@shared/schema";
 import {
   canPresentAxisMotionVector,
+  canPresentIllustrativeBody,
   canPresentLiveTargetPosition,
   canPresentVolumetricTarget,
   canPresentTruthfulTarget,
@@ -217,6 +218,59 @@ test("truthful live targets do not use volumetric presentation", () => {
     }),
     false,
   );
+});
+
+test("illustrative body is allowed only where the live position marker is allowed", () => {
+  const movingState = buildTargetState({
+    state: "moving",
+    node_mode: "fused_room",
+    target_visible: true,
+    position_confident: true,
+  });
+  const input = { dataSource: "esp32" as const, radialTarget, targetState: movingState };
+
+  assert.equal(canPresentIllustrativeBody(input), true);
+  // unlabeled targets get a body too (the label is a classifier opinion, not a claim)
+  assert.equal(
+    canPresentIllustrativeBody({ ...input, radialTarget: { ...radialTarget, label: "unknown" } }),
+    true,
+  );
+});
+
+test("illustrative body is withheld for mechanical targets, empty rooms and aged-out targets", () => {
+  const movingState = buildTargetState({ state: "moving", target_visible: true });
+
+  assert.equal(
+    canPresentIllustrativeBody({
+      dataSource: "esp32",
+      radialTarget: { ...radialTarget, label: "mechanical" },
+      targetState: movingState,
+    }),
+    false,
+  );
+  assert.equal(
+    canPresentIllustrativeBody({ dataSource: "esp32", radialTarget: null, targetState: movingState }),
+    false,
+  );
+  for (const state of ["none", "stale"] as const) {
+    assert.equal(
+      canPresentIllustrativeBody({
+        dataSource: "esp32",
+        radialTarget,
+        targetState: buildTargetState({ state, target_visible: false }),
+      }),
+      false,
+      `state=${state}`,
+    );
+  }
+});
+
+test("illustrative body never re-enables the volumetric/AI-pose gate", () => {
+  const movingState = buildTargetState({ state: "moving", target_visible: true });
+  const input = { dataSource: "esp32" as const, radialTarget, targetState: movingState };
+
+  assert.equal(canPresentIllustrativeBody(input), true);
+  assert.equal(canPresentVolumetricTarget(input), false);
 });
 
 test("axis motion vector only renders when projected speed is present", () => {

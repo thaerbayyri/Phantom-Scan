@@ -59,6 +59,32 @@ test("resolveSourceMode maps esp32 to live", () => {
   assert.equal(resolveSourceMode("esp32"), "live");
 });
 
+test("sourceMode override labels empty and built target states as replay/synthetic", () => {
+  const empty = emptyTargetState({ dataSource: "esp32", nowMs: 1_000, sourceMode: "replay" });
+  assert.equal(empty.source_mode, "replay");
+
+  const built = buildTargetState({
+    dataSource: "esp32",
+    nowMs: 2_000,
+    lastTruthfulUpdateMs: 2_000,
+    nodeMode: "fused_room",
+    radialTarget,
+    sourceMode: "synthetic",
+  });
+  assert.equal(built.source_mode, "synthetic");
+  assert.equal(built.target_visible, true);
+
+  // A stale target demoted to an empty state keeps the override.
+  const stale = buildTargetState({
+    dataSource: "esp32",
+    nowMs: 10_000,
+    lastTruthfulUpdateMs: 1_000,
+    radialTarget,
+    sourceMode: "replay",
+  });
+  assert.equal(stale.source_mode, "replay");
+});
+
 test("emptyTargetState reports none when no truthful target exists", () => {
   const state = emptyTargetState({
     dataSource: "esp32",
