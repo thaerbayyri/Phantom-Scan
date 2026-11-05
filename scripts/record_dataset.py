@@ -30,7 +30,8 @@ import re
 import socket
 import sys
 import time
-from collections import Counter
+import statistics
+from collections import Counter, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -152,6 +153,95 @@ def load_geometry(path: Path) -> dict[str, Any]:
     return {k: raw[k] for k in ("roomWidthM", "roomDepthM", "anchors") if k in raw}
 
 
+# ── Per-part link summary sidecar (PS-FIX-29) ────────────────────────────────
+# Same definitions and JSON as server/lib/dataset-recorder.ts (parity vector pinned in both test suites). Written when the
+# file closes to `<file minus .jsonl>.summary.json`; never matched by the *.jsonl dataset glob. Observation only: it says
+# nothing about the CAUSE of a change.
+SUMMARY_WINDOW_MS = 10_000
+SUMMARY_STEP_DB = 6
+SUMMARY_COLLAPSE_RATIO = 0.7
+SUMMARY_MIN_FPS = 20
+
+
+class PartNodeStats:
+    def __init__(self) -> None:
+        self.frames = 0
+        self.first_t: int | None = None
+        self.last_t: int | None = None
+        self._first: list[float] = []
+        self._last: deque[tuple[int, float]] = deque()
+        self._all: list[float] = []
+
+    def add(self, t: int, rssi: float) -> None:
+        self.frames += 1
+        if self.first_t is None:
+            self.first_t = t
+        self.last_t = t
+        if t - self.first_t < SUMMARY_WINDOW_MS:
+            self._first.append(rssi)
+        self._last.append((t, rssi))
+        while self._last and t - self._last[0][0] >= SUMMARY_WINDOW_MS:
+            self._last.popleft()
+        self._all.append(rssi)
+
+    def summary(self) -> dict[str, Any]:
+        first_t, last_t = int(self.first_t), int(self.last_t)  # type: ignore[arg-type]
+        last = [r for t, r in self._last if last_t - t < SUMMARY_WINDOW_MS]
+
+        def win(values: list[float]) -> dict[str, Any]:
+            return {"frames": len(values), "fps": len(values) / (SUMMARY_WINDOW_MS / 1000), "rssiMedian": statistics.median(values) if values else None}
+
+        first10, last10 = win(self._first), win(last)
+        short = last_t - first_t < 2 * SUMMARY_WINDOW_MS  # windows would overlap: no step statement possible
+        reasons: list[str] = []
+        delta: float | None = None
+        ratio: float | None = None
+        flag: bool | None = None
+        if not short:
+            delta = last10["rssiMedian"] - first10["rssiMedian"]
+            if abs(delta) >= SUMMARY_STEP_DB:
+                reasons.append("rssi_step")
+            if first10["fps"] >= SUMMARY_MIN_FPS:
+                ratio = last10["fps"] / first10["fps"]
+                if ratio <= SUMMARY_COLLAPSE_RATIO:
+                    reasons.append("rate_collapse")
+            flag = bool(reasons)
+        return {
+            "frames": self.frames, "firstFrameMs": first_t, "lastFrameMs": last_t, "rssiMedianPart": statistics.median(self._all),
+            "first10s": first10, "last10s": last10, "shortPart": short,
+            "rssiDeltaDb": None if delta is None else round(delta, 3), "fpsRatio": None if ratio is None else round(ratio, 3),
+            "stepFlag": flag, "stepReasons": reasons,
+        }
+
+
+def summary_path_for(part_file: Path) -> Path:
+    name = part_file.name[:-len(".jsonl")] if part_file.name.endswith(".jsonl") else part_file.name
+    return part_file.with_name(name + ".summary.json")
+
+
+def build_part_summary(file: Path, part: int, started_ms: int, part_started_ms: int, closed_ms: int, stats: dict[int, PartNodeStats]) -> dict[str, Any]:
+    return {
+        "type": "part_summary", "schema": 1, "file": file.name, "part": part, "startedAtMs": started_ms, "partStartedAtMs": part_started_ms,
+        "closedAtMs": closed_ms, "windowSeconds": SUMMARY_WINDOW_MS / 1000, "stepThresholdDb": SUMMARY_STEP_DB,
+        "collapseRatio": SUMMARY_COLLAPSE_RATIO, "minBaselineFps": SUMMARY_MIN_FPS,
+        "perNode": {str(n): s.summary() for n, s in sorted(stats.items()) if s.frames > 0},
+    }
+
+
+def write_part_summary(summary: dict[str, Any], part_file: Path) -> Path | None:
+    """Best effort (exclusive create): a failure here must never lose or break the recording."""
+    if not summary["perNode"]:
+        return None
+    target = summary_path_for(part_file)
+    try:
+        with target.open("x", encoding="utf-8") as fh:
+            fh.write(dumps(summary) + "\n")
+    except OSError as exc:
+        print(f"[REC] could not write link summary {target.name}: {exc}")
+        return None
+    return target
+
+
 def record(args: argparse.Namespace) -> int:
     started_ms = int(time.time() * 1000)
     out = output_path(Path(args.data_root), args.room, args.subject, args.label, started_ms)
@@ -180,6 +270,7 @@ def record(args: argparse.Namespace) -> int:
 
     out.parent.mkdir(parents=True, exist_ok=True)
     per_node: Counter[int] = Counter()
+    link_stats: dict[int, PartNodeStats] = {}
     deadline = time.monotonic() + args.seconds
     next_progress = time.monotonic() + PROGRESS_EVERY_S
     lines = 0
@@ -199,7 +290,9 @@ def record(args: argparse.Namespace) -> int:
                     amps = lltf_amplitudes(frame.iq_bytes, frame.n_subcarriers)
                 except ValueError:
                     continue
-                handle.write(dumps(frame_record(time.time() * 1000.0, frame.node_id, frame.rssi_dbm, amps)) + "\n")
+                now_ms = time.time() * 1000.0
+                handle.write(dumps(frame_record(now_ms, frame.node_id, frame.rssi_dbm, amps)) + "\n")
+                link_stats.setdefault(frame.node_id, PartNodeStats()).add(int(now_ms), int(frame.rssi_dbm))
                 per_node[frame.node_id] += 1
                 lines += 1
                 if lines % FLUSH_EVERY_LINES == 0:
@@ -211,6 +304,7 @@ def record(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             print("[REC] interrupted; keeping what was captured")
     sock.close()
+    write_part_summary(build_part_summary(out, 1, started_ms, started_ms, int(time.time() * 1000), link_stats), out)
 
     print(f"[REC] done: {lines} frames, per node {dict(sorted(per_node.items()))} -> {out}")
     if len(per_node) < args.expect_nodes:

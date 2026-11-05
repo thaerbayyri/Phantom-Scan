@@ -8,8 +8,11 @@ import {
   DatasetRecorder,
   canonicalJson,
   captureFromEnv,
+  PartNodeStats,
+  buildPartSummary,
   geometryHash,
   parseDatasetStart,
+  summaryPathFor,
   type DatasetFrame,
 } from "./dataset-recorder";
 
@@ -217,4 +220,99 @@ test("operator annotation (node moved / room not empty) is validated and written
   rec.record(FRAME);
   rec.record(FRAME);
   for (const f of rec.stop().files) assert.deepEqual((readJsonl(f)[0] as Record<string, any>).annotation, req.annotation);
+});
+
+// ── PS-FIX-29: per-part link summary sidecar ────────────────────────────────
+
+const BASE = 1_700_000_000_000;
+
+/** Parity vector (same numbers in tests/test_record_dataset.py):
+ *  node 1: 50 fps for 30 s, RSSI -36 until +20 s then -47;  node 2: 50 fps for 10 s then 20 fps, RSSI -27;
+ *  node 3: steady 50 fps, -30;  node 4: only 5 s of frames. */
+function parityFrames(): Array<{ t: number; n: number; rssi: number }> {
+  const out: Array<{ t: number; n: number; rssi: number }> = [];
+  for (let t = 0; t < 30_000; t += 20) out.push({ t: BASE + t, n: 1, rssi: t < 20_000 ? -36 : -47 });
+  for (let t = 0; t < 10_000; t += 20) out.push({ t: BASE + t, n: 2, rssi: -27 });
+  for (let t = 10_000; t < 30_000; t += 50) out.push({ t: BASE + t, n: 2, rssi: -27 });
+  for (let t = 0; t < 30_000; t += 20) out.push({ t: BASE + t, n: 3, rssi: -30 });
+  for (let t = 0; t < 5_000; t += 20) out.push({ t: BASE + t, n: 4, rssi: -40 });
+  return out.sort((a, b) => a.t - b.t);
+}
+
+function statsFor(frames: Array<{ t: number; n: number; rssi: number }>): Map<number, PartNodeStats> {
+  const m = new Map<number, PartNodeStats>();
+  for (const f of frames) {
+    if (!m.has(f.n)) m.set(f.n, new PartNodeStats());
+    (m.get(f.n) as PartNodeStats).add(f.t, f.rssi);
+  }
+  return m;
+}
+
+test("part summary: RSSI step, rate collapse, steady node and short part (parity vector)", () => {
+  const s = buildPartSummary({ file: "/x/room__s1__empty__20261102T000000Z.jsonl", part: 1, startedAtMs: BASE, partStartedAtMs: BASE, closedAtMs: BASE + 30_000 }, statsFor(parityFrames()));
+  const n = s.perNode as Record<string, Record<string, any>>;
+  assert.equal(s.type, "part_summary");
+  assert.equal(s.file, "room__s1__empty__20261102T000000Z.jsonl");
+  assert.deepEqual(
+    [n["1"].frames, n["1"].first10s.frames, n["1"].first10s.fps, n["1"].first10s.rssiMedian, n["1"].last10s.frames, n["1"].last10s.fps, n["1"].last10s.rssiMedian, n["1"].rssiMedianPart, n["1"].rssiDeltaDb, n["1"].fpsRatio, n["1"].stepFlag, n["1"].stepReasons],
+    [1500, 500, 50, -36, 500, 50, -47, -36, -11, 1, true, ["rssi_step"]],
+  );
+  assert.deepEqual(
+    [n["2"].frames, n["2"].first10s.fps, n["2"].last10s.frames, n["2"].last10s.fps, n["2"].rssiDeltaDb, n["2"].fpsRatio, n["2"].stepFlag, n["2"].stepReasons],
+    [900, 50, 200, 20, 0, 0.4, true, ["rate_collapse"]],
+  );
+  assert.deepEqual([n["3"].stepFlag, n["3"].stepReasons, n["3"].rssiDeltaDb, n["3"].fpsRatio], [false, [], 0, 1]);
+  assert.deepEqual([n["4"].shortPart, n["4"].stepFlag, n["4"].rssiDeltaDb], [true, null, null]);   // < 20 s: windows overlap
+});
+
+test("a low first-window frame rate gives no collapse statement (baseline below the minimum)", () => {
+  const frames: Array<{ t: number; n: number; rssi: number }> = [];
+  for (let t = 0; t < 10_000; t += 200) frames.push({ t: BASE + t, n: 1, rssi: -40 });   // 5 fps
+  for (let t = 10_000; t < 30_000; t += 1000) frames.push({ t: BASE + t, n: 1, rssi: -40 }); // 1 fps
+  const n1 = (buildPartSummary({ file: "f.jsonl", part: 1, startedAtMs: BASE, partStartedAtMs: BASE, closedAtMs: BASE }, statsFor(frames)).perNode as any)["1"];
+  assert.equal(n1.fpsRatio, null);
+  assert.equal(n1.stepFlag, false);
+});
+
+test("recorder writes one summary per part when it closes, next to (not inside) the *.jsonl dataset files", () => {
+  const root = tempRoot();
+  const rec = new DatasetRecorder({ rootDir: root, maxFramesPerFile: 1000, now: () => BASE });
+  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), { capture: captureFromEnv({}) });
+  for (const f of parityFrames().filter((x) => x.n === 1)) rec.record({ tMs: f.t, nodeId: f.n, rssi: f.rssi, amps: [1, 2, 3] });
+  const done = rec.stop();
+  assert.equal(done.files.length, 2);                                    // 1500 frames, 1000 per part
+  const dir = path.dirname(done.files[0]);
+  const summaries = fs.readdirSync(dir).filter((f) => f.endsWith(".summary.json")).sort();
+  assert.deepEqual(summaries, done.files.map((f) => path.basename(summaryPathFor(f))).sort());
+  assert.ok(summaries[0].endsWith("Z.part2.summary.json") || summaries[1].endsWith("Z.part2.summary.json"));
+  assert.ok(!fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl")).some((f) => f.includes("summary")));
+  const part1 = JSON.parse(fs.readFileSync(summaryPathFor(done.files[0]), "utf-8"));
+  assert.equal(part1.part, 1);
+  assert.equal(part1.perNode["1"].frames, 1000);
+  assert.equal(part1.perNode["1"].shortPart, true);                      // 19.98 s < 2 x 10 s: windows would overlap -> no step statement
+  assert.equal(part1.perNode["1"].stepFlag, null);
+  assert.equal(part1.perNode["1"].rssiMedianPart, -36);                  // part 1 is -36 throughout; the step is at +20 s = start of part 2
+  const part2 = JSON.parse(fs.readFileSync(summaryPathFor(done.files[1]), "utf-8"));
+  assert.equal(part2.perNode["1"].frames, 500);
+  assert.equal(part2.perNode["1"].rssiMedianPart, -47);
+});
+
+test("a summary that cannot be written never breaks or stops the recording", () => {
+  const root = tempRoot();
+  const rec = new DatasetRecorder({ rootDir: root, now: () => BASE });
+  const info = rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
+  fs.writeFileSync(summaryPathFor(info.files[0]), "occupied");          // the exclusive create will fail
+  for (const f of parityFrames().filter((x) => x.n === 3).slice(0, 50)) rec.record({ tMs: f.t, nodeId: f.n, rssi: f.rssi, amps: [1] });
+  const done = rec.stop();
+  assert.equal(done.recording, false);
+  assert.equal(done.frames, 50);
+  assert.equal(fs.readFileSync(summaryPathFor(info.files[0]), "utf-8"), "occupied");
+});
+
+test("no frames, no summary file", () => {
+  const root = tempRoot();
+  const rec = new DatasetRecorder({ rootDir: root });
+  const info = rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
+  rec.stop();
+  assert.ok(!fs.existsSync(summaryPathFor(info.files[0])));
 });

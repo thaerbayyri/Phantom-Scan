@@ -107,3 +107,65 @@ def test_dumps_is_compact_and_roundtrips_through_the_loader(tmp_path: Path) -> N
     assert '": ' not in text and '", "' not in text, "no spaces after separators"
     rec = load_recording([path])
     assert rec.header["annotation"]["nodeMoved"] is True and rec.header["geometryHash"] == GEOMETRY_HASH and rec.report.clean
+
+
+# ── PS-FIX-29: per-part link summary sidecar (parity vector identical to server/lib/dataset-recorder.test.ts) ─────────────
+
+from scripts.record_dataset import PartNodeStats, build_part_summary, summary_path_for, write_part_summary  # noqa: E402
+
+BASE = 1_700_000_000_000
+
+
+def parity_frames() -> list[tuple[int, int, int]]:
+    """(t, node, rssi): node 1 50 fps -36 then -47 at +20 s; node 2 50 fps then 20 fps; node 3 steady; node 4 only 5 s."""
+    out = [(BASE + t, 1, -36 if t < 20_000 else -47) for t in range(0, 30_000, 20)]
+    out += [(BASE + t, 2, -27) for t in range(0, 10_000, 20)] + [(BASE + t, 2, -27) for t in range(10_000, 30_000, 50)]
+    out += [(BASE + t, 3, -30) for t in range(0, 30_000, 20)] + [(BASE + t, 4, -40) for t in range(0, 5_000, 20)]
+    return sorted(out)
+
+
+def stats_for(frames: list[tuple[int, int, int]]) -> dict[int, PartNodeStats]:
+    stats: dict[int, PartNodeStats] = {}
+    for t, n, rssi in frames:
+        stats.setdefault(n, PartNodeStats()).add(t, rssi)
+    return stats
+
+
+def test_part_summary_parity_vector_matches_the_dashboard_recorder(tmp_path: Path) -> None:
+    f = tmp_path / "room1__s1__empty__20261102T000000Z.jsonl"
+    s = build_part_summary(f, 1, BASE, BASE, BASE + 30_000, stats_for(parity_frames()))
+    n = s["perNode"]
+    assert s["type"] == "part_summary" and s["file"] == f.name
+    n1 = n["1"]
+    assert [n1["frames"], n1["first10s"]["frames"], n1["first10s"]["fps"], n1["first10s"]["rssiMedian"], n1["last10s"]["frames"], n1["last10s"]["fps"],
+            n1["last10s"]["rssiMedian"], n1["rssiMedianPart"], n1["rssiDeltaDb"], n1["fpsRatio"], n1["stepFlag"], n1["stepReasons"]] == \
+        [1500, 500, 50, -36, 500, 50, -47, -36, -11, 1, True, ["rssi_step"]]
+    n2 = n["2"]
+    assert [n2["frames"], n2["first10s"]["fps"], n2["last10s"]["frames"], n2["last10s"]["fps"], n2["rssiDeltaDb"], n2["fpsRatio"], n2["stepFlag"], n2["stepReasons"]] == \
+        [900, 50, 200, 20, 0, 0.4, True, ["rate_collapse"]]
+    assert [n["3"]["stepFlag"], n["3"]["stepReasons"], n["3"]["rssiDeltaDb"], n["3"]["fpsRatio"]] == [False, [], 0, 1]
+    assert [n["4"]["shortPart"], n["4"]["stepFlag"], n["4"]["rssiDeltaDb"]] == [True, None, None]
+
+
+def test_low_first_window_rate_gives_no_collapse_statement() -> None:
+    frames = [(BASE + t, 1, -40) for t in range(0, 10_000, 200)] + [(BASE + t, 1, -40) for t in range(10_000, 30_000, 1000)]
+    n1 = build_part_summary(Path("f.jsonl"), 1, BASE, BASE, BASE, stats_for(frames))["perNode"]["1"]
+    assert n1["fpsRatio"] is None and n1["stepFlag"] is False
+
+
+def test_summary_path_is_a_sibling_that_the_jsonl_glob_never_matches(tmp_path: Path) -> None:
+    f = tmp_path / "room1__s6__empty__20261102T000000Z.jsonl"
+    assert summary_path_for(f).name == "room1__s6__empty__20261102T000000Z.summary.json"
+    assert summary_path_for(tmp_path / "room1__s6__empty__20261102T000000Z.part2.jsonl").name.endswith("Z.part2.summary.json")
+    f.write_text("{}\n", encoding="utf-8")
+    write_part_summary(build_part_summary(f, 1, BASE, BASE, BASE, stats_for(parity_frames())), f)
+    assert [p.name for p in tmp_path.glob("*.jsonl")] == [f.name]               # the summary is not a dataset file
+    assert json.loads(summary_path_for(f).read_text(encoding="utf-8"))["perNode"]["1"]["stepFlag"] is True
+
+
+def test_summary_write_failure_is_swallowed_and_never_overwrites(tmp_path: Path) -> None:
+    f = tmp_path / "room1__s6__empty__20261102T000000Z.jsonl"
+    summary_path_for(f).write_text("occupied", encoding="utf-8")
+    assert write_part_summary(build_part_summary(f, 1, BASE, BASE, BASE, stats_for(parity_frames())), f) is None
+    assert summary_path_for(f).read_text(encoding="utf-8") == "occupied"
+    assert write_part_summary({"perNode": {}}, f) is None                         # no frames -> no file

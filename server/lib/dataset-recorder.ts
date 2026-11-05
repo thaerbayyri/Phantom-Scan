@@ -129,6 +129,86 @@ function triState(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
+// ── Per-part link summary sidecar (PS-FIX-29) ───────────────────────────────
+// Written when a part CLOSES to `<part file minus .jsonl>.summary.json` (never matched by the *.jsonl dataset glob).
+// Per node: RSSI median and frame rate over the first and last SUMMARY_WINDOW_MS of the part, the part's RSSI median, and a
+// step flag (|last - first| >= SUMMARY_STEP_DB, or frame rate <= SUMMARY_COLLAPSE_RATIO x first, first >= SUMMARY_MIN_FPS).
+// Mirrors scripts/record_dataset.py (identical definitions, parity vector pinned in both test suites). Observation only: it
+// says nothing about the CAUSE of a change.
+export const SUMMARY_WINDOW_MS = 10_000;
+export const SUMMARY_STEP_DB = 6;
+export const SUMMARY_COLLAPSE_RATIO = 0.7;
+export const SUMMARY_MIN_FPS = 20;
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+const round3 = (x: number): number => Math.round(x * 1000) / 1000;
+
+export class PartNodeStats {
+  frames = 0;
+  firstT: number | null = null;
+  lastT: number | null = null;
+  private firstWindow: number[] = [];
+  private lastWindow: Array<{ t: number; rssi: number }> = [];
+  private all: number[] = [];
+
+  add(t: number, rssi: number): void {
+    this.frames++;
+    if (this.firstT === null) this.firstT = t;
+    this.lastT = t;
+    if (t - this.firstT < SUMMARY_WINDOW_MS) this.firstWindow.push(rssi);
+    this.lastWindow.push({ t, rssi });
+    while (this.lastWindow.length > 0 && t - this.lastWindow[0].t >= SUMMARY_WINDOW_MS) this.lastWindow.shift();
+    this.all.push(rssi);
+  }
+
+  summary(): Record<string, unknown> {
+    const firstT = this.firstT as number;
+    const lastT = this.lastT as number;
+    const last = this.lastWindow.filter((f) => lastT - f.t < SUMMARY_WINDOW_MS).map((f) => f.rssi);
+    const win = (rssis: number[]) => ({ frames: rssis.length, fps: rssis.length / (SUMMARY_WINDOW_MS / 1000), rssiMedian: median(rssis) });
+    const first10s = win(this.firstWindow);
+    const last10s = win(last);
+    const shortPart = lastT - firstT < 2 * SUMMARY_WINDOW_MS; // the two windows would overlap: no step statement possible
+    let stepFlag: boolean | null = null;
+    const stepReasons: string[] = [];
+    let rssiDeltaDb: number | null = null;
+    let fpsRatio: number | null = null;
+    if (!shortPart) {
+      rssiDeltaDb = (last10s.rssiMedian as number) - (first10s.rssiMedian as number);
+      if (Math.abs(rssiDeltaDb) >= SUMMARY_STEP_DB) stepReasons.push("rssi_step");
+      if (first10s.fps >= SUMMARY_MIN_FPS) {
+        fpsRatio = last10s.fps / first10s.fps;
+        if (fpsRatio <= SUMMARY_COLLAPSE_RATIO) stepReasons.push("rate_collapse");
+      }
+      stepFlag = stepReasons.length > 0;
+    }
+    return {
+      frames: this.frames, firstFrameMs: firstT, lastFrameMs: lastT, rssiMedianPart: median(this.all), first10s, last10s,
+      shortPart, rssiDeltaDb: rssiDeltaDb === null ? null : round3(rssiDeltaDb), fpsRatio: fpsRatio === null ? null : round3(fpsRatio), stepFlag, stepReasons,
+    };
+  }
+}
+
+export function buildPartSummary(info: { file: string; part: number; startedAtMs: number; partStartedAtMs: number; closedAtMs: number }, stats: Map<number, PartNodeStats>): Record<string, unknown> {
+  const perNode: Record<string, unknown> = {};
+  for (const [node, s] of [...stats.entries()].sort((a, b) => a[0] - b[0])) if (s.frames > 0) perNode[String(node)] = s.summary();
+  return {
+    type: "part_summary", schema: 1, file: path.basename(info.file), part: info.part, startedAtMs: info.startedAtMs,
+    partStartedAtMs: info.partStartedAtMs, closedAtMs: info.closedAtMs, windowSeconds: SUMMARY_WINDOW_MS / 1000,
+    stepThresholdDb: SUMMARY_STEP_DB, collapseRatio: SUMMARY_COLLAPSE_RATIO, minBaselineFps: SUMMARY_MIN_FPS, perNode,
+  };
+}
+
+export function summaryPathFor(partFile: string): string {
+  return partFile.replace(/\.jsonl$/, "") + ".summary.json";
+}
+
 export interface DatasetFrame {
   /** Host receive time, ms. */
   tMs: number;
@@ -222,6 +302,9 @@ export class DatasetRecorder {
   private perNode: Record<string, number> = {};
   private files: string[] = [];
   private pending: string[] = [];
+  private partStats = new Map<number, PartNodeStats>();
+  private partFile = "";
+  private partStartedAtMs = 0;
 
   constructor(options: DatasetRecorderOptions = {}) {
     this.rootDir = options.rootDir ?? path.resolve("data", "datasets");
@@ -273,6 +356,9 @@ export class DatasetRecorder {
     this.frames++;
     const key = String(frame.nodeId);
     this.perNode[key] = (this.perNode[key] ?? 0) + 1;
+    let ns = this.partStats.get(frame.nodeId);
+    if (!ns) this.partStats.set(frame.nodeId, (ns = new PartNodeStats()));
+    ns.add(frame.tMs, frame.rssi);
     if (this.pending.length >= FLUSH_EVERY_LINES) this.flush();
   }
 
@@ -283,6 +369,7 @@ export class DatasetRecorder {
     try {
       this.flush();
     } finally {
+      this.writePartSummary();
       if (this.fd !== null) {
         try {
           fs.closeSync(this.fd);
@@ -313,6 +400,7 @@ export class DatasetRecorder {
   private openNextPart(): void {
     const request = this.request;
     if (!request) return;
+    this.writePartSummary(); // the part that is closing
     if (this.fd !== null) {
       fs.closeSync(this.fd);
       this.fd = null;
@@ -326,6 +414,9 @@ export class DatasetRecorder {
     this.part = part;
     this.files.push(file);
     this.framesInPart = 0;
+    this.partFile = file;
+    this.partStartedAtMs = this.now();
+    this.partStats = new Map();
     const header = {
       type: "header",
       schema: SCHEMA_VERSION,
@@ -335,7 +426,7 @@ export class DatasetRecorder {
       count: request.count,
       notes: request.notes,
       startedAtMs: this.startedAtMs,
-      partStartedAtMs: this.now(),
+      partStartedAtMs: this.partStartedAtMs,
       part: this.part,
       geometry: this.context.geometry ?? null,
       geometryHash: geometryHash(this.context.geometry),
@@ -345,6 +436,22 @@ export class DatasetRecorder {
       recorder: "dashboard",
     };
     fs.writeSync(this.fd, `${JSON.stringify(header)}\n`);
+  }
+
+  /** Write the closing part's link summary. Best effort: a failure here must never break or stop a recording. */
+  private writePartSummary(): void {
+    if (!this.partFile || this.partStats.size === 0) return;
+    try {
+      const summary = buildPartSummary(
+        { file: this.partFile, part: this.part, startedAtMs: this.startedAtMs, partStartedAtMs: this.partStartedAtMs, closedAtMs: this.now() },
+        this.partStats,
+      );
+      fs.writeFileSync(summaryPathFor(this.partFile), `${JSON.stringify(summary)}\n`, { flag: "wx" });
+    } catch {
+      /* summary is advisory; the dataset file itself is what matters */
+    }
+    this.partFile = "";
+    this.partStats = new Map();
   }
 
   private flush(): void {
