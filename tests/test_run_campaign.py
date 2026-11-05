@@ -78,10 +78,15 @@ def test_prereg_state_in_a_throwaway_git_repo(tmp_path: Path) -> None:
     assert s2["tracked"] and not s2["clean"] and s2["sha256"] != s["sha256"]        # modified after the freeze
 
 
-def test_the_real_prereg_file_exists_and_leaves_the_owner_items_open() -> None:
+def test_the_real_prereg_file_has_every_owner_item_resolved_and_the_code_matches_it() -> None:
     text = rc.PREREG.read_text(encoding="utf-8")
-    assert text.count("[OWNER TO SET]") >= 5 and "C1b" in text and "C2b" in text and "C7" in text
+    assert "[OWNER TO" not in text                                                   # all items resolved 2026-11-04 (PREREG section 7)
+    for cid in ("C1b", "C2b", "C7"):
+        assert cid in text
+    assert "report-only" in text and "10** min" in text and "1.5 s" in text
     assert "K7" in text and "parity-aware decor" in text and "K8" in text and "anti-aliased" in text
+    assert rc.C1_LOWER_MIN == rc.C1B_LOWER_MIN == rc.C2B_LOWER_MIN == 0.80          # C1, C1b, C2b: "≥ 0.80" in the table
+    assert rc.cp.BLOCK_RULES["fan_with_person"][0] == 10.0
 
 
 # ---- labelling and the end-to-end path on a tiny synthetic campaign -----------------------------
@@ -93,11 +98,13 @@ def test_end_to_end_labels_every_unmeasurable_number(synthetic: Path, tmp_path: 
     rep = rc.run(synthetic, out, min_minutes=SHORT)
     assert rep["conclusion"].startswith("no candidate met the criteria") and rep["candidates_meeting_criteria"] == []
     md = (out / "campaign-report.md").read_text(encoding="utf-8")
-    assert "[TO BE MEASURED]" in md and "[OWNER TO SET]" in md and rep["prereg"]["sha256"] in md
+    assert "[TO BE MEASURED]" in md and "[OWNER TO" not in md and "report-only" in md and rep["prereg"]["sha256"] in md
     assert "no accuracy, detection-rate or false-alarm figure is claimed" in md
     for cand, r in rep["candidates"].items():                                        # 46 windows per block < 60: nothing may be reported as measured
         assert r["walking_vs_empty_2"]["status"] == "[TO BE MEASURED]", cand
-        assert r["criteria"]["verdict"] == "[TO BE MEASURED]" and r["criteria"]["C1b_still"] == "[OWNER TO SET]"
+        assert r["criteria"]["verdict"] == "[TO BE MEASURED]"
+        assert r["criteria"]["C1b_still"] is None and r["criteria"]["C2b_fan_with_person"] is None      # not computable from 46 windows, never guessed
+        assert r["criteria"]["C7"].startswith("report-only")
     assert {"decor_parity/fused4", "perturb_agc/fused12", "move_decor_L45/fused4"} <= set(rep["candidates"])
     assert json.loads((out / "campaign_report.json").read_text(encoding="utf-8"))["link_state"] == "L1"
 
@@ -112,7 +119,7 @@ def test_a_dry_run_is_flagged_in_the_report(synthetic: Path, tmp_path: Path, mon
 def test_the_verdict_logic_on_hand_built_scores() -> None:
     rng = np.random.default_rng(3)
     quiet = lambda n: rng.normal(0, 1, n)                      # noqa: E731
-    # C2 is the pre-registered strict point comparison (fan flagged share not above the empty's), so the 'good' fan must be clearly quieter than the empty
+    # C2 is an interval (PREREG section 4): it fails only if the fan is flagged significantly more than the empty
     good = {"empty_1": quiet(800), "empty_2": quiet(800), "walking": quiet(400) + 6.0, "fan_alone": quiet(300) - 1.0, "still": quiet(300) + 2.0}
     r = rc.evaluate({"good": good})["good"]["criteria"]
     assert r["C4"] is True and r["C1"] is True and r["C3"] is True and r["C2"] is True and r["verdict"] == "MEETS"
@@ -123,6 +130,75 @@ def test_the_verdict_logic_on_hand_built_scores() -> None:
     assert rc.evaluate({"weak": weak})["weak"]["criteria"]["C1"] is False
     fan = {**good, "fan_alone": quiet(300) + 5.0}                  # the fan is flagged more than the empty: C2 fails
     assert rc.evaluate({"fan": fan})["fan"]["criteria"]["C2"] is False
+
+
+def _flagged_exactly(rng: np.random.Generator, n: int, k: int, thr: float) -> np.ndarray:
+    """n scores of which exactly k (spread out, 20 windows apart) are above thr and the rest well below."""
+    x = np.minimum(rng.normal(0, 1, n), thr - 0.3)
+    x[np.arange(k) * 20 + 3] = thr + 1.0
+    return x
+
+
+def test_c2_is_an_interval_a_noisy_point_excess_is_not_a_failure() -> None:
+    rng = np.random.default_rng(11)
+    e1 = rng.normal(0, 1, 1000)
+    thr = float(np.quantile(e1, 0.99))
+    e2 = _flagged_exactly(rng, 800, 8, thr)                       # 1.0 % flagged at alpha 1 %
+    fan = _flagged_exactly(rng, 300, 6, thr)                      # 2.0 %: above the empty's share as a point, but 6 windows cannot show it is more
+    r = rc.evaluate({"c": {"empty_1": e1, "empty_2": e2, "fan_alone": fan}})["c"]
+    a = r["rates"]["alpha_0.01"]
+    assert a["fan_alone_flagged_share"] > a["empty_2_flagged_share"]                # the old strict point comparison would have failed here
+    d = a["fan_minus_empty_2"]
+    assert d["d"] == pytest.approx(0.02 - 0.01) and d["lo"] <= 0.0 < d["hi"]
+    assert r["criteria"]["C2"] is True
+
+
+def test_c2_fails_only_when_the_lower_bound_is_above_zero() -> None:
+    rng = np.random.default_rng(12)
+    e1, e2 = rng.normal(0, 1, 1000), rng.normal(0, 1, 800)
+    loud_fan = rng.normal(0, 1, 300) + 5.0                        # flagged far more than the empty at both alphas
+    r = rc.evaluate({"c": {"empty_1": e1, "empty_2": e2, "fan_alone": loud_fan}})["c"]
+    assert r["rates"]["alpha_0.01"]["fan_minus_empty_2"]["lo"] > 0 and r["rates"]["alpha_0.05"]["fan_minus_empty_2"]["lo"] > 0
+    assert r["criteria"]["C2"] is False
+    same = rc.evaluate({"c": {"empty_1": e1, "empty_2": e2, "fan_alone": e2.copy()}})["c"]            # identical distribution: d = 0, lower bound below 0
+    assert same["rates"]["alpha_0.01"]["fan_minus_empty_2"]["d"] == 0.0 and same["criteria"]["C2"] is True
+
+
+def test_the_rate_difference_bootstrap_is_deterministic_and_has_the_right_sign() -> None:
+    from scripts.presence_eval.stats import block_bootstrap_rate_diff
+    a = np.zeros(300, dtype=bool); a[::3] = True                   # 33 %
+    b = np.zeros(300, dtype=bool); b[::30] = True                  # 3.3 %
+    r1, r2 = block_bootstrap_rate_diff(a, b), block_bootstrap_rate_diff(a, b)
+    assert r1 == r2 and r1["d"] == pytest.approx(a.mean() - b.mean()) and r1["lo"] > 0.2
+    assert block_bootstrap_rate_diff(b, a)["hi"] < -0.2
+    assert np.isnan(block_bootstrap_rate_diff(np.zeros(0, bool), b)["d"])
+
+
+def test_c1b_and_c2b_are_separate_claims_that_do_not_change_the_verdict() -> None:
+    rng = np.random.default_rng(13)
+    quiet = lambda n: rng.normal(0, 1, n)                      # noqa: E731
+    base = {"empty_1": quiet(800), "empty_2": quiet(800), "walking": quiet(400) + 6.0, "fan_alone": quiet(300) - 1.0}
+    strong = {**base, "still": quiet(300) + 3.0, "fan_with_person": quiet(300) + 6.0}
+    c = rc.evaluate({"s": strong})["s"]["criteria"]
+    assert c["C1b_still"] is True and c["C2b_fan_with_person"] is True and c["verdict"] == "MEETS"
+    weak = {**base, "still": quiet(300) + 0.1, "fan_with_person": quiet(300) + 0.1}                   # both separate poorly
+    c = rc.evaluate({"w": weak})["w"]["criteria"]
+    assert c["C1b_still"] is False and c["C2b_fan_with_person"] is False
+    assert c["verdict"] == "MEETS"                                                               # ... and neither can stop the candidate meeting C1-C3
+    assert rc.evaluate({"n": base})["n"]["criteria"]["C1b_still"] is None                           # no still block: not computable, not guessed
+
+
+def test_c7_is_report_only_both_directions_in_seconds_and_cannot_change_the_verdict() -> None:
+    rng = np.random.default_rng(14)
+    quiet = lambda n: rng.normal(0, 1, n)                      # noqa: E731
+    blocks = {"empty_1": quiet(800), "empty_2": quiet(800), "walking": quiet(400) + 6.0, "fan_alone": quiet(300) - 1.0, "still": quiet(300) + 0.5}
+    r = rc.evaluate({"c": blocks})["c"]
+    a = r["rates"]["alpha_0.01"]
+    for key in ("walking_unflagged_seconds", "still_unflagged_seconds", "empty_2_flagged_seconds", "fan_alone_flagged_seconds"):
+        assert a[key] is not None and a[key] >= 0.0                                               # both failure directions, in seconds, measured
+    assert a["still_unflagged_seconds"] > a["walking_unflagged_seconds"]                            # a barely-separated still block is mostly missed
+    assert r["criteria"]["C7"].startswith("report-only") and "no limit" in r["criteria"]["C7"]
+    assert r["criteria"]["verdict"] == "MEETS"                                                    # large still miss seconds, same verdict
 
 
 def test_thresholds_are_fitted_on_the_first_empty_block_only() -> None:

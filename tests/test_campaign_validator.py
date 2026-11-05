@@ -14,7 +14,7 @@ from scripts.presence_eval import campaign as cp
 SECONDS = 70
 FPS = 25
 MIN_MIN = SECONDS / 60.0 - 0.05            # short test blocks: the minimum is lowered for the test, the rules are otherwise the real ones
-SHORT = {t: MIN_MIN for t in cp.BLOCK_RULES if t != "fan_with_person"}      # fan_with_person stays [OWNER TO SET] (None), as in the real rules
+SHORT = {t: MIN_MIN for t in cp.BLOCK_RULES}                         # every minimum lowered for the 70 s test blocks; the real rules are asserted separately
 NODES = (1, 2, 3, 4)
 BASE_MS = 1_794_000_000_000
 LABEL = {"empty_1": "empty", "fan_alone": "empty_fan", "walking": "walking", "still": "still", "empty_2": "empty", "fan_with_person": "still"}
@@ -91,12 +91,20 @@ def test_a_complete_campaign_is_valid(valid_root: Path) -> None:
     rep = cp.validate(valid_root, SHORT)
     assert rep.ok, rep.failures
     assert set(rep.blocks) == set(FOLDERS.values())
-    assert any("[OWNER TO SET]" in w for w in rep.warnings)          # the fan_with_person minimum is deliberately not enforced
+    assert not any("not enforced" in w for w in rep.warnings)        # every block type now has a registered minimum
 
 
 def test_the_real_minimums_refuse_short_blocks(valid_root: Path) -> None:
-    rep = cp.validate(valid_root)                                      # no override: 70 s blocks are far below 60 / 5 minutes
+    rep = cp.validate(valid_root)                                      # no override: 70 s blocks are far below 60 / 5 / 10 minutes
     assert fails(rep, "shorter than the required 60 min for empty_1") and fails(rep, "shorter than the required 5 min for walking")
+    assert fails(rep, "shorter than the required 10 min for fan_with_person")
+
+
+def test_the_fan_with_person_minimum_is_enforced_when_only_the_other_minimums_are_lowered(valid_root: Path) -> None:
+    others = {t: MIN_MIN for t in cp.BLOCK_RULES if t != "fan_with_person"}
+    rep = cp.validate(valid_root, others)
+    assert fails(rep, "shorter than the required 10 min for fan_with_person")
+    assert not [f for f in rep.failures if "shorter than the required" in f and "fan_with_person" not in f]
 
 
 def test_missing_campaign_json_is_refused(camp: Path) -> None:
@@ -258,4 +266,4 @@ def test_the_spec_numbers_come_from_the_existing_tooling() -> None:
     from scripts.presence_eval import epochs
     assert cp.STEP_DB == epochs.STEP_DB == 6.0 and cp.MIN_BASELINE_FPS == epochs.MIN_BASELINE_FPS == 20.0
     assert cp.BLOCK_RULES["empty_1"][0] == 60.0 and cp.BLOCK_RULES["empty_2"][0] == 60.0 and cp.BLOCK_RULES["fan_alone"][0] == 5.0
-    assert cp.BLOCK_RULES["fan_with_person"][0] is None                 # [OWNER TO SET]: no number picked
+    assert cp.BLOCK_RULES["fan_with_person"][0] == 10.0                 # set by the owner 2026-11-04 (PREREG section 2); no existing rule to inherit

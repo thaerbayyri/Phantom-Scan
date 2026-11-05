@@ -56,6 +56,20 @@ def block_bootstrap_rate(
     return {"rate": float(x.mean()), "lo": float(lo), "hi": float(hi), "n": int(x.size)}
 
 
+def block_bootstrap_rate_diff(
+    a_flags: np.ndarray, b_flags: np.ndarray, block: int = DEFAULT_BLOCK, n_boot: int = DEFAULT_BOOT, seed: int = DEFAULT_SEED
+) -> dict:
+    """d = share(a) - share(b) of two time-ordered boolean series, with a 95 % percentile CI from a moving-block bootstrap (each series resampled on its own)."""
+    a = np.asarray(a_flags, dtype=np.float64)
+    b = np.asarray(b_flags, dtype=np.float64)
+    if a.size == 0 or b.size == 0:
+        return {"d": float("nan"), "lo": float("nan"), "hi": float("nan"), "n_a": int(a.size), "n_b": int(b.size)}
+    rng = np.random.default_rng(seed)
+    vals = np.array([_block_resample(a, block, rng).mean() - _block_resample(b, block, rng).mean() for _ in range(n_boot)])
+    lo, hi = np.percentile(vals, [2.5, 97.5])
+    return {"d": float(a.mean() - b.mean()), "lo": float(lo), "hi": float(hi), "n_a": int(a.size), "n_b": int(b.size), "block": block, "n_boot": n_boot, "seed": seed}
+
+
 def session_block_auc(
     pos_by_rec: dict[str, np.ndarray],
     neg_by_rec: dict[str, np.ndarray],

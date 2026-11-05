@@ -27,14 +27,14 @@ REF_S = 60                          # seconds at the start of a block used as th
 LOG_SLACK_S = 300                   # an entry-log line may precede/follow the block by this much without a warning
 DURATION_SLACK_S = 120              # operator start/stop vs recorded frame times
 
-# block type -> (minimum minutes or None = [OWNER TO SET], entry log required, allowed recorder labels)
+# block type -> (minimum minutes (None = none registered), entry log required, allowed recorder labels). PREREG section 2.
 BLOCK_RULES: dict[str, tuple[float | None, bool, tuple[str, ...]]] = {
     "empty_1": (60.0, True, ("empty",)),
     "fan_alone": (5.0, True, ("empty_fan",)),
     "walking": (5.0, False, ("walking",)),
     "still": (5.0, False, ("still",)),
     "empty_2": (60.0, True, ("empty",)),
-    "fan_with_person": (None, False, ("still", "walking")),
+    "fan_with_person": (10.0, False, ("still", "walking")),     # set by the owner 2026-11-04; no existing rule to inherit
 }
 CAMPAIGN_KEYS = ("schema_version", "campaign_id", "nodes_expected")
 BLOCK_KEYS = ("schema_version", "block_id", "block_type", "recording", "start_utc", "stop_utc", "link_state_id", "person_count", "fan_on")
@@ -141,7 +141,7 @@ def _validate_block(block_dir: Path, meta: dict, nodes_expected: list[int], min_
     t0, t1 = min(all_t), max(all_t)
     duration_s = (t1 - t0) / 1000.0
     if min_min is None:
-        rep.warnings.append(f"[{bid}] minimum duration for {btype} is [OWNER TO SET]: not enforced (measured {duration_s / 60:.1f} min)")
+        rep.warnings.append(f"[{bid}] minimum duration for {btype} has no registered minimum: not enforced (measured {duration_s / 60:.1f} min)")
     elif duration_s < min_min * 60.0:
         rep.failures.append(f"[{bid}] block is {duration_s / 60:.1f} min, shorter than the required {min_min:g} min for {btype}")
     if start and stop and abs((stop - start).total_seconds() - duration_s) > DURATION_SLACK_S:
@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Validate a 2026-11 recording campaign folder (read-only)")
     ap.add_argument("folder", type=Path)
     ap.add_argument("--json", type=Path, default=None, help="also write the report here (never under data/)")
-    ap.add_argument("--min-fan-person-min", type=float, default=None, help="minimum minutes for the fan_with_person block ([OWNER TO SET]; not enforced when omitted)")
+    ap.add_argument("--min-fan-person-min", type=float, default=None, help="override the minimum minutes for the fan_with_person block (default: the registered 10)")
     args = ap.parse_args(argv)
     if args.json is not None and _under_data(args.json):
         print(f"error: refusing to write a report under data/: {args.json}", file=sys.stderr)

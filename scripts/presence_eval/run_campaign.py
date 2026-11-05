@@ -29,13 +29,15 @@ from .jsonutil import dump_json
 from .movement import fused_scores
 from .provenance import provenance
 from .recordings import load_recording
-from .stats import DEFAULT_BLOCK, DEFAULT_BOOT, DEFAULT_SEED, auc, block_bootstrap_auc, empty_pair_control
+from .stats import DEFAULT_BLOCK, DEFAULT_BOOT, DEFAULT_SEED, auc, block_bootstrap_auc, block_bootstrap_rate_diff, empty_pair_control
 from .tables import RecTables, load_tables
 
 REPO = cp.REPO
 PREREG = REPO / "reports" / "presence-eval-2026-11" / "PREREG-2026-11-recording-campaign.md"
-# Pre-registered numbers (PREREG section 4); a criterion with no number is [OWNER TO SET] and is reported, not judged.
+# Pre-registered numbers (PREREG section 4). C1b and C2b are separate claims (they never change the verdict); C7 is report-only (no number).
 C1_LOWER_MIN = 0.80
+C1B_LOWER_MIN = 0.80
+C2B_LOWER_MIN = 0.80
 C3_MAX_EMPTY_SHARE = 0.05
 C4_UPPER_MAX = 0.65
 MIN_WINDOWS = 60
@@ -119,6 +121,16 @@ def _flag_share(scores: np.ndarray, thr: float) -> float | None:
     return float(np.mean(s > thr)) if len(s) >= MIN_WINDOWS else None
 
 
+def _share_diff(fan: np.ndarray | None, empty_2: np.ndarray | None, thr: float) -> dict | None:
+    """C2: d = (fan flagged share) - (empty_2 flagged share) with its moving-block bootstrap interval; None when either side has < MIN_WINDOWS."""
+    if fan is None or empty_2 is None:
+        return None
+    f, e = _clean(fan), _clean(empty_2)
+    if len(f) < MIN_WINDOWS or len(e) < MIN_WINDOWS:
+        return None
+    return block_bootstrap_rate_diff(f > thr, e > thr, block=DEFAULT_BLOCK, n_boot=DEFAULT_BOOT, seed=DEFAULT_SEED)
+
+
 def _flagged_seconds(s: np.ndarray | None, thr: float) -> float | None:
     return None if s is None or len(_clean(s)) < MIN_WINDOWS else float(np.sum(_clean(s) > thr) * WINDOW_S)
 
@@ -145,6 +157,7 @@ def evaluate(scores: dict[str, dict[str, np.ndarray]]) -> dict:
                 rates[f"alpha_{alpha:g}"] = {"threshold": thr, "status": "measured",
                                               "empty_2_flagged_share": _flag_share(e2, thr) if e2 is not None else None,
                                               "fan_alone_flagged_share": _flag_share(by_block["fan_alone"], thr) if "fan_alone" in by_block else None,
+                                              "fan_minus_empty_2": _share_diff(by_block.get("fan_alone"), e2, thr),
                                               "walking_unflagged_seconds": _unflagged_seconds(by_block.get("walking"), thr),
                                               "still_unflagged_seconds": _unflagged_seconds(by_block.get("still"), thr),
                                               "empty_2_flagged_seconds": _flagged_seconds(e2, thr), "fan_alone_flagged_seconds": _flagged_seconds(by_block.get("fan_alone"), thr)}
@@ -154,20 +167,27 @@ def evaluate(scores: dict[str, dict[str, np.ndarray]]) -> dict:
     return res
 
 
+C7_NOTE = ("report-only: both failure directions are measured and reported in seconds per block; no limit is pre-registered; "
+           "C7 cannot make a candidate meet or fail the criteria")
+
+
+def _lower_ok(c: dict, minimum: float) -> bool | None:
+    return (c["lo"] >= minimum) if c.get("status") == "measured" else None
+
+
 def _criteria(r: dict) -> dict:
+    """Verdict = C4 gate and C1-C3 only. C1b, C2b are separate claims (reported, never in the verdict); C7 is report-only."""
     c4_pass = r["c4_empty_vs_empty"].get("passes")
-    c1 = r["walking_vs_empty_2"]
-    c1_pass = (c1["lo"] >= C1_LOWER_MIN) if c1.get("status") == "measured" else None
-    a1 = r["rates"].get("alpha_0.01") if isinstance(r["rates"], dict) else None
-    c2_pass = c3_pass = None
-    if a1 and a1.get("empty_2_flagged_share") is not None:
-        c3_pass = a1["empty_2_flagged_share"] <= C3_MAX_EMPTY_SHARE
-        ok = [a["fan_alone_flagged_share"] <= a["empty_2_flagged_share"] for a in r["rates"].values()
-              if isinstance(a, dict) and a.get("fan_alone_flagged_share") is not None and a.get("empty_2_flagged_share") is not None]
-        c2_pass = bool(ok) and all(ok) if ok else None
+    c1_pass = _lower_ok(r["walking_vs_empty_2"], C1_LOWER_MIN)
+    rates = r["rates"] if isinstance(r["rates"], dict) else {}
+    a1 = rates.get("alpha_0.01")
+    c3_pass = (a1["empty_2_flagged_share"] <= C3_MAX_EMPTY_SHARE) if a1 and a1.get("empty_2_flagged_share") is not None else None
+    diffs = [a["fan_minus_empty_2"] for a in rates.values() if isinstance(a, dict) and a.get("fan_minus_empty_2")]
+    c2_pass = all(d["lo"] <= 0.0 for d in diffs) if len(diffs) == len(ALPHAS) else None      # fails only if the fan is flagged significantly MORE than the empty
     parts = {"C4": c4_pass, "C1": c1_pass, "C2": c2_pass, "C3": c3_pass}
     verdict = "[TO BE MEASURED]" if any(v is None for v in parts.values()) else ("MEETS" if all(parts.values()) else "DOES NOT MEET")
-    return {**parts, "verdict": verdict, "C1b_still": "[OWNER TO SET]", "C2b_fan_with_person": "[OWNER TO SET]", "C7_seconds_tolerated": "[OWNER TO SET]"}
+    return {**parts, "verdict": verdict, "C1b_still": _lower_ok(r["still_vs_empty_2"], C1B_LOWER_MIN),
+            "C2b_fan_with_person": _lower_ok(r["fan_person_vs_fan_alone"], C2B_LOWER_MIN), "C7": C7_NOTE}
 
 
 def run(folder: Path, out_dir: Path | None = None, *, allow_uncommitted_prereg: bool = False, min_minutes: dict | None = None) -> dict:
@@ -195,10 +215,10 @@ def run(folder: Path, out_dir: Path | None = None, *, allow_uncommitted_prereg: 
     meets = sorted(c for c, r in results.items() if r["criteria"]["verdict"] == "MEETS")
     report = {"provenance": provenance("python -m scripts.presence_eval.run_campaign", [str(folder)]), "prereg": pre, "dry_run_uncommitted_prereg": bool(allow_uncommitted_prereg and not committed),
               "validator": {"valid": True, "warnings": vrep.warnings, "blocks": vrep.blocks}, "link_state": link_state,
-              "criteria_numbers": {"C1_lower_min": C1_LOWER_MIN, "C3_max_empty_share": C3_MAX_EMPTY_SHARE, "C4_upper_max": C4_UPPER_MAX, "min_windows": MIN_WINDOWS},
+              "criteria_numbers": {"C1_lower_min": C1_LOWER_MIN, "C1b_lower_min": C1B_LOWER_MIN, "C2b_lower_min": C2B_LOWER_MIN, "C3_max_empty_share": C3_MAX_EMPTY_SHARE, "C4_upper_max": C4_UPPER_MAX, "min_windows": MIN_WINDOWS},
               "candidates": results, "candidates_meeting_criteria": meets,
               "conclusion": ("no candidate met the criteria; no accuracy, detection-rate or false-alarm figure is claimed" if not meets else "see the candidates listed; the pre-registered limits still apply"),
-              "labels": "every number is `measured`; anything not computable is [TO BE MEASURED]; criteria without a number are [OWNER TO SET]"}
+              "labels": "every number is `measured`; anything not computable is [TO BE MEASURED]; C7 is report-only (no limit pre-registered)"}
     out_dir = out_dir or (REPO / "reports" / "presence-eval-2026-11" / "results" / f"campaign-{Path(folder).name}")
     if cp._under_data(out_dir):
         raise Refused(2, f"refusing to write a report under data/: {out_dir}")
@@ -229,7 +249,17 @@ def render(rep: dict) -> str:
         c = r["criteria"]
         L.append(f"| {cand} | {_f(w.get('auc'))} [{_f(w.get('lo'))}, {_f(w.get('hi'))}] | {_f(s.get('auc'))} | {_f(a.get('empty_2_flagged_share'))} | {_f(a.get('fan_alone_flagged_share'))} | "
                  f"{_f(a.get('walking_unflagged_seconds'), '.1f')} | {_f(a.get('empty_2_flagged_seconds'), '.1f')} | {_f(c['C1'])} / {_f(c['C2'])} / {_f(c['C3'])} / {_f(c['C4'])} | {c['verdict']} |")
-    L += ["", "Criteria without a pre-registered number (`C1b` still, `C2b` fan with a person, `C7` seconds tolerated) are `[OWNER TO SET]` and are not judged. K7 = `decor_parity`; movement scores are labelled \"movement, not presence\"."]
+    L += ["", "C2 is the interval rule: it fails only if the lower 95 % bound of d = (fan flagged share) - (empty_2 flagged share) is above 0, at alpha 1 % and 5 %.", "",
+          "## Separate claims (never part of the verdict)", "", "| candidate | C1b still vs empty_2, lower bound >= 0.80 | C2b fan with a person vs fan alone, lower bound >= 0.80 |", "|--|--|--|"]
+    for cand, r in rep["candidates"].items():
+        c = r["criteria"]
+        L.append(f"| {cand} | {_f(c['C1b_still'])} (lower {_f(r['still_vs_empty_2'].get('lo'))}) | {_f(c['C2b_fan_with_person'])} (lower {_f(r['fan_person_vs_fan_alone'].get('lo'))}) |")
+    L += ["", f"## C7 ({C7_NOTE})", "", "Seconds per block at alpha 1 %: under-detection (walking / still seconds with no marker) and ghost (empty_2 / fan-alone seconds with a marker).", "",
+          "| candidate | walking seconds NOT flagged | still seconds NOT flagged | empty_2 seconds flagged | fan alone seconds flagged |", "|--|--|--|--|--|"]
+    for cand, r in rep["candidates"].items():
+        a = r["rates"].get("alpha_0.01", {}) if isinstance(r["rates"], dict) else {}
+        L.append(f"| {cand} | {_f(a.get('walking_unflagged_seconds'), '.1f')} | {_f(a.get('still_unflagged_seconds'), '.1f')} | {_f(a.get('empty_2_flagged_seconds'), '.1f')} | {_f(a.get('fan_alone_flagged_seconds'), '.1f')} |")
+    L += ["", "K7 = `decor_parity`; movement scores are labelled \"movement, not presence\"."]
     return "\n".join(L) + "\n"
 
 
