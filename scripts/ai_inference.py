@@ -71,6 +71,7 @@ from phantom.embedding import (  # noqa: E402
     ruview_scale_features,
     standardize,
 )
+from phantom.presence_guard import presence_head_check  # noqa: E402
 from phantom.subcarriers import NUM_DATA_SUBCARRIERS, lltf_amplitudes  # noqa: E402
 
 # ─── Model Definitions ────────────────────────────────────────────────
@@ -320,8 +321,15 @@ try:
     if not PRESENCE_HEAD_ENABLED:
         print("[AI] Presence head disabled (set PHANTOM_AI_PRESENCE_HEAD=1 to enable; output is uncalibrated).")
     elif os.path.exists(PRESENCE_HEAD):
-        presence_head = PresenceHead(PRESENCE_HEAD)
-        print(f"[AI] Loaded presence head (||w||={np.linalg.norm(presence_head.w):.2f}, bias={presence_head.b:.2f}).")
+        candidate_head = PresenceHead(PRESENCE_HEAD)
+        # PS-FIX-06: refuse a saturated head (||w|| <= |bias| on unit-norm input answers one class for every input).
+        # A refused head leaves presence_prob None, i.e. no advisory presence evidence; it never changes the verdict.
+        head_check = presence_head_check(candidate_head.w, candidate_head.b)
+        if head_check.ok:
+            presence_head = candidate_head
+            print(f"[AI] Loaded presence head (||w||={np.linalg.norm(presence_head.w):.2f}, bias={presence_head.b:.2f}).")
+        else:
+            print(f"[AI] Presence head REFUSED, advisory presence unavailable: {head_check.reason}.")
     else:
         print(f"[WARN] presence-head.json not found at {PRESENCE_HEAD}")
 except Exception as e:
