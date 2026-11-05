@@ -8,15 +8,23 @@
 //   data/datasets/<roomId>/<roomId>__<subjectId>__<label>__<UTC stamp>.jsonl
 //   (rotation parts: ...__<stamp>.part2.jsonl, .part3.jsonl, ...)
 //
-//   line 1   {"type":"header","schema":1,"roomId","subjectId","label","count",
-//             "startedAtMs","part","geometry","notes","firmwareFilterMac"}
+//   line 1   {"type":"header","schema":2,"roomId","subjectId","label","count",
+//             "startedAtMs" (RECORDING start; same in every part, it names the files),
+//             "partStartedAtMs" (this file's start),"part","geometry","geometryHash",
+//             "notes","firmwareFilterMac","capture":{channel,bandwidthMHz,bssid,
+//             firmwareVersion,firmwareHash,source},"annotation":{nodeMoved,roomNotEmpty,text},
+//             "recorder":"dashboard"}
 //   then     {"type":"frame","t":<host ms>,"n":<nodeId>,"rssi":<dBm>,"a":[…]}
+//
+// Schema 2 only ADDS fields to schema 1 (readers that ignore unknown keys keep working). Anything not
+// supplied is null ("not recorded"), never guessed. Per-frame PHY (channel/noise/seq) is NOT recorded yet.
 //
 // Every part file starts with its own header so each file is self-describing.
 // Labels are ground truth supplied by the operator for the whole recording —
 // train/eval tooling (scripts/train/) must split by recording/session, never
 // by frame. Files are local-only (data/datasets/ is gitignored).
 
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
@@ -45,7 +53,24 @@ const MAX_PEOPLE = 8;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const DEFAULT_MAX_FRAMES_PER_FILE = 100_000;
 const FLUSH_EVERY_LINES = 200;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+
+/** Operator statement about conditions the amplitudes alone cannot reveal. null = not stated. */
+export interface DatasetAnnotation {
+  nodeMoved: boolean | null;
+  roomNotEmpty: boolean | null;
+  text: string;
+}
+
+export interface DatasetCapture {
+  channel: number | null;
+  bandwidthMHz: number | null;
+  bssid: string | null;
+  firmwareVersion: string | null;
+  firmwareHash: string | null;
+  /** "operator_env" when at least one value was supplied through PHANTOM_* variables, else "not_recorded". */
+  source: "operator_env" | "not_recorded";
+}
 
 export interface DatasetStartRequest {
   roomId: string;
@@ -53,6 +78,55 @@ export interface DatasetStartRequest {
   label: DatasetLabel;
   count: number;
   notes: string;
+  annotation: DatasetAnnotation;
+}
+
+/** Deterministic JSON (object keys sorted recursively, no whitespace) so hashes agree across languages. */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** First 16 hex chars of sha256(canonical {roomWidthM, roomDepthM, anchors}); null when no geometry. */
+export function geometryHash(geometry: unknown): string | null {
+  if (!geometry || typeof geometry !== "object") return null;
+  const g = geometry as Record<string, unknown>;
+  const picked: Record<string, unknown> = {};
+  for (const key of ["roomWidthM", "roomDepthM", "anchors"]) if (g[key] !== undefined) picked[key] = g[key];
+  return crypto.createHash("sha256").update(canonicalJson(picked)).digest("hex").slice(0, 16);
+}
+
+/**
+ * Capture conditions the operator knows but the amplitude stream does not carry. Invalid values become
+ * null (never a guess, never a crash). Variables: PHANTOM_CAPTURE_CHANNEL, PHANTOM_CAPTURE_BANDWIDTH_MHZ,
+ * PHANTOM_ROUTER_BSSID, PHANTOM_FIRMWARE_VERSION, PHANTOM_FIRMWARE_HASH.
+ */
+export function captureFromEnv(env: NodeJS.ProcessEnv): DatasetCapture {
+  const channel = Number(env.PHANTOM_CAPTURE_CHANNEL);
+  const bandwidth = Number(env.PHANTOM_CAPTURE_BANDWIDTH_MHZ);
+  const bssid = (env.PHANTOM_ROUTER_BSSID ?? "").toLowerCase();
+  const version = env.PHANTOM_FIRMWARE_VERSION ?? "";
+  const hash = (env.PHANTOM_FIRMWARE_HASH ?? "").toLowerCase();
+  const capture = {
+    channel: Number.isInteger(channel) && channel >= 1 && channel <= 196 ? channel : null,
+    bandwidthMHz: [20, 40, 80, 160].includes(bandwidth) ? bandwidth : null,
+    bssid: /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(bssid) ? bssid : null,
+    firmwareVersion: /^[A-Za-z0-9._+-]{1,64}$/.test(version) ? version : null,
+    firmwareHash: /^[0-9a-f]{7,64}$/.test(hash) ? hash : null,
+  };
+  const any = Object.values(capture).some((v) => v !== null);
+  return { ...capture, source: any ? "operator_env" : "not_recorded" };
+}
+
+function triState(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 export interface DatasetFrame {
@@ -99,12 +173,18 @@ export function parseDatasetStart(raw: unknown): DatasetStartRequest {
     throw new Error(`invalid count: expected an integer 0-${MAX_PEOPLE}`);
   }
   const notes = typeof body.notes === "string" ? body.notes.slice(0, 500) : "";
+  const rawAnnotation = body.annotation && typeof body.annotation === "object" ? (body.annotation as Record<string, unknown>) : {};
   return {
     roomId: requireSafeId(body.roomId, "roomId"),
     subjectId: requireSafeId(body.subjectId, "subjectId", "unknown"),
     label: typedLabel,
     count,
     notes,
+    annotation: {
+      nodeMoved: triState(rawAnnotation.nodeMoved),
+      roomNotEmpty: triState(rawAnnotation.roomNotEmpty),
+      text: typeof rawAnnotation.text === "string" ? rawAnnotation.text.slice(0, 500) : "",
+    },
   };
 }
 
@@ -117,6 +197,8 @@ export interface DatasetRecorderOptions {
 export interface DatasetStartContext {
   geometry?: unknown;
   firmwareFilterMac?: string;
+  /** Defaults to captureFromEnv(process.env) when omitted. */
+  capture?: DatasetCapture;
 }
 
 function compactStamp(ms: number): string {
@@ -253,9 +335,14 @@ export class DatasetRecorder {
       count: request.count,
       notes: request.notes,
       startedAtMs: this.startedAtMs,
+      partStartedAtMs: this.now(),
       part: this.part,
       geometry: this.context.geometry ?? null,
+      geometryHash: geometryHash(this.context.geometry),
       firmwareFilterMac: this.context.firmwareFilterMac ?? null,
+      capture: this.context.capture ?? captureFromEnv(process.env),
+      annotation: request.annotation,
+      recorder: "dashboard",
     };
     fs.writeSync(this.fd, `${JSON.stringify(header)}\n`);
   }

@@ -21,7 +21,9 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 1  # the oldest layout; kept for callers that import it
+# Schema 2 only ADDS header fields (partStartedAtMs, geometryHash, capture, annotation, recorder), so it reads the same way.
+SUPPORTED_SCHEMAS = (1, 2)
 _PART_RE = re.compile(r"\.part\d+$")
 _PART_NUM_RE = re.compile(r"\.part(\d+)$")
 _STAMP_RE = re.compile(r"__(\d{8})T\d{6}Z$")
@@ -63,6 +65,7 @@ class Recording:
     nodes: dict[int, NodeStream] = field(default_factory=dict)
     files: tuple[str, ...] = ()
     report: LoadReport | None = None  # None for recordings built by hand (tests)
+    header: dict = field(default_factory=dict)  # first header verbatim: capture/annotation/geometryHash for schema 2
 
 
 def _recording_id(path: Path) -> str:
@@ -151,7 +154,7 @@ def load_recording(paths: list[Path], *, strict: bool = False) -> Recording:
                     continue
                 kind = obj.get("type") if isinstance(obj, dict) else None
                 if kind == "header":
-                    if obj.get("schema") != SCHEMA_VERSION:
+                    if obj.get("schema") not in SUPPORTED_SCHEMAS:
                         raise ValueError(f"{path}: unsupported dataset schema {obj.get('schema')!r}")
                     header = header or obj
                 elif kind == "frame":
@@ -200,6 +203,7 @@ def load_recording(paths: list[Path], *, strict: bool = False) -> Recording:
         nodes=nodes,
         files=tuple(str(p) for p in sorted(paths, key=_part_key)),
         report=report,
+        header=dict(header),
     )
 
 
