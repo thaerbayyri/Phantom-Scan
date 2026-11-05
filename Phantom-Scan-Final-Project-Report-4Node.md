@@ -336,7 +336,7 @@ This chapter specifies what Phantom Scan must do and under what quality conditio
 | ID | Functional Requirement | Implemented By |
 |---|---|---|
 | FR1 | Each of up to four nodes shall capture Wi-Fi CSI and stream binary frames (32-byte versioned header, sequence number, RSSI, device timestamps, raw I/Q payload) over UDP to the host [16]. | `csi_collector.c`, `stream_sender.c` |
-| FR2 | Each node shall self-generate channel traffic (~50 Hz gateway ping) independently of any other node, and shall rate-limit its own transmission to 50 Hz. | `csi_collector.c` |
+| FR2 | Each node shall self-generate channel traffic (~50 Hz gateway ping) independently of any other node, and shall rate-limit its own transmission (current firmware: 10 ms send gate). | `csi_collector.c` |
 | FR3 | The host shall be the sole owner of UDP port 5005 for all live nodes simultaneously, and shall parse/validate CSI frames, heartbeats, and firmware feature-state packets from any of up to four node identities. | `server/lib/udp-server.ts` |
 | FR4 | The host shall independently pin each of up to four node identities to its first-seen source address and reject frames for a known node arriving from a foreign source, with rate-limited security logging. | `SourcePinningGuard` (`udp-server.ts`) |
 | FR5 | The host shall compute a per-node motion metric — gain-normalized, per-subcarrier temporal standard deviation of CSI amplitude — independently for however many nodes (1–4) are currently live. | `node-fusion.ts`, `websocket.ts` |
@@ -642,7 +642,7 @@ The `PhantomScan_4Node_FusedRoom_Test_Report.md` verification pass is the strong
 | Metric | Status | Evidence / Blocking Condition |
 |---|---|---|
 | Software correctness (parsers, 2-node and N-node fusion math, Kalman filter, state machine) | **MEASURED PASS** | 256 TS + 91 Python tests green [19]. |
-| Two-node live ingest rate and RSSI envelope | MEASURED (two-node rig) | ~40 pkt/s aggregate, RSSI −23 to −38 dBm, yield 41–43 pps/node [19]. |
+| Two-node live ingest rate and RSSI envelope | MEASURED (two-node rig) | ~40 pkt/s aggregate, RSSI −23 to −38 dBm, yield 41–43 pps/node, pre-2026-10-18 firmware; current recordings 64–67 frames/s per node [19]. |
 | Four-node room-mode fusion math correctness | **MEASURED PASS (static/code-level)** | Independent verification pass confirmed generic correctness; no live hardware exercised in that session [this report, §7.3.2]. |
 | Four-node empty-room false-positive rate | **[TO BE MEASURED — currently unresolved, actively investigated]** | Existing recordings are motion-metric-saturated (censored) on ~half of all ticks; cannot honestly support re-deriving the threshold yet; `raw_perturbation_n1..n4` added to unblock diagnosis. |
 | Four-node room-centroid localization error vs. ground truth | **[TO BE MEASURED]** | Ready-to-run 9-point ground-truth walk procedure specified in the verification report; not yet executed against live hardware. |

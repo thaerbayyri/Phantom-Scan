@@ -28,7 +28,7 @@ Coordinate convention (single source of truth: `NODE_ANCHORS` in `shared/schema.
 node 1 at `[-1.5, 0]`, node 2 at `[+1.5, 0]` — 3 m separation, origin at the center
 (midpoint), matching the radar render and the dashboard fusion path.
 
-1. Place node 1 at `[-1.5, 0]` and node 2 at `[+1.5, 0]` (3 m apart, centered).
+1. Place node 1 at `[-1.5, 0]` and node 2 at `[+1.5, 0]` (3 m apart, centered — original rig; the committed geometry is now 4 m, `config/room.json`; use the measured distance).
 2. Place the target at the midpoint.
 3. Run the dashboard fusion path (`fused_two_node`) with both nodes fresh.
 4. Record fused `balance`, `x`, and node mode.

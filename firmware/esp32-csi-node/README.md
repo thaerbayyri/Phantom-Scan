@@ -12,7 +12,7 @@ This firmware captures WiFi Channel State Information (CSI) from an ESP32-S3 and
 
 > | Capability | Method | Performance |
 > |------------|--------|-------------|
-> | **CSI streaming** | Per-subcarrier I/Q capture over UDP | ~41-43 pps measured (50 Hz send-rate cap), ADR-018 binary format |
+> | **CSI streaming** | Per-subcarrier I/Q capture over UDP | 64-67 frames/s per node measured 2026-10-27 (10 ms send gate; the older ~41-43 pps figure is pre-2026-10-18 firmware), ADR-018 binary format |
 > | **Breathing detection** | Bandpass 0.1-0.5 Hz, zero-crossing BPM | 6-30 BPM |
 > | **Heart rate** | Bandpass 0.8-2.0 Hz, zero-crossing BPM | 40-120 BPM |
 > | **Presence sensing** | Phase variance + adaptive calibration | < 1 ms latency |
@@ -84,7 +84,7 @@ curl http://<ESP32_IP>:8032/wasm/list
 | **Recommended boards** | ESP32-S3-DevKitC-1, XIAO ESP32-S3 | Any ESP32-S3 with 8 MB flash works |
 | **Deployment** | 3-6 nodes per room | Multistatic mesh for 360-degree coverage |
 
-> **Tip:** A single node provides presence and vital signs along its line of sight. Multiple nodes (3-6) create a multistatic mesh that resolves 3D pose with <30 mm jitter and zero identity swaps.
+> **Tip:** A single node provides presence and vital signs along its line of sight. Multiple nodes (3-6) create a multistatic mesh; upstream RuView claims this resolves 3D pose with <30 mm jitter, which is **not** a Phantom Scan capability and is not measured here [TO BE MEASURED].
 
 ---
 
@@ -112,7 +112,7 @@ The firmware implements a tiered processing pipeline. Each tier builds on the pr
 The default, production-stable baseline. Captures CSI frames from the WiFi driver and streams them over UDP in the ADR-018 binary format.
 
 - **Magic:** `0xC5110001`
-- **Rate:** ~41-43 pps measured per node (50 Hz firmware send-rate cap, not a guaranteed rate)
+- **Rate:** 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings, 45-60 on weaker links (10 ms send gate since 2026-10-18; the older ~41-43 pps / 50 Hz-cap figure is pre-fix; host receive time, bursty)
 - **Payload:** 20-byte header + I/Q pairs (2 bytes per subcarrier per antenna)
 - **Bandwidth:** ~5 KB/s per node (64 subcarriers, 1 antenna)
 
@@ -150,7 +150,7 @@ All packets are sent over UDP to the configured aggregator. The magic number in 
 
 | Magic | Name | Rate | Size | Contents |
 |-------|------|------|------|----------|
-| `0xC5110001` | CSI Frame (ADR-018) | ~41-43 pps measured (50 Hz cap) | Variable | Raw I/Q per subcarrier per antenna |
+| `0xC5110001` | CSI Frame (ADR-018) | 64-67 frames/s measured (10 ms send gate) | Variable | Raw I/Q per subcarrier per antenna |
 | `0xC5110002` | Vitals Packet | 1 Hz | 32 bytes | Presence, breathing BPM, heart rate, fall flag, occupancy |
 | `0xC5110004` | WASM Output | Event-driven | Variable | Custom events from WASM modules (u8 type + f32 value) |
 | `0xC5110006` | Feature State (RuView lineage) | 1 Hz | ≥56 bytes | Board-DSP motion, presence, respiration BPM+conf, heart BPM+conf — parsed by the dashboard into the "Board DSP" card |
@@ -379,7 +379,7 @@ Tier 3 turns the ESP32 from a fixed-function sensor into a programmable sensing 
 - **Compiled from Rust** using the `wasm32-unknown-unknown` target
 - **Packaged in signed RVF containers** with Ed25519 signatures
 - **Uploaded over HTTP** to the running device (no physical access needed)
-- **Executed per-frame** (~41-43 Hz measured, 50 Hz cap) by the WASM3 interpreter after Tier 2 DSP completes
+- **Executed per-frame** (64-67 Hz measured, 10 ms send gate) by the WASM3 interpreter after Tier 2 DSP completes
 
 ### RVF (RuVector Format)
 
@@ -426,7 +426,7 @@ Every WASM module must export these three functions:
 | Export | Called | Purpose |
 |--------|--------|---------|
 | `on_init()` | Once, when started | Allocate state, initialize algorithms |
-| `on_frame(n_subcarriers: i32)` | Per CSI frame (~41-43 Hz measured, 50 Hz cap) | Process sensor data, emit events |
+| `on_frame(n_subcarriers: i32)` | Per CSI frame (64-67 Hz measured, 10 ms send gate) | Process sensor data, emit events |
 | `on_timer()` | At configurable interval (default 1 s) | Periodic housekeeping, aggregated output |
 
 ### HTTP Management Endpoints

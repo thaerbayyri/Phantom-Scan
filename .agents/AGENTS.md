@@ -4,7 +4,7 @@ This file serves as the persistent memory of the **Phantom Scan** project, provi
 
 ## 1. Project Mission & Capabilities
 Phantom Scan is a camera-free human sensing grid utilizing ambient Wi-Fi Channel State Information (CSI) (2.4GHz / 5GHz).
-- **Through-Wall Human Tracking**: Uses Exponential Moving Average (EMA) background subtraction and 3D Kalman filter tracking.
+- **Through-Wall Human Tracking** (design goal; through-wall performance is [TO BE MEASURED]): Uses Exponential Moving Average (EMA) background subtraction and 3D Kalman filter tracking.
 - **Vital Signs Estimation**: Butterworth filtering, DFT, and phase unwrapping for breathing rate (RPM) and heart rate (BPM) tracking.
 - **Directional Mapping (AoA)**: MUSIC (Multiple Signal Classification) algorithm using spatial covariance and eigenvalue decomposition.
 - **Distance Ranging**: Power Delay Profile (PDP) via IFFT combined with RSSI log-distance model.

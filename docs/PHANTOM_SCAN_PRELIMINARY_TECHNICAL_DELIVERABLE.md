@@ -6,7 +6,9 @@
 **Document Classification:** Preliminary — Controlled Distribution  
 **Revision:** 1.0 — DRAFT  
 **Date:** 18 April 2026  
-**Prepared by:** Systems Architecture Division, Project Phantom Scan  
+**Prepared by:** Systems Architecture Division, Project Phantom Scan
+
+> **Status note (2026-11):** through-wall operation, airborne sensing, localization accuracy, range, detection rates, pose and vital-sign error in this draft are design goals, [TO BE MEASURED]; none has been validated on our hardware (see `reports/presence-eval-2026-11/00-summary.md`). The two-node, one-antenna rig has no pose or spatial-angle capability.  
 
 ---
 
@@ -54,7 +56,7 @@ The platform is designed to operate from both **fixed infrastructure** (wall/cei
 | Differentiator | Phantom Scan | Camera / LIDAR / Thermal |
 |---|---|---|
 | **PII Capture** | Zero — RF reflection only | Face, body, clothing, skin tone |
-| **Through-Wall** | ✅ Up to 8 m through drywall/concrete | ❌ Line-of-sight only |
+| **Through-Wall** | [TO BE MEASURED] (design goal; not validated) | ❌ Line-of-sight only |
 | **Illumination** | Independent (works in total darkness) | Requires illumination or active emission |
 | **GDPR/CCPA Risk** | Minimal — no biometric classification | High — biometric data by default |
 | **Per-Node Cost** | ~$28 USD | $500–$5,000+ per sensor |
@@ -185,7 +187,7 @@ For 3D spatial resolution, 3–6 ESP32-S3 nodes are deployed per monitored area.
 |---|---|
 | Nodes per area | 3–6 (minimum 3 for 3D triangulation) |
 | Synchronisation | NTP-aligned timestamps (± 2 ms inter-node skew) |
-| Spatial jitter | < 30 mm RMS after Kalman fusion |
+| Spatial jitter | < 30 mm RMS after Kalman fusion (target, [TO BE MEASURED]; pose is not supported by the two-node rig) |
 | Coverage volume | Up to 8 m × 8 m × 3 m per area |
 | GDOP Factor | 1.2–1.8 (corner + ceiling placement) |
 
@@ -427,7 +429,7 @@ Raw CSI (I/Q)
 | **Measurement noise R** | 0.15 m² |
 | **Update rate** | 20 Hz |
 | **Coasting** | Up to 5 missed frames (250 ms) before track loss |
-| **Validation** | Trajectory RMS jitter < 30 mm; velocity estimation within ± 0.1 m/s |
+| **Validation** | Trajectory RMS jitter < 30 mm; velocity estimation within ± 0.1 m/s (targets, [TO BE MEASURED]) |
 
 ### 4.3 On-Device Edge Processing (Firmware DSP)
 

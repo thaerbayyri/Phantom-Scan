@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">Phantom Scan</h1>
-<p align="center"><strong>Through-wall human presence sensing from $7 ESP32-S3 radios — no cameras, no wearables.</strong></p>
+<p align="center"><strong>Through-wall human presence sensing from $7 ESP32-S3 radios — no cameras, no wearables.</strong><br/><sub>Through-wall performance, range and detection rates are design goals, [TO BE MEASURED]; see <code>reports/presence-eval-2026-11/00-summary.md</code>.</sub></p>
 
 <p align="center">
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-18%2B-green.svg" alt="Node.js 18+"></a>
@@ -94,7 +94,7 @@ python -m esptool --chip esp32s3 --port COM6 --baud 460800 \
 python esp-flash.py --port COM7 --ssid "YourSSID" --password "YourPass" --target-ip 192.168.1.155
 ```
 
-All nodes join the same Wi-Fi AP and self-ping their gateway at ~50 Hz to keep the CSI engine fed (this is a per-node RF stimulus trick, **not** inter-node coordination — nodes never talk to each other). Every node needs a distinct `node_id` (1–4) provisioned via `esp-flash.py`; the host maps that ID straight to a fixed room-corner anchor (see [Phantom Balance Fusion](#phantom-balance-fusion)).
+All nodes join the same Wi-Fi AP and self-ping their gateway (every 30 ms in the committed firmware, `csi_ping_pure.h`; ~50 Hz before 2026-10-18) to keep the CSI engine fed (this is a per-node RF stimulus trick, **not** inter-node coordination — nodes never talk to each other). Every node needs a distinct `node_id` (1–4) provisioned via `esp-flash.py`; the host maps that ID straight to a fixed room-corner anchor (see [Phantom Balance Fusion](#phantom-balance-fusion)).
 
 See [firmware/esp32-csi-node/README.md](firmware/esp32-csi-node/README.md) for the full firmware architecture and Windows/Ubuntu setup notes in [docs/WINDOWS_ESP32_SETUP.md](docs/WINDOWS_ESP32_SETUP.md) / [docs/UBUNTU_ESP32_SETUP.md](docs/UBUNTU_ESP32_SETUP.md).
 
@@ -153,7 +153,7 @@ Recorded session (CSV / JSONL) -> parser -> runtime semantics -> deterministic D
 
 | Layer | Responsibility | Key files |
 |---|---|---|
-| **A — Firmware capture** | Capture CSI on-device, timestamp, self-ping the gateway (ICMP @ ~50 Hz) so the CSI engine doesn't starve on a quiet network, stream UDP frames | `firmware/esp32-csi-node/main/{main.c, csi_collector.c, stream_sender.c, nvs_config.c}` |
+| **A — Firmware capture** | Capture CSI on-device, timestamp, self-ping the gateway (ICMP every 30 ms) so the CSI engine doesn't starve on a quiet network, stream UDP frames | `firmware/esp32-csi-node/main/{main.c, csi_collector.c, stream_sender.c, nvs_config.c}` |
 | **B — Host ingest** | Receive UDP, validate schema/version, preserve device + host timestamps, detect loss/reorder, maintain per-node state (up to 4), write session CSV + index | `server/lib/{udp-server.ts, websocket.ts, session-store.ts}`, `shared/schema.ts`; Python: `phantom/{protocol,ingest,recording,runtime}.py` |
 | **C — Deterministic DSP** | Amplitude extraction, phase unwrap, static-clutter suppression, Hampel filter, respiration-band filtering, motion energy, cross-node correlation | `phantom/dsp.py`, `scripts/csi_filter_pipeline.py` |
 | **D — Node fusion + smoothing** | Per-node motion energy → 1-D or 2-D fused position (`node-fusion.ts`) → 2-D Kalman smoothing of the fused track (`fused-position-kalman.ts`) | `server/lib/{node-fusion.ts, fused-position-kalman.ts}` |
@@ -215,7 +215,7 @@ All packets travel over UDP to the host on `:5005`. A 4-byte little-endian magic
 
 | Magic | Frame | Rate | Notes |
 |---|---|---|---|
-| `0xC5110001` | CSI frame | ~41-43 pps/node measured (50 Hz firmware send-rate cap, not a guaranteed rate — see `csi_collector.c` `CSI_MIN_SEND_INTERVAL_US`) | 32-byte header (ADR-018); legacy 20-byte header accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
+| `0xC5110001` | CSI frame | 64-67 frames/s per well-linked node measured on the 27 Oct 2026 recordings (45-60 on weaker links; bursty; host receive time — see `reports/presence-eval-2026-11/01-data-inventory.md`). Committed send gate: 10 ms (`CSI_MIN_SEND_INTERVAL_MS`); the older ~41-43 pps / 50 Hz-cap figure is from firmware before 2026-10-18 | 32-byte header (ADR-018); legacy 20-byte header accepted only under `PHANTOM_ALLOW_LEGACY_CSI` |
 | `0xC5110002` | Vitals | 1 Hz/node | Board-side presence/motion/vitals, shown alongside — never fused into — the host-DSP target math |
 | `0xC5110004` | WASM module output | event-driven | Output from optional programmable sensing modules |
 | `0xC5110006` | Feature-state | 1 Hz/node | Board-computed motion/presence/respiration/heart-rate metrics for the **Board DSP** card |

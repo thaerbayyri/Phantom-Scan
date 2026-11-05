@@ -5,7 +5,9 @@
 **Document Classification:** Internal Engineering Reference  
 **Revision:** 2.0  
 **Date:** 2026-03-26  
-**Authors:** Systems Architecture Division  
+**Authors:** Systems Architecture Division
+
+> **Status note (2026-11):** the figures in this document (jitter, accuracy, range, vital-sign error, pose) are design targets, [TO BE MEASURED]; none has been validated on our hardware. The two-node, one-antenna rig has no pose or spatial-angle capability.  
 
 ---
 

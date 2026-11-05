@@ -58,7 +58,7 @@ Pick one language track and stay consistent within a section — switching mid-s
 
 ## 1. Opening & Greeting (0:00–0:45)
 
-**Slide:** Title — "Phantom Scan: Through-Wall Human Presence Sensing from Two $7 Radios" + your name/team.
+**Slide:** Title — "Phantom Scan: Through-Wall Human Presence Sensing from Two $7 Radios" + your name/team. **(Presenter note: through-wall performance is not yet measured; present it as a goal, not a result.)**
 
 **EN:**
 > Good [morning/afternoon], and thank you for the time. My name is [YOUR NAME], from [TEAM/SUPERVISOR'S LAB]. Today I want to show you something we built that turns ordinary Wi-Fi hardware — the same radios already inside routers and laptops — into a device that can sense a person moving in a room, through a wall, without a camera and without anything worn on the body. I'll explain how it works, show you it running live, and tell you exactly what it can and can't do today — and where [FUNDING AMOUNT] of support would take it next.

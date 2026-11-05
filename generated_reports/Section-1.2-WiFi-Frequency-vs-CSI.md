@@ -91,7 +91,7 @@ and is unstable frame-to-frame, whereas the amplitude is robust [1], [12].
 |---|---|---|
 | What it is | Position of the channel in the radio spectrum (e.g. 2437 MHz for channel 6) | Per-subcarrier estimate of how the environment transformed the received signal |
 | Form | One fixed number per channel | Vector of complex values (amplitude + phase), one per subcarrier, up to 64 in this project |
-| Refresh rate | Static (changes only if the network changes channel) | Every received frame (up to 50 Hz per node in this project) |
+| Refresh rate | Static (changes only if the network changes channel) | Every received frame (64-67 frames/s per well-linked node measured 2026-10-27; see `reports/presence-eval-2026-11/01-data-inventory.md`) |
 | Affected by a moving human? | No | Yes — reflections off the body reshape the per-subcarrier amplitudes |
 | Role in Phantom Scan | Operating band of the two nodes (2.4 GHz) | The sensing signal: temporal std of per-subcarrier amplitudes over 1.5 s drives motion detection and two-node balance localization |
 

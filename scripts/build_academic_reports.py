@@ -757,7 +757,7 @@ def chapter_4(doc: Document) -> list[int]:
         ["ID", "Functional Requirement", "Implemented By"],
         [
             ["FR1", "Each node shall capture WiFi CSI and stream binary frames (32-byte versioned header, sequence number, RSSI, device timestamps, raw I/Q payload) over UDP to the host [16].", "firmware csi_collector.c, stream_sender.c"],
-            ["FR2", "Each node shall self-generate channel traffic (~50 Hz gateway ping) so CSI capture continues on otherwise quiet networks, and shall rate-limit transmission to 50 Hz.", "firmware csi_collector.c"],
+            ["FR2", "Each node shall self-generate channel traffic (~50 Hz gateway ping) so CSI capture continues on otherwise quiet networks, and shall rate-limit transmission with a 10 ms send gate in the current firmware.", "firmware csi_collector.c"],
             ["FR3", "The host shall be the sole owner of UDP port 5005 and shall parse and validate CSI frames (magic 0xC5110001), heartbeats (0xC51100A1), and firmware feature-state packets (0xC5110006).", "server/lib/udp-server.ts"],
             ["FR4", "The host shall pin each node identity to its source address and reject frames for a known node arriving from a foreign source, with rate-limited security logging.", "SourcePinningGuard in udp-server.ts"],
             ["FR5", "The host shall compute a per-node motion metric as the windowed per-subcarrier temporal standard deviation of CSI amplitude (default window 1500 ms).", "node-fusion.ts, websocket.ts"],
@@ -802,7 +802,7 @@ def chapter_4(doc: Document) -> list[int]:
 DATAFLOW_DIAGRAM = r"""
   ESP32-S3 Node 1 (node_id=1)            ESP32-S3 Node 2 (node_id=2)
   csi_collector.c -> stream_sender.c     csi_collector.c -> stream_sender.c
-        |  ADR-018 CSI frames (0xC5110001, 50 Hz cap)  |
+        |  ADR-018 CSI frames (0xC5110001, 10 ms send gate)  |
         |  heartbeats (0xC51100A1, 1 Hz)               |
         |  feature-state (0xC5110006, 1 Hz)            |
         +----------------------+------------------------+
@@ -1054,8 +1054,8 @@ def chapter_6(doc: Document) -> list[int]:
         "network as a station with power-save disabled, then csi_collector.c enables promiscuous "
         "mode with management+data filtering and registers the WiFi driver's CSI callback with "
         "legacy-LTF, HT-LTF, and STBC capture enabled. Because CSI is only produced when frames "
-        "are received, the collector starts a self-ping task that pings the gateway every 20 ms "
-        "(~50 Hz), guaranteeing a steady CSI supply even on an otherwise idle network.",
+        "are received, the collector starts a self-ping task that pings the gateway every 30 ms "
+        "(~33 Hz), guaranteeing a steady CSI supply even on an otherwise idle network.",
     )
     add_text_paragraph(
         doc,
@@ -1063,7 +1063,7 @@ def chapter_6(doc: Document) -> list[int]:
         "writes the exact ADR-018 contract: magic 0xC5110001, schema version, node_id, antenna "
         "count, subcarrier count, channel frequency, monotonically increasing sequence number, "
         "RSSI, noise floor, channel, and dual device timestamps (microseconds and milliseconds), "
-        "followed by the raw int8 I/Q pairs [16]. Transmission is rate-limited to 50 Hz and handed "
+        "followed by the raw int8 I/Q pairs [16]. Transmission is rate-limited by a 10 ms send gate and handed "
         "to stream_sender.c, which owns a UDP socket to the configured host, a 32-slot FreeRTOS "
         "queue with a dedicated sender task, and an ENOMEM backoff so lwIP buffer exhaustion "
         "degrades throughput instead of crashing the node. A 1 Hz heartbeat (magic 0xC51100A1) "
@@ -1327,7 +1327,7 @@ def chapter_7(doc: Document) -> list[int]:
         "node 2 (COM6, 192.168.1.238), with on-device confirmation that node identity is cached "
         "before WiFi start. The live ingest sustained approximately 200 packets per 5-second "
         "interval (~40 packets/s aggregate) with RSSI between -23 and -38 dBm and firmware-reported "
-        "yield of 41-43 packets/s per node - comfortably above the 20 packets/s per-node preflight "
+        "yield of 41-43 packets/s per node (pre-2026-10-18 firmware) - comfortably above the 20 packets/s per-node preflight "
         "minimum. During the same session, a deliberate spoofing drill injected ~640 packets "
         "claiming both node identities from a foreign source; the source-pinning guard rejected "
         "all of them with only four rate-limited security log lines while the real streams "
@@ -1348,7 +1348,7 @@ def chapter_7(doc: Document) -> list[int]:
         ["Metric", "Status", "Evidence / Blocking Condition"],
         [
             ["Software correctness (parsers, fusion math, state machine)", "MEASURED - PASS", "91 TS + 82 Python tests green [19]"],
-            ["Two-node live ingest rate and RSSI envelope", "MEASURED", "~40 pkt/s aggregate, RSSI -23..-38 dBm, yield 41-43 pps/node [19]"],
+            ["Two-node live ingest rate and RSSI envelope", "MEASURED", "~40 pkt/s aggregate, RSSI -23..-38 dBm, yield 41-43 pps/node (pre-2026-10-18 firmware) [19]"],
             ["Spoofing resistance of live ingest", "MEASURED - PASS", "~640/640 spoofed packets rejected in live drill [19]"],
             ["Dashboard truthfulness (no ghosts, degraded labeling)", "MEASURED - PASS", "Behavioral verification + regression tests [18]"],
             ["Detection rate / false-positive rate per room", "[TO BE MEASURED]", "Requires empty-room calibration + negative-control campaign [20], [21]"],

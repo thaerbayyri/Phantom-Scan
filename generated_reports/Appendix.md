@@ -30,7 +30,7 @@
 | File | Description |
 |---|---|
 | `CMakeLists.txt` | ESP-IDF component build definition listing the firmware source files and dependencies. |
-| `csi_collector.c` | Core CSI capture: enables promiscuous WiFi mode, registers the CSI callback, runs the ~50 Hz gateway self-ping that keeps CSI flowing on quiet networks, serializes each measurement into the ADR-018 32-byte binary frame (magic 0xC5110001), and rate-limits transmission to 50 Hz. |
+| `csi_collector.c` | Core CSI capture: enables promiscuous WiFi mode, registers the CSI callback, runs the gateway self-ping (30 ms interval in the committed firmware; ~50 Hz before 2026-10-18) that keeps CSI flowing on quiet networks, serializes each measurement into the ADR-018 32-byte binary frame (magic 0xC5110001), and rate-limits transmission to 50 Hz. |
 | `csi_collector.h` | Public interface and frame-format constants for the CSI collector. |
 | `display_hal.c` | Hardware abstraction for the optional on-board display panel (SPI init, backlight, flush callbacks). |
 | `display_hal.h` | Display HAL interface definitions. |
@@ -212,7 +212,7 @@ The following screenshots document the live operator dashboard during a real two
 | DHCP address in verified session | 192.168.1.133 | 192.168.1.238 |
 | Network | operator 2.4 GHz WLAN (SSID redacted) | operator 2.4 GHz WLAN (SSID redacted) |
 | Stream target | laptop-IP:5005 (UDP) | laptop-IP:5005 (UDP) |
-| Firmware send rate | 50 Hz cap, ~41-43 pkt/s observed | 50 Hz cap, ~41-43 pkt/s observed |
+| Firmware send rate | 10 ms send gate since 2026-10-18; 64-67 frames/s measured 2026-10-27 (this run: ~41-43 pkt/s, pre-fix firmware) | same |
 
 **G.3 Deployment geometry**
 
@@ -249,7 +249,7 @@ The two nodes are placed 3 m apart at similar height with clear line to the moni
 **H.3 Live hardware session (July 8, 2026)**
 
 - Two ESP32-S3 boards streaming simultaneously: ~200 packets per 5 s interval (~40 pkt/s aggregate) into the live ingest.
-- RSSI envelope -23 to -38 dBm; firmware-reported yield 41-43 pkt/s per node (preflight minimum: 20 pkt/s per node).
+- RSSI envelope -23 to -38 dBm; firmware-reported yield 41-43 pkt/s per node (this two-node session, before the 2026-10-18 firmware change; preflight minimum: 20 pkt/s per node).
 - Node identity confirmed cached before WiFi start on both boards.
 - **Spoofing drill:** ~640 packets claiming both node identities injected from a foreign source - all rejected by the source-pinning guard with four rate-limited security log entries; real streams unaffected.
 

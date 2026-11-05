@@ -14,7 +14,7 @@ Traditional **DensePose** (developed by Facebook AI Research) is an algorithm th
 
 **Why it matters:**
 *   **Privacy-First:** It completely eliminates cameras, capturing no facial data, skin tone, or clothing details.
-*   **Non-Line-of-Sight (NLOS):** 2.4GHz and 5GHz Wi-Fi waves easily penetrate drywall, wooden doors, and concrete blocks, allowing the system to literally "see" human postures through walls.
+*   **Non-Line-of-Sight (NLOS):** 2.4GHz and 5GHz Wi-Fi waves easily penetrate drywall, wooden doors, and concrete blocks, which is the basis of the through-wall idea. (Upstream claim: Phantom Scan has not demonstrated through-wall operation, its through-wall performance is [TO BE MEASURED], and the two-node rig cannot recover postures.)
 *   **Illumination Independent:** It works flawlessly in pitch-black conditions or absolute darkness.
 
 ---

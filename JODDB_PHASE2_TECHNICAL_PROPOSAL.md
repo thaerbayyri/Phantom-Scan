@@ -2,6 +2,8 @@
 
 **Multi-Node, Through-Wall Wi-Fi CSI Human Presence, Movement & Localization Sensing**
 
+> **Status note (2026-11):** through-wall operation, localization accuracy, range, detection rates, pose and vital-sign error are design goals, [TO BE MEASURED]; none has been validated on our hardware (see `reports/presence-eval-2026-11/00-summary.md`). The two-node, one-antenna rig has no pose or spatial-angle capability.
+
 Prepared for: JODDB (Jordan Design & Development Bureau) technical review
 Prepared by: Phantom Scan project team
 Status of figures in this document: current-system facts are drawn directly from the
@@ -54,10 +56,10 @@ existing invariant tests support.
 
 | Property | Current reality | Source |
 |---|---|---|
-| Node count | **Exactly 2** ESP32-S3 boards, fixed 3 m baseline, `N1=(-1.5,0)`, `N2=(+1.5,0)` | `shared/schema.ts` `NODE_ANCHORS`, README |
+| Node count | **Exactly 2** ESP32-S3 boards, 4 m N1–N2 baseline in the committed geometry (`N1=(-2,-3)`, `N2=(+2,-3)`; the original July two-node rig used 3 m, `(-1.5,0)`/`(+1.5,0)`) | `config/room.json`, `shared/schema.ts` `DEFAULT_NODE_ANCHORS`, README |
 | Antennas | **1 receive antenna per node** — no antenna array | `PhantomScan_HardwareReality_Alignment_Report.md`, CNN-LSTM research doc |
-| CSI acquisition mode | Node **associates to a Wi-Fi AP as a normal STA client** and self-pings it (~50 Hz ICMP) to keep a steady CSI packet rate | `firmware/esp32-csi-node/main/main.c` (`esp_wifi_set_mode(WIFI_MODE_STA)`, `esp_wifi_connect()`) |
-| Effective CSI rate | ~41–43 packets/sec/node measured (50 Hz firmware cap, not guaranteed) | README wire-protocol table |
+| CSI acquisition mode | Node **associates to a Wi-Fi AP as a normal STA client** and self-pings it (ICMP every 30 ms in the committed firmware) to keep a steady CSI packet rate | `firmware/esp32-csi-node/main/main.c` (`esp_wifi_set_mode(WIFI_MODE_STA)`, `esp_wifi_connect()`) |
+| Effective CSI rate | 64–67 frames/s per well-linked node measured 2026-10-27 (10 ms send gate; the older ~41–43 figure is pre-2026-10-18 firmware; not guaranteed) | README wire-protocol table |
 | Subcarriers | 64 per packet, amplitude (+ raw phase, not yet SFO/PDD-sanitized for use) | README, ADR-058 |
 | Localization | **1-D only** — target is placed along the N1–N2 axis using a cross-node motion-energy ratio (`balance = r2^p/(r1^p+r2^p)`); there is **no true 2-D position** and no spatial angle-of-arrival (single antenna per node makes AoA physically impossible) | README §Phantom Balance Fusion, `server/lib/node-fusion.ts` |
 | Multi-target tracking | **Not implemented.** No multi-target data structures, IDs, or count logic exist anywhere in `server/`, `client/`, or `shared/` | verified by direct code search, this session |
@@ -206,7 +208,7 @@ project lead's direction.
 **Current reality**: `firmware/esp32-csi-node/main/main.c` puts the ESP32-S3 in
 `WIFI_MODE_STA` and calls `esp_wifi_connect()` — the node must have valid credentials
 for, and actively join, a Wi-Fi network before it can receive any CSI at all. It then
-self-pings that network's gateway at ~50 Hz specifically to guarantee the steady
+self-pings that network's gateway (every 30 ms in the committed firmware) specifically to guarantee the steady
 packet rate the DSP pipeline is tuned for.
 
 **Proposed R&D path**:
