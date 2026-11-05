@@ -20,6 +20,7 @@
 #include "esp_rom_sys.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -361,8 +362,44 @@ static void wifi_promiscuous_cb(void *buf, wifi_promiscuous_pkt_type_t type)
     (void)type;
 }
 
+#if CONFIG_CSI_MOCK_ENABLED
+/* QEMU/host boot testing only (see Kconfig) — fabricates CSI frames so the
+ * pipeline runs with no real radio. Never enabled for hardware builds. */
+static void csi_mock_timer_cb(void *arg)
+{
+    (void)arg;
+    static int8_t mock_iq[128];
+    for (size_t i = 0; i < sizeof(mock_iq); i++) {
+        mock_iq[i] = (int8_t)(rand() & 0xFF);
+    }
+
+    wifi_csi_info_t info = {0};
+    info.buf = mock_iq;
+    info.len = sizeof(mock_iq);
+    info.rx_ctrl.rssi = -55;
+    info.rx_ctrl.channel = CONFIG_CSI_WIFI_CHANNEL;
+    info.rx_ctrl.noise_floor = -92;
+
+    wifi_csi_callback(NULL, &info);
+}
+#endif /* CONFIG_CSI_MOCK_ENABLED */
+
 void csi_collector_init(void)
 {
+#if CONFIG_CSI_MOCK_ENABLED
+    ESP_LOGW(TAG, "CSI_MOCK_ENABLED: synthetic frames only, NOT real sensing data");
+    csi_collector_refresh_filter_mac();
+
+    static esp_timer_handle_t s_mock_timer;
+    const esp_timer_create_args_t mock_timer_args = {
+        .callback = &csi_mock_timer_cb,
+        .name = "csi_mock",
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&mock_timer_args, &s_mock_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(s_mock_timer, 20000)); /* 50 Hz */
+    ESP_LOGI(TAG, "Mock CSI collection initialized (node_id=%d)", g_nvs_config.node_id);
+    return;
+#else
     /* Enable promiscuous mode — required for reliable CSI callbacks.
      * Without this, CSI only fires on frames destined to this station,
      * which may be very infrequent on a quiet network. */
@@ -394,6 +431,7 @@ void csi_collector_init(void)
 
     ESP_LOGI(TAG, "CSI collection initialized (node_id=%d, channel=%d)",
              g_nvs_config.node_id, CONFIG_CSI_WIFI_CHANNEL);
+#endif /* CONFIG_CSI_MOCK_ENABLED */
 }
 
 /* ---- ADR-029: Channel hopping ---- */

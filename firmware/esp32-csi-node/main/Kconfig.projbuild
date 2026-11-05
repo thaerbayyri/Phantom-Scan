@@ -85,6 +85,21 @@ menu "Edge Intelligence (ADR-039)"
 
 endmenu
 
+menu "QEMU / Host Testing (ADR-018 port, RuView-derived)"
+
+    config CSI_MOCK_ENABLED
+        bool "Enable mock CSI generator (QEMU/host boot testing only)"
+        default n
+        help
+            Replaces the real esp_wifi CSI callback registration in
+            csi_collector_init() with a synthetic-frame timer, so the
+            firmware can boot and exercise the sensing/send pipeline under
+            QEMU (which has no real WiFi radio) or other hardware-free
+            smoke tests. Leave "n" for every real hardware build/flash —
+            mock frames carry no sensing signal.
+
+endmenu
+
 menu "AMOLED Display (ADR-045)"
 
     config DISPLAY_ENABLE

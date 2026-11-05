@@ -14,3 +14,18 @@ CONFIG_EDGE_TIER=0
 CONFIG_DISPLAY_ENABLE=n
 CONFIG_WASM_MAX_MODULES=4
 CONFIG_WASM_VERIFY_SIGNATURE=y
+
+# RuView-derived CSI/WiFi stability tuning (see docs/esp32s3-framework-comparison-report.md #3.1).
+# Stock IDF pools are too small once CSI promiscuous mode is active alongside
+# stream_sender's UDP emits; this caused sendto ENOMEM / dropped CSI frames on
+# RuView's hardware and is the same class of bug phantom-scan hit as an fps
+# stall (fixed there only via ping-timing, not these pool sizes).
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=64
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+# Prevents a Tmr Svc stack-overflow bootloop if any timer callback (e.g.
+# feature-state emit) ends up doing network I/O inline.
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=8192
+CONFIG_ESP_WIFI_EXTRA_IRAM_OPT=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
