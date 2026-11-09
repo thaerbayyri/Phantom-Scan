@@ -23,6 +23,10 @@ export const csiSampleSchema = z.object({
   // the scalar h1 alone (max-power subcarrier, index jumps per frame) is too
   // noisy to localize with.
   amplitudes: z.array(z.number()).optional(),
+  // Optional ADR-018 v1 header facts for this frame (PS-FIX-36 step 0): the firmware's frame counter and the header's n_subcarriers
+  // (= I/Q length / 2 for the firmware's single antenna: 64, 128 or 192). They are written to dataset recordings as `seq` and `nsc`; absent for demo, replay and HTTP samples.
+  seq: z.number().int().nonnegative().optional(),
+  numSubcarriers: z.number().int().positive().optional(),
 });
 export type CSISample = z.infer<typeof csiSampleSchema>;
 

@@ -316,3 +316,55 @@ test("no frames, no summary file", () => {
   rec.stop();
   assert.ok(!fs.existsSync(summaryPathFor(info.files[0])));
 });
+
+// ── PS-FIX-36 step 0: per-frame seq and nsc ────────────────────────────────
+
+function recordOne(frame: DatasetFrame): { raw: string; row: Record<string, unknown> } {
+  const rec = new DatasetRecorder({ rootDir: tempRoot() });
+  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
+  rec.record(frame);
+  const done = rec.stop();
+  const raw = fs.readFileSync(done.files[0], "utf-8").split("\n").filter(Boolean)[1];
+  return { raw, row: JSON.parse(raw) };
+}
+
+test("a frame with seq and nSubcarriers writes seq and nsc after the existing fields, in that order", () => {
+  const { row } = recordOne({ ...FRAME, seq: 4242, nSubcarriers: 128 });
+  assert.deepEqual(row, { type: "frame", t: 1000, n: 2, rssi: -48, a: [1.5, 2.5, 3.5], seq: 4242, nsc: 128 });
+  assert.deepEqual(Object.keys(row), ["type", "t", "n", "rssi", "a", "seq", "nsc"]);
+});
+
+test("a frame without seq and nSubcarriers is byte-identical to the pre-change line (backward compatible)", () => {
+  assert.equal(recordOne(FRAME).raw, '{"type":"frame","t":1000,"n":2,"rssi":-48,"a":[1.5,2.5,3.5]}');
+  assert.equal(recordOne({ ...FRAME, seq: undefined, nSubcarriers: undefined }).raw, recordOne(FRAME).raw);
+});
+
+test("seq 0 and the u32 maximum are recorded; invalid seq or nSubcarriers are omitted, never guessed and never a crash", () => {
+  assert.equal(recordOne({ ...FRAME, seq: 0 }).row.seq, 0);
+  assert.equal(recordOne({ ...FRAME, seq: 0xffffffff }).row.seq, 0xffffffff);
+  for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 0x100000000, "7" as unknown as number, null as unknown as number]) {
+    const { row } = recordOne({ ...FRAME, seq: bad });
+    assert.equal("seq" in row, false, `seq ${String(bad)} must be omitted`);
+    assert.equal(row.n, 2, "the frame itself is still recorded");
+  }
+  for (const bad of [0, -64, 64.5, 0x10000, Number.NaN, "64" as unknown as number]) {
+    assert.equal("nsc" in recordOne({ ...FRAME, nSubcarriers: bad }).row, false, `nSubcarriers ${String(bad)} must be omitted`);
+  }
+  assert.equal(recordOne({ ...FRAME, nSubcarriers: 64 }).row.nsc, 64);
+  assert.equal(recordOne({ ...FRAME, nSubcarriers: 0xffff }).row.nsc, 0xffff);
+});
+
+test("seq and nsc survive part rotation: every part's frames carry them, the header is unchanged", () => {
+  const root = tempRoot();
+  const rec = new DatasetRecorder({ rootDir: root, maxFramesPerFile: 3 });
+  rec.start(parseDatasetStart({ roomId: "lab", label: "empty" }), {});
+  for (let i = 0; i < 7; i++) rec.record({ ...FRAME, tMs: i, seq: 100 + i, nSubcarriers: 128 });
+  const done = rec.stop();
+  const seqs = done.files.flatMap((f) => readJsonl(f).filter((r) => r.type === "frame").map((r) => [r.seq, r.nsc]));
+  assert.deepEqual(seqs, [100, 101, 102, 103, 104, 105, 106].map((s) => [s, 128]));
+  for (const file of done.files) {
+    const header = readJsonl(file)[0];
+    assert.equal(header.schema, 2, "the header schema is unchanged");
+    assert.equal("seq" in header || "nsc" in header, false);
+  }
+});

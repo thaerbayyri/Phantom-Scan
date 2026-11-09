@@ -15,9 +15,12 @@
 //             firmwareVersion,firmwareHash,source},"annotation":{nodeMoved,roomNotEmpty,text},
 //             "recorder":"dashboard"}
 //   then     {"type":"frame","t":<host ms>,"n":<nodeId>,"rssi":<dBm>,"a":[…]}
+//            optionally followed by "seq":<node frame counter, u32>,"nsc":<header n_subcarriers; the firmware sends one antenna, so I/Q length / 2> (PS-FIX-36 step 0)
 //
 // Schema 2 only ADDS fields to schema 1 (readers that ignore unknown keys keep working). Anything not
-// supplied is null ("not recorded"), never guessed. Per-frame PHY (channel/noise/seq) is NOT recorded yet.
+// supplied is null ("not recorded"), never guessed. Per frame, only `seq` and `nsc` are added (when the node supplied valid values;
+// a frame without them is byte-identical to before); channel/noise are still not recorded per frame. Readers that pick named fields
+// (every reader in this repo) ignore the extras.
 //
 // Every part file starts with its own header so each file is self-describing.
 // Labels are ground truth supplied by the operator for the whole recording —
@@ -217,7 +220,15 @@ export interface DatasetFrame {
   rssi: number;
   /** Per-subcarrier amplitudes (the live LLTF data-subcarrier vector). */
   amps: readonly number[];
+  /** Node frame counter from the ADR-018 v1 header (u32). Written as `seq` only when a non-negative integer. */
+  seq?: number;
+  /** The header's n_subcarriers (I/Q length / 2 for the firmware's single antenna). Written as `nsc` only when a positive integer. */
+  nSubcarriers?: number;
 }
+
+const U32_MAX = 0xffffffff;
+const isFrameCounter = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= U32_MAX;
+const isSubcarrierCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 0xffff;
 
 export interface DatasetStatus {
   recording: boolean;
@@ -350,9 +361,10 @@ export class DatasetRecorder {
       this.flush();
       this.openNextPart();
     }
-    this.pending.push(
-      JSON.stringify({ type: "frame", t: frame.tMs, n: frame.nodeId, rssi: frame.rssi, a: frame.amps }),
-    );
+    const row: Record<string, unknown> = { type: "frame", t: frame.tMs, n: frame.nodeId, rssi: frame.rssi, a: frame.amps };
+    if (isFrameCounter(frame.seq)) row.seq = frame.seq;
+    if (isSubcarrierCount(frame.nSubcarriers)) row.nsc = frame.nSubcarriers;
+    this.pending.push(JSON.stringify(row));
     this.framesInPart++;
     this.frames++;
     const key = String(frame.nodeId);

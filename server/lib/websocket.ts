@@ -2677,6 +2677,8 @@ export class SignalProcessingServer {
           nodeId: sample.nodeId ?? 1,
           rssi: sample.rssi ?? -100,
           amps: sample.amplitudes,
+          seq: sample.seq,
+          nSubcarriers: sample.numSubcarriers,
         });
         this.maybeBroadcastDatasetProgress();
       } catch (error: unknown) {

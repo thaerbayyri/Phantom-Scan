@@ -49,7 +49,7 @@ async function waitFor(cond: () => boolean, ms = WAIT_MS): Promise<boolean> {
 }
 
 type AnyFn = (...args: unknown[]) => unknown;
-const ingested: Array<{ nodeId?: number; rssi?: number; at: number }> = [];
+const ingested: Array<{ nodeId?: number; rssi?: number; seq?: number; numSubcarriers?: number; at: number }> = [];
 const consoleErrors: string[] = [];
 let udpServer: dgram.Socket | undefined;
 let client: dgram.Socket | undefined;
@@ -69,8 +69,8 @@ before(async () => {
   originalIngest = signalServerRef.ingestSample;
   originalObserve = phyGuardRef.observe;
   signalServerRef.ingestSample = (s: unknown) => {
-    const sample = s as { nodeId?: number; rssi?: number };
-    ingested.push({ nodeId: sample.nodeId, rssi: sample.rssi, at: Date.now() });
+    const sample = s as { nodeId?: number; rssi?: number; seq?: number; numSubcarriers?: number };
+    ingested.push({ nodeId: sample.nodeId, rssi: sample.rssi, seq: sample.seq, numSubcarriers: sample.numSubcarriers, at: Date.now() });
   };
   originalConsoleError = console.error;
   console.error = (...a: unknown[]) => {
@@ -149,6 +149,21 @@ test("fault log policy: the 1st fault and every 1000th, never the others", async
   assert.equal(shouldLogPhyGuardFault(1000), true);
   assert.equal(shouldLogPhyGuardFault(2000), true);
   assert.equal(shouldLogPhyGuardFault(0), false);
+});
+
+test("PS-FIX-36 step 0: the ingested sample carries the frame's own seq and raw subcarrier count", async () => {
+  const start = ingested.length;
+  const f1 = frame(2);
+  const f2 = frame(2);
+  await send(f1);
+  await send(f2);
+  assert.ok(await waitFor(() => ingested.length >= start + 2), "the two frames were not ingested");
+  const [a, b] = ingested.slice(start, start + 2);
+  assert.equal(a.seq, f1.readUInt32LE(13));
+  assert.equal(b.seq, f2.readUInt32LE(13));
+  assert.equal(b.seq! - a.seq!, 1, "consecutive frames carry consecutive seq values");
+  assert.equal(a.numSubcarriers, N_SUB);
+  assert.equal(b.numSubcarriers, N_SUB);
 });
 
 test("the test never bound the live ports", () => {

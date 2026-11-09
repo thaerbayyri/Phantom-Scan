@@ -752,6 +752,9 @@ export function startUDPServer() {
             nodeId: parsed.nodeId,
             hardwareId,
             amplitudes,
+            // PS-FIX-36 step 0: carried to the dataset recorder (`seq`, `nsc`); nothing else reads them.
+            seq: parsed.seq,
+            numSubcarriers: parsed.numSubcarriers,
         };
 
         signalServer.ingestSample(sample);
