@@ -1,0 +1,35 @@
+{
+  "comment": "PS-FIX-36 extended golden PHY trailers (16 bytes each, hex). The same hex strings are in firmware/esp32-csi-node/main/test/test_csi_phy_trailer_pure.c; server/lib/csi-phy-trailer.test.ts fails if the two drift apart. All values are synthetic.",
+  "trailers": [
+    {
+      "name": "ht_ampdu_qos",
+      "hex": "504858310987038088021b0ac4112261",
+      "fields": {
+        "sigMode": 1, "cwb": 0, "aggregation": true, "stbc": 0, "sgi": false, "fecCoding": false,
+        "mcs": 7, "firstWordInvalid": true, "ampduCnt": 3, "rate": 0, "secondaryChannel": 0,
+        "hdrValid": true, "rxSeq": 2587, "transmitterLow3": "c41122",
+        "frameControl": { "type": 2, "subtype": 8, "toDs": false, "fromDs": true, "retry": false, "protectedFrame": false }
+      }
+    },
+    {
+      "name": "ht40_stbc_sgi",
+      "hex": "50485831d54c00a008420100aabbccaf",
+      "fields": {
+        "sigMode": 1, "cwb": 1, "aggregation": false, "stbc": 1, "sgi": true, "fecCoding": true,
+        "mcs": 76, "firstWordInvalid": false, "ampduCnt": 0, "rate": 0, "secondaryChannel": 1,
+        "hdrValid": true, "rxSeq": 1, "transmitterLow3": "aabbcc",
+        "frameControl": { "type": 2, "subtype": 0, "toDs": false, "fromDs": true, "retry": false, "protectedFrame": true }
+      }
+    },
+    {
+      "name": "all_zero",
+      "hex": "50485831000000000000000000000000",
+      "fields": {
+        "sigMode": 0, "cwb": 0, "aggregation": false, "stbc": 0, "sgi": false, "fecCoding": false,
+        "mcs": 0, "firstWordInvalid": false, "ampduCnt": 0, "rate": 0, "secondaryChannel": 0,
+        "hdrValid": false, "rxSeq": 0, "transmitterLow3": "000000",
+        "frameControl": null
+      }
+    }
+  ]
+}

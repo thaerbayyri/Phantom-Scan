@@ -15,6 +15,9 @@ SCHEMA_VERSION = 1
 CSI_HEADER_SIZE = 32
 HEARTBEAT_SIZE = 40
 MAX_UDP_PAYLOAD = 4096
+# PS-FIX-36 extended: optional 16-byte PHY trailer after the I/Q (firmware/esp32-csi-node/main/csi_phy_trailer_pure.h).
+PHY_TRAILER_MAGIC = 0x31584850  # "PHX1": bytes 50 48 58 31
+PHY_TRAILER_SIZE = 16
 
 
 class PacketKind(str, enum.Enum):
@@ -138,6 +141,18 @@ def _freq_to_channel(freq_mhz: int) -> int:
     return 0
 
 
+def _is_phy_trailer(tail: bytes) -> bool:
+    """True when `tail` is exactly one valid PS-FIX-36 extended PHY trailer: magic PHX1 and the XOR checksum of bytes 4..14."""
+    if len(tail) != PHY_TRAILER_SIZE:
+        return False
+    if struct.unpack_from("<I", tail, 0)[0] != PHY_TRAILER_MAGIC:
+        return False
+    checksum = 0
+    for value in tail[4:15]:
+        checksum ^= value
+    return checksum == tail[15]
+
+
 def _device_ts_valid_us(value: int | None) -> bool:
     return value is not None and value > 0 and value < 10**16
 
@@ -196,10 +211,14 @@ def parse_csi_frame(data: bytes, source_ip: str = "", source_port: int = 0, host
     if n_antennas <= 0 or n_subcarriers <= 0:
         return InvalidPacket("invalid_csi_dimensions", host_rx_ns, source_ip, source_port, len(data))
 
-    iq_bytes = data[CSI_HEADER_SIZE:]
     expected_iq_bytes = n_antennas * n_subcarriers * 2
-    if len(iq_bytes) != expected_iq_bytes:
+    plain_end = CSI_HEADER_SIZE + expected_iq_bytes
+    # A plain frame is exactly header + I/Q. A frame with one valid 16-byte PHY trailer after the I/Q is parsed as the same
+    # plain frame and the trailer is ignored. The trailer is looked for only when the length is exactly plain + 16, so I/Q
+    # bytes that happen to look like a trailer inside a plain frame are never inspected (they stay I/Q).
+    if len(data) != plain_end and not (len(data) == plain_end + PHY_TRAILER_SIZE and _is_phy_trailer(data[plain_end:])):
         return InvalidPacket("csi_payload_length_mismatch", host_rx_ns, source_ip, source_port, len(data))
+    iq_bytes = data[CSI_HEADER_SIZE:plain_end]
 
     if channel == 0:
         channel = _freq_to_channel(freq_mhz)
