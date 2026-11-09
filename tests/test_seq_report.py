@@ -164,3 +164,85 @@ def test_the_report_on_the_real_smoke_test_recording_is_structurally_sound() -> 
         assert full and all(0.0 < m["ratio"] < 1.0 for m in full), n    # more frames produced than delivered
         assert all(60 <= m["delivered_rate"] <= 75 for m in full), n    # the steady ~67 fps of this recording
     assert s["flagged_windows"] == 0
+
+
+# ── produced-rate flag and the case printed per flagged window (PS-FIX-46 prediction) ─────────────────────────────────
+
+def slide_recording(tmp_path: Path, slide: dict[int, tuple[int, int]], *, seq: bool = True, name: str = "slide.jsonl") -> Path:
+    """Per node: minutes 0-2 normal (1200 frames, seq step 4: delivered 20/s, produced 80/s), minute 3 = slide (frames, step), minute 4 normal, minute 5 partial."""
+    normal = (1200, 4, (128,))
+    plan = {n: [normal] * 3 + [(f, st, (128,))] + [normal, normal] for n, (f, st) in slide.items()}
+    return write_rows(tmp_path / name, plan_rows(plan, seq=seq))
+
+
+def test_delivered_and_produced_both_halving_on_all_nodes_is_the_pattern_the_hypothesis_predicts(tmp_path: Path) -> None:
+    s = summary(slide_recording(tmp_path, {1: (600, 2), 2: (600, 2), 4: (600, 2)}))  # delivered 10/s (0.5x), produced 20/s (0.25x)
+    assert s["cases"] == {sr.CASE_BOTH: 3}
+    assert [w["case"] for n in "124" for w in s["nodes"][n]["windows"]] == [sr.CASE_BOTH] * 3
+    assert s["cross_node"] == [{"minute": 3, "start_utc": s["cross_node"][0]["start_utc"], "nodes_total": 3, "cases": {sr.CASE_BOTH: 3}}]
+    assert s["nodes"]["1"]["flagged_minutes"] == [3] and s["nodes"]["1"]["produced_flagged_minutes"] == [3]
+
+
+def test_delivered_halving_with_produced_flat_is_the_falsifying_pattern(tmp_path: Path) -> None:
+    s = summary(slide_recording(tmp_path, {1: (600, 8), 2: (600, 8), 4: (600, 8)}))  # delivered 0.5x, produced 600*8/60 = 80/s = unchanged
+    assert s["cases"] == {sr.CASE_FLAT: 3}
+    assert s["nodes"]["1"]["produced_flagged_minutes"] == []
+    assert s["nodes"]["1"]["flagged_minutes"] == [3]
+
+
+def test_a_mixed_slide_is_counted_per_case_across_nodes(tmp_path: Path) -> None:
+    s = summary(slide_recording(tmp_path, {1: (600, 2), 2: (600, 8), 4: (600, 2)}))
+    assert s["cases"] == {sr.CASE_BOTH: 2, sr.CASE_FLAT: 1}
+    assert s["cross_node"][0]["cases"] == {sr.CASE_BOTH: 2, sr.CASE_FLAT: 1}
+    lines, _ = sr.build([tmp_path / "slide.jsonl"], 10, None, 0.7)
+    text = "\n".join(lines)
+    assert "cross-node summary (3 nodes)" in text
+    assert "2 node(s) delivered down + produced down; 1 node(s) delivered down + produced flat" in text
+
+
+def test_produced_down_while_delivered_holds_is_flagged_as_p_and_counts_for_fail_on_flag(tmp_path: Path) -> None:
+    path = slide_recording(tmp_path, {1: (1200, 2)})  # delivered unchanged, produced 40/s = 0.5x: the gate headroom absorbs it
+    s = summary(path)
+    assert s["cases"] == {sr.CASE_PRODUCED_ONLY: 1}
+    assert s["nodes"]["1"]["flagged_minutes"] == [] and s["nodes"]["1"]["produced_flagged_minutes"] == [3]
+    assert sr.main([str(path), "--fail-on-flag"]) == 3
+
+
+def test_a_produced_drop_inside_the_collapse_ratio_is_not_flagged(tmp_path: Path) -> None:
+    assert summary(slide_recording(tmp_path, {1: (1200, 3)}))["flagged_windows"] == 0  # produced 60/s = 0.75x of 80/s: at or above 0.7x
+
+
+def test_without_seq_a_delivered_drop_never_claims_what_produced_did(tmp_path: Path) -> None:
+    s = summary(slide_recording(tmp_path, {1: (600, 4)}, seq=False))
+    assert s["cases"] == {sr.CASE_UNKNOWN: 1}
+
+
+def test_the_rendered_report_names_the_case_for_every_flagged_window(tmp_path: Path) -> None:
+    lines, _ = sr.build([slide_recording(tmp_path, {1: (600, 2), 2: (600, 8)})], 10, None, 0.7)
+    text = "\n".join(lines)
+    flag_cells = [line.rstrip().split("  ")[-1] for line in text.splitlines() if "FLAG" in line and "WINDOW" not in line]
+    assert sorted(flag_cells) == ["FLAG D", "FLAG D+P"]
+    assert "WINDOW minute 3" in text and "delivered down + produced down" in text and "delivered down + produced flat" in text
+    assert "produced 20.0/s (reference 80.0, 0.25x)" in text
+    assert "produced 80.0/s (reference 80.0, 1.00x)" in text
+
+
+def test_the_produced_reference_can_be_overridden(tmp_path: Path) -> None:
+    path = slide_recording(tmp_path, {1: (1200, 4)})
+    s = sr.build([path], 10, None, 0.7, 200.0)[1]
+    assert s["nodes"]["1"]["produced_flagged_minutes"] == [0, 1, 2, 3, 4]  # 80/s is below 0.7 x 200 in every full minute
+    assert s["cases"] == {sr.CASE_PRODUCED_ONLY: 5}
+
+
+@pytest.mark.skipif(not SMOKE, reason="data/datasets/smoke-test is local, gitignored data and is not present")
+def test_each_case_label_is_produced_on_the_real_smoke_test_recording_with_set_references() -> None:
+    """The recording is steady (no slide), so the references are set on purpose to exercise each label on real data."""
+    path = [p for p in SMOKE if ".part" not in p.name][0]
+    parts = sr.expand_parts(path)
+    steady = sr.build(parts, 10, None, 0.7)[1]
+    assert steady["flagged_windows"] == 0 and steady["cases"] == {}
+    flat = sr.build(parts, 10, 100.0, 0.7)[1]                 # delivered reference 100/s: 67/s is below 0.7 x, produced reference is the node's own
+    assert flat["cases"] == {sr.CASE_FLAT: 8}
+    both = sr.build(parts, 10, 100.0, 0.7, 400.0)[1]          # produced reference 400/s: 135-265/s is below 0.7 x as well
+    assert both["cases"] == {sr.CASE_BOTH: 8}
+    assert both["cross_node"][0]["cases"] == {sr.CASE_BOTH: 4} and both["cross_node"][0]["nodes_total"] == 4
