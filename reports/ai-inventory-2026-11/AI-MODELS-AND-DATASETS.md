@@ -200,6 +200,7 @@ Schema 2, 4 nodes, no seq/nsc, roomId `smoke-2026-11`, subject `c1`.
 | model | dataset(s) actually used | evidence |
 |---|---|---|
 | Activity classifier | `data/datasets/room1/` (12 of its 14 recordings) — evaluation only, refused | `activity.report.json` `groups` |
+| Activity classifier — exploratory, epoch 1, c1 blocks 1-4 only | `data/datasets/train-c1-ep1-2026-11/` (18 byte-identical copies of c1 blocks 1-4; header roomId `campaign-raw-2026-11`; README local, gitignored). Run 2026-11-11 (`--room train-c1-ep1-2026-11`, system Python 3.11.9, default permutations): refused with exit 2 by the minimum-recordings check (empty 2, still 1, walking 1 recordings; windows empty 42,768 · still 3,044 · walking 2,536 · active 0) **before any evaluation**; no report written, no model exported | training log only; no `models/rooms/train-c1-ep1-2026-11/` exists |
 | Count CNN | `data/datasets/room1/` (all 14 recordings) — evaluation only, refused | `count.report.json` |
 | csi-embed-v2 | upstream capture `overnight-1775217646.csi.jsonl` (not on disk) | upstream README |
 | Presence head | upstream capture [UNVERIFIED] | upstream `training-metrics.json` |
@@ -290,6 +291,7 @@ Consequences:
 | model | training-data path |
 |---|---|
 | Activity classifier | `data/datasets/room1/` (`train_activity.py --room room1`) |
+| Activity classifier (exploratory, epoch 1) | `data/datasets/train-c1-ep1-2026-11/` (`train_activity.py --room train-c1-ep1-2026-11`): c1 blocks 1-4 only, header roomId `campaign-raw-2026-11`, README local (gitignored); refused before evaluation (one still and one walking recording), no report, no model exported |
 | People-count CNN | `data/datasets/room1/` (`train_count.py --room room1`); run 2026-11-11 (reduced), refused |
 | csi-embed-v2, presence head, LoRA, v1 files | upstream RuView capture, not on disk |
 | `pose_v1` | unknown |
