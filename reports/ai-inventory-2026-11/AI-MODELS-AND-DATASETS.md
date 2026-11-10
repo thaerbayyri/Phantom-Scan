@@ -1,6 +1,6 @@
 # AI models and datasets — inventory (2026-11-10)
 
-**Status of this file:** uncommitted, read-only inventory. Nothing was trained, downloaded, flashed, pushed or committed. No credential or environment secret was read or printed.
+**Status of this file:** committed (491cefb); the only training run is the people-count CNN of 2026-11-11 (refused, see 1.2); nothing was downloaded, flashed or pushed. No credential or environment secret was read or printed.
 **Convention:** `[UNVERIFIED]` = not read from a file in this session. `[TO BE MEASURED]` = no measurement exists on disk. No accuracy, detection or false-positive figure is claimed by this report; the only numbers quoted are those in a report file on disk (path given) and upstream claims that are labelled as upstream's.
 
 **Pre-check (done first).** No file under `data/` or `reports/` had been written in the previous 5 minutes (and none in the previous 60 minutes anywhere in the repo, excluding `node_modules`, `.git`, `.next`, `__pycache__`). The only `python` processes were the VS Code isort language server. No recording or soak was running.
