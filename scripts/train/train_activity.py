@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Train the per-room activity classifier from data/datasets/<room>/.
 
-    py -3.13 scripts/train/train_activity.py --room room1 [--group-by day]
+    python scripts/train/train_activity.py --room room1 [--group-by day]
+    (python = 3.11.9 on this machine; needs torch + scikit-learn)
 
 Exit codes: 0 model exported; 2 refused (data too thin or the model does not
 beat the baselines on held-out recordings — nothing is written except the

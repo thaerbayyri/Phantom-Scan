@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Train the per-room people-count CNN from data/datasets/<room>/.
 
-    py -3.13 scripts/train/train_count.py --room room1
+    python scripts/train/train_count.py --room room1
+    (python = 3.11.9 on this machine; needs torch + scikit-learn)
 
 Needs recordings with at least two of the count classes {0, 1, 2+} (use the
 empty / still|walking|active / two_people|three_people labels), at least 2
