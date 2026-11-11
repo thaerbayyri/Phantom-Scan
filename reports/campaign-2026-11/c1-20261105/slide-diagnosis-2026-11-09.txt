@@ -1,0 +1,145 @@
+
+==================== B5_att1_0922  (campaign-raw-2026-11__c1__empty__20261109T152153Z)
+files=19 start=15:21:53Z/18:21:53 local, end=17:44:04Z/20:44:04 local, span=142.2 min, 10 s bins=853
+reference fps (mode of 10 s bins): {1: 67, 2: 67, 3: 66, 4: 67}
+-- ITEM 1: shared slide segments (smoothed mean ratio of nodes [1, 2, 4] < 0.9, >= 60 s): 2
+   15:54:43Z -> 16:24:33Z  local 18:54:43 -> 19:24:33  elapsed 32.8 -> 62.7 min  dur 29.8 min
+      depth (min 60 s mean ratio, nodes [1, 2, 4]): 0.56   per-node min ratio: {1: 0.56, 2: 0.56, 3: 0.55, 4: 0.56}
+      onset offset vs segment start (s): {1: 10, 2: -10, 3: -10, 4: 0}   share of segment below 0.9: {1: 0.99, 2: 0.99, 3: 1.0, 4: 1.0}
+   17:03:03Z -> 17:38:03Z  local 20:03:03 -> 20:38:03  elapsed 101.2 -> 136.2 min  dur 35.0 min
+      depth (min 60 s mean ratio, nodes [1, 2, 4]): 0.52   per-node min ratio: {1: 0.52, 2: 0.52, 3: 0.52, 4: 0.52}
+      onset offset vs segment start (s): {1: 0, 2: 0, 3: -10, 4: -10}   share of segment below 0.9: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0}
+   node 1 own drops below 0.9 (>= 60 s): 2 [(33.0, 62.7), (101.2, 136.2)]
+   node 2 own drops below 0.9 (>= 60 s): 2 [(32.7, 62.5), (101.2, 136.0)]
+   node 3 own drops below 0.9 (>= 60 s): 2 [(32.7, 64.2), (101.0, 136.5)]
+   node 4 own drops below 0.9 (>= 60 s): 2 [(32.8, 62.7), (101.0, 136.2)]
+   Pearson of 10 s fps series between nodes: {'1-2': 1.0, '1-3': 0.99, '1-4': 1.0, '2-3': 0.99, '2-4': 1.0, '3-4': 0.99}
+-- ITEM 3: autocorrelation peaks of the shared ratio (value, lag in min): [(0.46, 69.2)]
+   spacing of slide starts (min): [68.3]  spacing of ends (min): [73.5]
+-- ITEM 2: bins by class {'normal': 370, 'mid': 133, 'deep': 350}
+   node 1 normal: intervals=247599 mean=14.9 ms  modes(ms,share)=[(12, 0.085), (17, 0.082), (13, 0.082), (16, 0.081), (11, 0.08), (14, 0.079)]
+       shares={'<=20ms': 0.91, '21-40ms': 0.088, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.41 lag2=0.16  median RSSI=-31  len(a) top=[(51, 247599)]
+   node 1 deep: intervals=139308 mean=25.1 ms  modes(ms,share)=[(30, 0.152), (31, 0.107), (29, 0.095), (32, 0.057), (28, 0.051), (33, 0.041)]
+       shares={'<=20ms': 0.288, '21-40ms': 0.707, '41-100ms': 0.005, '>100ms': 0.0}  lag1=0.11 lag2=-0.04  median RSSI=-31  len(a) top=[(51, 139308)]
+   node 2 normal: intervals=247403 mean=15.0 ms  modes(ms,share)=[(17, 0.084), (13, 0.083), (12, 0.083), (16, 0.082), (14, 0.081), (15, 0.077)]
+       shares={'<=20ms': 0.911, '21-40ms': 0.087, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.42 lag2=0.18  median RSSI=-25  len(a) top=[(51, 247403)]
+   node 2 deep: intervals=139191 mean=25.1 ms  modes(ms,share)=[(30, 0.153), (31, 0.107), (29, 0.095), (32, 0.057), (28, 0.053), (33, 0.042)]
+       shares={'<=20ms': 0.286, '21-40ms': 0.71, '41-100ms': 0.004, '>100ms': 0.0}  lag1=0.13 lag2=-0.04  median RSSI=-25  len(a) top=[(51, 139191)]
+   node 3 normal: intervals=240387 mean=15.4 ms  modes(ms,share)=[(13, 0.085), (14, 0.085), (16, 0.084), (17, 0.084), (15, 0.084), (12, 0.08)]
+       shares={'<=20ms': 0.886, '21-40ms': 0.112, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.32 lag2=0.12  median RSSI=-51  len(a) top=[(51, 240387)]
+   node 3 deep: intervals=133469 mean=26.2 ms  modes(ms,share)=[(30, 0.121), (31, 0.098), (29, 0.093), (32, 0.073), (28, 0.065), (33, 0.055)]
+       shares={'<=20ms': 0.223, '21-40ms': 0.769, '41-100ms': 0.007, '>100ms': 0.0}  lag1=0.08 lag2=-0.04  median RSSI=-51  len(a) top=[(51, 133469)]
+   node 4 normal: intervals=245617 mean=15.1 ms  modes(ms,share)=[(13, 0.086), (16, 0.084), (17, 0.084), (14, 0.083), (15, 0.083), (12, 0.082)]
+       shares={'<=20ms': 0.899, '21-40ms': 0.099, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.36 lag2=0.11  median RSSI=-46  len(a) top=[(51, 245617)]
+   node 4 deep: intervals=138960 mean=25.2 ms  modes(ms,share)=[(30, 0.132), (31, 0.098), (29, 0.085), (32, 0.058), (28, 0.054), (33, 0.044)]
+       shares={'<=20ms': 0.288, '21-40ms': 0.705, '41-100ms': 0.007, '>100ms': 0.001}  lag1=0.09 lag2=-0.06  median RSSI=-46  len(a) top=[(51, 138960)]
+
+==================== B1_att4  (campaign-raw-2026-11__c1__empty__20261109T035035Z)
+files=8 start=03:50:35Z/06:50:35 local, end=04:40:33Z/07:40:33 local, span=50.0 min, 10 s bins=299
+reference fps (mode of 10 s bins): {1: 66, 2: 66, 3: 64, 4: 65}
+-- ITEM 1: shared slide segments (smoothed mean ratio of nodes [1, 2, 4] < 0.9, >= 60 s): 1
+   04:30:35Z -> 04:40:25Z  local 07:30:35 -> 07:40:25  elapsed 40.0 -> 49.8 min  dur 9.8 min
+      depth (min 60 s mean ratio, nodes [1, 2, 4]): 0.57   per-node min ratio: {1: 0.57, 2: 0.57, 3: 0.58, 4: 0.57}
+      onset offset vs segment start (s): {1: 10, 2: 0, 3: -10, 4: -10}   share of segment below 0.9: {1: 0.98, 2: 1.0, 3: 1.0, 4: 1.0}
+   node 1 own drops below 0.9 (>= 60 s): 1 [(40.2, 49.8)]
+   node 2 own drops below 0.9 (>= 60 s): 1 [(40.0, 49.8)]
+   node 3 own drops below 0.9 (>= 60 s): 1 [(39.8, 49.8)]
+   node 4 own drops below 0.9 (>= 60 s): 1 [(39.8, 49.8)]
+   Pearson of 10 s fps series between nodes: {'1-2': 1.0, '1-3': 0.99, '1-4': 0.99, '2-3': 0.99, '2-4': 1.0, '3-4': 0.99}
+-- ITEM 3: autocorrelation peaks of the shared ratio (value, lag in min): []
+-- ITEM 2: bins by class {'normal': 217, 'mid': 28, 'deep': 54}
+   node 1 normal: intervals=142987 mean=15.2 ms  modes(ms,share)=[(13, 0.098), (17, 0.097), (14, 0.092), (16, 0.091), (12, 0.091), (15, 0.089)]
+       shares={'<=20ms': 0.915, '21-40ms': 0.084, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.34 lag2=0.11  median RSSI=-28  len(a) top=[(51, 142987)]
+   node 1 deep: intervals=20849 mean=25.9 ms  modes(ms,share)=[(30, 0.144), (31, 0.107), (29, 0.102), (28, 0.065), (32, 0.064), (27, 0.045)]
+       shares={'<=20ms': 0.241, '21-40ms': 0.753, '41-100ms': 0.005, '>100ms': 0.001}  lag1=0.14 lag2=-0.05  median RSSI=-32  len(a) top=[(51, 20849)]
+   node 2 normal: intervals=143544 mean=15.1 ms  modes(ms,share)=[(15, 0.1), (16, 0.1), (14, 0.096), (12, 0.094), (13, 0.093), (17, 0.092)]
+       shares={'<=20ms': 0.93, '21-40ms': 0.069, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.34 lag2=0.10  median RSSI=-28  len(a) top=[(51, 143544)]
+   node 2 deep: intervals=20713 mean=26.1 ms  modes(ms,share)=[(30, 0.162), (31, 0.117), (29, 0.105), (32, 0.063), (28, 0.063), (33, 0.044)]
+       shares={'<=20ms': 0.241, '21-40ms': 0.753, '41-100ms': 0.005, '>100ms': 0.001}  lag1=0.15 lag2=-0.07  median RSSI=-26  len(a) top=[(51, 20713)]
+   node 3 normal: intervals=137690 mean=15.8 ms  modes(ms,share)=[(12, 0.085), (17, 0.084), (13, 0.084), (14, 0.083), (16, 0.081), (15, 0.079)]
+       shares={'<=20ms': 0.87, '21-40ms': 0.127, '41-100ms': 0.002, '>100ms': 0.001}  lag1=-0.20 lag2=0.10  median RSSI=-55  len(a) top=[(51, 137690)]
+   node 3 deep: intervals=20362 mean=26.5 ms  modes(ms,share)=[(30, 0.133), (31, 0.108), (29, 0.097), (32, 0.071), (28, 0.066), (33, 0.05)]
+       shares={'<=20ms': 0.211, '21-40ms': 0.782, '41-100ms': 0.007, '>100ms': 0.001}  lag1=0.10 lag2=-0.08  median RSSI=-54  len(a) top=[(51, 20362)]
+   node 4 normal: intervals=140696 mean=15.4 ms  modes(ms,share)=[(17, 0.085), (13, 0.084), (12, 0.083), (16, 0.083), (14, 0.083), (18, 0.081)]
+       shares={'<=20ms': 0.882, '21-40ms': 0.116, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.31 lag2=0.09  median RSSI=-45  len(a) top=[(51, 140696)]
+   node 4 deep: intervals=20365 mean=26.5 ms  modes(ms,share)=[(30, 0.141), (31, 0.107), (29, 0.103), (32, 0.069), (28, 0.068), (27, 0.049)]
+       shares={'<=20ms': 0.206, '21-40ms': 0.788, '41-100ms': 0.006, '>100ms': 0.001}  lag1=0.11 lag2=-0.08  median RSSI=-43  len(a) top=[(51, 20365)]
+
+==================== N8_T151336Z  (campaign-raw-2026-11__c1__empty__20261108T151336Z)
+files=20 start=15:13:36Z/18:13:36 local, end=17:21:56Z/20:21:56 local, span=128.3 min, 10 s bins=770
+reference fps (mode of 10 s bins): {1: 66, 2: 66, 3: 64, 4: 66}
+-- ITEM 1: shared slide segments (smoothed mean ratio of nodes [1, 2, 4] < 0.9, >= 60 s): 2
+   15:39:56Z -> 15:46:16Z  local 18:39:56 -> 18:46:16  elapsed 26.3 -> 32.7 min  dur 6.3 min
+      depth (min 60 s mean ratio, nodes [1, 2, 4]): 0.87   per-node min ratio: {1: 0.89, 2: 0.88, 3: 0.83, 4: 0.84}
+      onset offset vs segment start (s): {1: 70, 2: 20, 3: -60, 4: -60}   share of segment below 0.9: {1: 0.18, 2: 0.87, 3: 0.92, 4: 1.0}
+   16:50:46Z -> 16:59:46Z  local 19:50:46 -> 19:59:46  elapsed 97.2 -> 106.2 min  dur 9.0 min
+      depth (min 60 s mean ratio, nodes [1, 2, 4]): 0.85   per-node min ratio: {1: 0.86, 2: 0.85, 3: 0.8, 4: 0.84}
+      onset offset vs segment start (s): {1: 10, 2: -10, 3: -60, 4: -30}   share of segment below 0.9: {1: 0.89, 2: 0.91, 3: 1.0, 4: 1.0}
+   node 1 own drops below 0.9 (>= 60 s): 2 [(27.5, 28.5), (97.3, 106.2)]
+   node 2 own drops below 0.9 (>= 60 s): 2 [(26.7, 32.7), (97.0, 106.2)]
+   node 3 own drops below 0.9 (>= 60 s): 6 [(14.7, 16.0), (19.3, 21.0), (24.3, 35.8), (50.0, 52.0), (55.7, 56.8), (93.0, 114.8)]
+   node 4 own drops below 0.9 (>= 60 s): 2 [(23.2, 34.2), (96.7, 106.5)]
+   Pearson of 10 s fps series between nodes: {'1-2': 0.99, '1-3': 0.65, '1-4': 0.96, '2-3': 0.65, '2-4': 0.97, '3-4': 0.69}
+-- ITEM 3: autocorrelation peaks of the shared ratio (value, lag in min): []
+   spacing of slide starts (min): [70.8]  spacing of ends (min): [73.5]
+-- ITEM 2: bins by class {'normal': 497, 'mid': 273}
+   node 1 normal: intervals=330229 mean=15.1 ms  modes(ms,share)=[(15, 0.093), (14, 0.089), (16, 0.088), (13, 0.085), (17, 0.082), (12, 0.077)]
+       shares={'<=20ms': 0.906, '21-40ms': 0.092, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.38 lag2=0.09  median RSSI=-30  len(a) top=[(51, 330229)]
+   node 1 deep: too few intervals (0)
+   node 2 normal: intervals=329096 mean=15.1 ms  modes(ms,share)=[(15, 0.1), (14, 0.098), (16, 0.097), (13, 0.093), (17, 0.089), (12, 0.08)]
+       shares={'<=20ms': 0.918, '21-40ms': 0.079, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.33 lag2=0.06  median RSSI=-28  len(a) top=[(51, 329096)]
+   node 2 deep: too few intervals (0)
+   node 3 normal: intervals=309816 mean=16.0 ms  modes(ms,share)=[(15, 0.084), (14, 0.08), (16, 0.08), (13, 0.076), (17, 0.076), (12, 0.067)]
+       shares={'<=20ms': 0.832, '21-40ms': 0.165, '41-100ms': 0.003, '>100ms': 0.0}  lag1=-0.16 lag2=0.06  median RSSI=-53  len(a) top=[(51, 309816)]
+   node 3 deep: too few intervals (0)
+   node 4 normal: intervals=325675 mean=15.3 ms  modes(ms,share)=[(15, 0.092), (14, 0.09), (16, 0.09), (13, 0.085), (17, 0.083), (12, 0.077)]
+       shares={'<=20ms': 0.895, '21-40ms': 0.103, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.32 lag2=0.05  median RSSI=-46  len(a) top=[(51, 325675)]
+   node 4 deep: too few intervals (0)
+
+==================== B1_valid  (campaign-raw-2026-11__c1__empty__20261109T044649Z)
+files=13 start=04:46:49Z/07:46:49 local, end=06:07:04Z/09:07:04 local, span=80.2 min, 10 s bins=481
+reference fps (mode of 10 s bins): {1: 67, 2: 67, 3: 67, 4: 67}
+-- ITEM 1: shared slide segments (smoothed mean ratio of nodes [1, 2, 4] < 0.9, >= 60 s): 0
+   node 1 own drops below 0.9 (>= 60 s): 0 []
+   node 2 own drops below 0.9 (>= 60 s): 0 []
+   node 3 own drops below 0.9 (>= 60 s): 1 [(0.0, 4.5)]
+   node 4 own drops below 0.9 (>= 60 s): 0 []
+   Pearson of 10 s fps series between nodes: {'1-2': 0.98, '1-3': 0.91, '1-4': 0.97, '2-3': 0.87, '2-4': 0.95, '3-4': 0.95}
+-- ITEM 3: autocorrelation peaks of the shared ratio (value, lag in min): [(0.48, 3.5), (0.34, 4.8), (0.3, 6.2), (0.3, 5.8)]
+-- ITEM 2: bins by class {'mid': 48, 'normal': 433}
+   node 1 normal: intervals=289106 mean=15.0 ms  modes(ms,share)=[(12, 0.095), (13, 0.092), (17, 0.089), (16, 0.087), (14, 0.087), (15, 0.086)]
+       shares={'<=20ms': 0.935, '21-40ms': 0.064, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.43 lag2=0.18  median RSSI=-29  len(a) top=[(51, 289106)]
+   node 1 deep: too few intervals (0)
+   node 2 normal: intervals=289187 mean=15.0 ms  modes(ms,share)=[(13, 0.099), (14, 0.094), (17, 0.092), (16, 0.091), (12, 0.09), (15, 0.086)]
+       shares={'<=20ms': 0.938, '21-40ms': 0.06, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.44 lag2=0.18  median RSSI=-28  len(a) top=[(51, 289187)]
+   node 2 deep: too few intervals (0)
+   node 3 normal: intervals=286108 mean=15.1 ms  modes(ms,share)=[(13, 0.092), (12, 0.09), (14, 0.089), (15, 0.088), (16, 0.087), (17, 0.085)]
+       shares={'<=20ms': 0.916, '21-40ms': 0.082, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.37 lag2=0.13  median RSSI=-54  len(a) top=[(51, 286108)]
+   node 3 deep: too few intervals (0)
+   node 4 normal: intervals=287766 mean=15.0 ms  modes(ms,share)=[(14, 0.1), (13, 0.099), (15, 0.098), (16, 0.097), (12, 0.095), (17, 0.092)]
+       shares={'<=20ms': 0.934, '21-40ms': 0.064, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.35 lag2=0.06  median RSSI=-45  len(a) top=[(51, 287766)]
+   node 4 deep: too few intervals (0)
+
+==================== B1_att3  (campaign-raw-2026-11__c1__empty__20261109T032643Z)
+files=4 start=03:26:43Z/06:26:43 local, end=03:46:27Z/06:46:27 local, span=19.7 min, 10 s bins=118
+reference fps (mode of 10 s bins): {1: 66, 2: 66, 3: 65, 4: 66}
+-- ITEM 1: shared slide segments (smoothed mean ratio of nodes [1, 2, 4] < 0.9, >= 60 s): 0
+   node 1 own drops below 0.9 (>= 60 s): 0 []
+   node 2 own drops below 0.9 (>= 60 s): 0 []
+   node 3 own drops below 0.9 (>= 60 s): 0 []
+   node 4 own drops below 0.9 (>= 60 s): 0 []
+   Pearson of 10 s fps series between nodes: {'1-2': 0.35, '1-3': 0.94, '1-4': 0.35, '2-3': 0.32, '2-4': 0.85, '3-4': 0.34}
+-- ITEM 3: autocorrelation peaks of the shared ratio (value, lag in min): [(0.24, 0.5), (0.16, 2.2)]
+-- ITEM 2: bins by class {'normal': 118}
+   node 1 normal: intervals=77570 mean=15.2 ms  modes(ms,share)=[(13, 0.11), (17, 0.106), (14, 0.105), (16, 0.104), (15, 0.084), (12, 0.07)]
+       shares={'<=20ms': 0.918, '21-40ms': 0.081, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.34 lag2=0.16  median RSSI=-32  len(a) top=[(51, 77570)]
+   node 1 deep: too few intervals (0)
+   node 2 normal: intervals=78388 mean=15.1 ms  modes(ms,share)=[(16, 0.113), (14, 0.112), (15, 0.106), (13, 0.105), (17, 0.099), (12, 0.087)]
+       shares={'<=20ms': 0.945, '21-40ms': 0.054, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.36 lag2=0.14  median RSSI=-26  len(a) top=[(51, 78388)]
+   node 2 deep: too few intervals (0)
+   node 3 normal: intervals=75102 mean=15.7 ms  modes(ms,share)=[(17, 0.088), (13, 0.085), (12, 0.084), (18, 0.082), (14, 0.078), (16, 0.076)]
+       shares={'<=20ms': 0.873, '21-40ms': 0.125, '41-100ms': 0.002, '>100ms': 0.0}  lag1=-0.24 lag2=0.16  median RSSI=-54  len(a) top=[(51, 75102)]
+   node 3 deep: too few intervals (0)
+   node 4 normal: intervals=78419 mean=15.0 ms  modes(ms,share)=[(17, 0.108), (13, 0.106), (16, 0.09), (14, 0.087), (12, 0.084), (18, 0.082)]
+       shares={'<=20ms': 0.924, '21-40ms': 0.075, '41-100ms': 0.001, '>100ms': 0.0}  lag1=-0.40 lag2=0.18  median RSSI=-45  len(a) top=[(51, 78419)]
+   node 4 deep: too few intervals (0)
