@@ -3,6 +3,7 @@ import type { DatasetStatus } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Database } from "lucide-react";
+import { INITIAL_ROOM_ID, INITIAL_SUBJECT_ID, canStartDatasetRecording } from "@/lib/dataset-recorder-ids";
 
 const LABELS = [
     { value: "empty", text: "Empty room" },
@@ -31,14 +32,14 @@ interface DatasetRecorderPanelProps {
  * the server already receives.
  */
 export function DatasetRecorderPanel({ status, onStart, onStop }: DatasetRecorderPanelProps) {
-    const [roomId, setRoomId] = useState("room1");
-    const [subjectId, setSubjectId] = useState("s1");
+    const [roomId, setRoomId] = useState(INITIAL_ROOM_ID);
+    const [subjectId, setSubjectId] = useState(INITIAL_SUBJECT_ID);
     const [label, setLabel] = useState<string>("empty");
     const [countdown, setCountdown] = useState<number | null>(null);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const recording = status?.recording === true;
-    const valid = ID_PATTERN.test(roomId) && ID_PATTERN.test(subjectId);
+    const valid = canStartDatasetRecording(roomId, subjectId) && ID_PATTERN.test(roomId) && ID_PATTERN.test(subjectId);
 
     // Leaving the page mid-countdown must cancel it: otherwise a recording starts
     // later with no panel on screen to stop it.
