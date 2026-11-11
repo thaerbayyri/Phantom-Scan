@@ -300,7 +300,7 @@ Consequences:
 **Not training data:** `data/datasets/campaign-raw-2026-11/`, `campaign-2026-11/`, `smoke-2026-11/`, `epoch2-ref-2026-11/`, `smoke-test/`, `data/sessions/`, `recordings/`, root CSVs; `soak-2026-11` does not exist on disk. Separation from training is by convention only; no guard in code.
 
 **What to do next**
-1. Record the labelled sessions listed in §3.3 (current link state, ≥ 3 sessions/label, ≥ 2 subjects, ≥ 5 min) into a dedicated training room id.
+1. Record the labelled sessions listed in §3.3 (current link state, ≥ 3 sessions/label, ≥ 2 subjects, ≥ 5 min) into a dedicated training room id. (Phase 1 per RECORDING-CHECKLIST: single subject, empty/empty_fan/still/walking, activity classifier only; two_people and the count CNN deferred)
 2. Add the missing header fields and a training-folder guard before recording or training.
 3. Use one interpreter that has scikit-learn (system Python 3.11.9 has it; `.venv` does not), then run the existing refusal gate on the new data; ship nothing that the gate refuses.
 4. Settle licence/provenance of `pose_v1` and the encoder hash mismatch; keep RuView weights advisory-only and optional.

@@ -1,12 +1,31 @@
 # Training-data recording checklist (new room folder, epoch 2)
 
-**Status: draft, written 2026-11-11 from `AI-MODELS-AND-DATASETS.md` §3.3 and `docs/DATASET_PROTOCOL.md`.** It turns §3.3 into steps; it does not change the protocol. Items marked **[OWNER TO CONFIRM]** are decisions this document does not make. No accuracy or detection figure is promised by recording this data: whether a model passes is decided later by the existing refusal gate.
+**Status: draft, written 2026-11-11 from `AI-MODELS-AND-DATASETS.md` §3.3 and `docs/DATASET_PROTOCOL.md`.** It turns §3.3 into steps; it does not change the protocol. **Narrowed to Phase 1 on 2026-11-11 (owner decision, see "Phase 1 scope" after §0).** Items marked **[OWNER TO CONFIRM]** are decisions this document does not make. No accuracy or detection figure is promised by recording this data: whether a model passes is decided later by the existing refusal gate.
 
 ## 0. Hard gate: when these recordings may happen
 
 **These recordings happen only AFTER the soak and the c2 campaign are finished, and NOT in the same evening as c2.** Not before the soak, not between soak and c2 blocks, not after block 6 on the same evening. Reasons: the c2 link-state rules forbid any change from the first Start of the soak to the Stop of block 6, and the recorder, the nodes and the operator are busy with c2; a training session in the same evening would also add a second reason for the link state to differ between c2 blocks. Start no earlier than the day after c2 ends **[OWNER TO CONFIRM the exact date]**.
 
 Training is a separate, later step and is **not** part of this checklist (see §7).
+
+## Phase 1 scope (owner decision 2026-11-11)
+
+**[OWNER DECISION]** The recording plan is narrowed to Phase 1. Where this section differs from §1–§7 below, **this section wins**; everything it does not mention (settings in §3, per-day preparation in §4, per-recording procedure in §5) is unchanged. This is documentation only: no code, gate or constant changes, and `docs/DATASET_PROTOCOL.md` is not changed.
+
+| Item | Phase 1 |
+|---|---|
+| Labels in scope (4) | `empty`, `empty_fan`, `still`, `walking` |
+| Optional label | `active` |
+| Out of scope | `two_people`, `three_people` |
+| Subjects | **one subject only: Subject ID `p1` (the owner)**. `empty` and `empty_fan` use Subject ID `none` |
+| Per label | **at least 3 sessions, on at least 3 different days, at least 5 min each** |
+| Minimum total | 4 labels × 3 sessions × 5 min = **60 min over 3 days** (75 min if `active` is included) |
+
+* **Deviation from `docs/DATASET_PROTOCOL.md`, recorded deliberately [OWNER DECISION]:** the protocol's "at least 2 subjects" for the single-person labels is **not met in Phase 1**. This is a Phase 1 deviation, **not a protocol change**; the protocol text stays as it is, and anything trained on Phase 1 data is single-subject data and must be described that way.
+* **Why 3 sessions on 3 days:** the activity trainer refuses a class with fewer than 2 recordings, `MIN_RECORDINGS_PER_CLASS = 2` (`phantom/activity_train.py:34`), and `--group-by day` holds out whole days and needs 3 of them: "hold out whole recordings (default) or whole days (stricter, needs >= 3 days)" (`scripts/train/train_activity.py:33`), enforced by `MIN_GROUPS = 3` (`phantom/activity_train.py:33`).
+* **`empty_fan` is merged into `empty` at training time:** `"empty_fan": "empty",` in `LABEL_TO_ACTIVITY` (`phantom/activity_model.py:25`). It is **still recorded under its own label** `empty_fan`, as the negative control.
+* **Consequence: only `scripts/train/train_activity.py` runs in Phase 1. `scripts/train/train_count.py` is out of scope** (there is no `two_people` data). The people-count CNN is deferred with `two_people` / `three_people`.
+* **Still [OWNER TO CONFIRM]:** the Room ID (§2), the start date (§0), and volunteer consent / data retention (§4 item 5). Whether a third person is available for `three_people` is no longer an open item (out of scope).
 
 ## 1. What must be recorded (from inventory §3.3 item 1)
 
@@ -21,7 +40,7 @@ Training is a separate, later step and is **not** part of this checklist (see §
 | Minimum total | 7 labels × 3 sessions × 5 min = 21 recordings, 105 min of labelled time (plus transitions) |
 
 Notes that come from what is on disk now:
-* `two_people` needs 2 people and `three_people` needs 3 on every session day **[OWNER TO CONFIRM that 3 people are available; `three_people` is optional in `DATASET_PROTOCOL.md` but is requested here]**.
+* `two_people` and `three_people` are **out of scope in Phase 1** (see "Phase 1 scope"); no second or third person is needed.
 * No label has been recorded in the current link state yet (only two empty recordings exist, 12.1 min). `room1` (October, unknown channel, 11–68 fps) is **not** reused.
 * In `room1` the Subject field held session numbers (`s1…s10`). **Here Subject ID = the person**, not the session: `p1`, `p2`, `p3` (never reused for a different person). Which person is `p1`/`p2`/`p3` is written in the session log, not in the dataset.
 
@@ -68,18 +87,32 @@ Notes that come from what is on disk now:
 5. **Between recordings only** (Claude Code is not idle-restricted now): check the new file name is under `data/datasets/train-ep2-2026-11/`, files are closed, header line shows the right roomId/subjectId/label, all four nodes appear, per-node rate is about 67 fps with no collapse, and the first frames carry `seq` and `nsc`. Anything off → log it; re-record (a re-record is a new file; never delete the failed one).
 6. Wait at least 2 minutes before the next recording if a link change was suspected (same rule as c1/c2).
 
-Empty labels have no person: use Subject ID `none` **[OWNER TO CONFIRM]** (an empty file still needs a valid ID).
+Empty labels have no person: use Subject ID `none` **[OWNER DECISION 2026-11-11]** (an empty file still needs a valid ID).
 
-## 6. Suggested plan (a suggestion, not a requirement) — **[OWNER TO CONFIRM]**
+## 6. Phase 1 session table
 
-Three different days (not the c2 evening). Each day, in an order that keeps similar labels apart (e.g. empty → still p1 → walking p1 → active p1 → two_people → empty_fan → three_people), all 7 labels once; add the same single-person labels for `p2` on at least one day (preferably on every day) so that every single-person label has two subjects. About 7 × 6 min of labelled time per day plus transitions, around 60–90 min.
+Three sessions on three different days (not the c2 evening; dates **[OWNER TO CONFIRM]**). Each session records every in-scope label once, in an order that keeps the two empty labels apart (e.g. `empty` → `still` → `walking` → (`active`) → `empty_fan`). About 4 × 6 min of labelled time per day plus transitions (5 × 6 min with `active`). Fill one cell per recording; tick the box only after the §5 step 5 check passes.
 
-Per-day acceptance (suggested, not pre-registered): every label present; each recording at least 5 min with all four nodes; no unexplained rate collapse; session log complete.
+| Session | `empty` (subject `none`) | `empty_fan` (subject `none`) | `still` (subject `p1`) | `walking` (subject `p1`) | `active` (subject `p1`, optional) |
+|---|---|---|---|---|---|
+| Day 1, date ________ | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] |
+| Day 2, date ________ | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] |
+| Day 3, date ________ | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] | start ______ UTC<br>parts ___<br>min ___<br>[ ] |
+
+Rules that hold for every session (unchanged; see §0, §2, §3 and §5):
+* Not before the soak and c2 are finished, and not on the c2 evening (§0).
+* Room ID `train-ep2-2026-11` (proposed, **[OWNER TO CONFIRM]**) and the Subject ID field are set before **every** Start; the panel defaults to `room1` / `s1` (§2).
+* Never press Calibrate Empty Room (§3).
+* No auto-stop: the operator presses Stop on a phone timer (§3).
+* Claude Code is idle from each Start to its Stop (§3).
+* An aborted or contaminated recording is never deleted, and all of its parts are **moved out of the training folder immediately** (between recordings, not during one), so training cannot load them; the move is written in the session log **[OWNER TO CONFIRM the destination folder]**.
+
+Per-day acceptance (suggested, not pre-registered): every in-scope label present; each recording at least 5 min with all four nodes; no unexplained rate collapse; session log complete.
 
 ## 7. After recording, before any training
 
 * Nothing is committed or pushed without the owner's explicit instruction; `data/datasets/` is gitignored and stays local.
 * Add a **training-side guard** that refuses campaign/soak/smoke/epoch folders and mixed link states (inventory §3.3 item 3; not implemented).
 * Use one interpreter with scikit-learn for training (inventory §3.3 item 5).
-* Only then run the existing refusal gate (`scripts/train/train_activity.py` / `train_count.py` with `--room train-ep2-2026-11`; with default permutation counts, not the reduced run of 2026-11-11); once at least 3 days exist also `--group-by day`. A model the gate refuses stays unexported. No accuracy is claimed before the gate passes on held-out recordings.
+* Only then run the existing refusal gate (Phase 1: `scripts/train/train_activity.py` only, `train_count.py` is out of scope; with `--room train-ep2-2026-11`; with default permutation counts, not the reduced run of 2026-11-11); once at least 3 days exist also `--group-by day`. A model the gate refuses stays unexported. No accuracy is claimed before the gate passes on held-out recordings.
 * Keep campaign data out of training, and `room1` out of the new room's training unless the owner decides otherwise **[OWNER TO CONFIRM]**; `room1` was recorded before the router change.
