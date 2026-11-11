@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from phantom.activity_train import TrainingRefused, train_activity  # noqa: E402
 from phantom.dataset import load_room_dataset  # noqa: E402
+from phantom.training_guard import enforce_training_room  # noqa: E402
 
 
 def main() -> int:
@@ -33,8 +34,15 @@ def main() -> int:
         help="hold out whole recordings (default) or whole days (stricter, needs >= 3 days)",
     )
     parser.add_argument("--permutations", type=int, default=50)
+    parser.add_argument(
+        "--allow-unsafe",
+        action="store_true",
+        help="train even if the training-folder guard refuses the room (prints a warning; off by default)",
+    )
     args = parser.parse_args()
 
+    if not enforce_training_room(args.data_root, args.room, allow_unsafe=args.allow_unsafe):
+        return 2
     recordings = load_room_dataset(args.data_root, args.room)
     if not recordings:
         print(f"no recordings under {args.data_root}/{args.room} — see docs/DATASET_PROTOCOL.md", file=sys.stderr)
