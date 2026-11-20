@@ -1,0 +1,57 @@
+{
+  "kind": "activity",
+  "group_by": "day",
+  "groups": [
+    "room1_noisy",
+    "room1_quiet",
+    "room2_quiet"
+  ],
+  "classes": [
+    "empty",
+    "still",
+    "walking"
+  ],
+  "class_counts": {
+    "empty": 1678,
+    "still": 1591,
+    "walking": 1506,
+    "active": 0
+  },
+  "skipped_labels": [],
+  "excluded_nodes": [],
+  "features": "resampled to 30 Hz per window",
+  "metrics": {
+    "model_balanced_accuracy": 0.3768833144460883,
+    "majority_balanced_accuracy": 0.27771630996870683,
+    "heuristic_balanced_accuracy": 0.2653174077408674,
+    "margin_required": 0.02,
+    "permutation_null_p95": 0.5104733603306915,
+    "permutation_null_runs": 50
+  },
+  "confusion_matrix": {
+    "labels": [
+      "empty",
+      "still",
+      "walking"
+    ],
+    "rows_true_cols_pred": [
+      [
+        556,
+        451,
+        671
+      ],
+      [
+        450,
+        248,
+        893
+      ],
+      [
+        93,
+        444,
+        969
+      ]
+    ]
+  },
+  "exported": false,
+  "note": "Per-room, advisory only. Do not claim accuracy outside the recorded room/subjects."
+}

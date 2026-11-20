@@ -1,0 +1,63 @@
+{
+  "kind": "activity",
+  "group_by": "recording",
+  "groups": [
+    "reporafin/room1_noisy/empty_trail",
+    "reporafin/room1_noisy/moving_trial",
+    "reporafin/room1_noisy/stationary_trail",
+    "reporafin/room1_quiet/empty_trail",
+    "reporafin/room1_quiet/moving_trail",
+    "reporafin/room1_quiet/stationary_trail1",
+    "reporafin/room2_quiet/empty_trail",
+    "reporafin/room2_quiet/moving_trail",
+    "reporafin/room2_quiet/stationary_trail"
+  ],
+  "classes": [
+    "empty",
+    "still",
+    "walking"
+  ],
+  "class_counts": {
+    "empty": 1678,
+    "still": 1591,
+    "walking": 1506,
+    "active": 0
+  },
+  "skipped_labels": [],
+  "excluded_nodes": [],
+  "features": "resampled to 30 Hz per window",
+  "metrics": {
+    "model_balanced_accuracy": 0.3180742644053025,
+    "majority_balanced_accuracy": 0.0,
+    "heuristic_balanced_accuracy": 0.16425233894255167,
+    "margin_required": 0.02,
+    "permutation_null_p95": 0.5259372497851165,
+    "permutation_null_runs": 50
+  },
+  "confusion_matrix": {
+    "labels": [
+      "empty",
+      "still",
+      "walking"
+    ],
+    "rows_true_cols_pred": [
+      [
+        952,
+        493,
+        233
+      ],
+      [
+        467,
+        119,
+        1005
+      ],
+      [
+        52,
+        984,
+        470
+      ]
+    ]
+  },
+  "exported": false,
+  "note": "Per-room, advisory only. Do not claim accuracy outside the recorded room/subjects."
+}
