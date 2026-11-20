@@ -16,8 +16,9 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -66,6 +67,12 @@ class Recording:
     files: tuple[str, ...] = ()
     report: LoadReport | None = None  # None for recordings built by hand (tests)
     header: dict = field(default_factory=dict)  # first header verbatim: capture/annotation/geometryHash for schema 2
+
+
+def without_nodes(recordings: Sequence[Recording], excluded: Iterable[int]) -> list[Recording]:
+    """New Recording objects without the excluded node ids (e.g. a node with a known rate fault); inputs unchanged."""
+    drop = {int(n) for n in excluded}
+    return [replace(r, nodes={n: s for n, s in r.nodes.items() if n not in drop}) for r in recordings]
 
 
 def _recording_id(path: Path) -> str:

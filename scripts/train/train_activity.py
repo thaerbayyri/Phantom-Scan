@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from phantom.activity_train import TrainingRefused, train_activity  # noqa: E402
-from phantom.dataset import load_room_dataset  # noqa: E402
+from phantom.dataset import load_room_dataset, without_nodes  # noqa: E402
 from phantom.training_guard import enforce_training_room  # noqa: E402
 
 
@@ -40,11 +40,25 @@ def main() -> int:
         action="store_true",
         help="train even if the training-folder guard refuses the room (prints a warning; off by default)",
     )
+    parser.add_argument(
+        "--exclude-nodes",
+        default="",
+        help="comma-separated node ids to leave out of training and the guard's rate check (e.g. '3' for a node "
+        "with a known rate fault); recorded in the report",
+    )
     args = parser.parse_args()
+    try:
+        excluded = tuple(sorted({int(n) for n in args.exclude_nodes.split(",") if n.strip()}))
+    except ValueError:
+        print(f"--exclude-nodes must be comma-separated integers, got '{args.exclude_nodes}'", file=sys.stderr)
+        return 1
 
-    if not enforce_training_room(args.data_root, args.room, allow_unsafe=args.allow_unsafe):
+    if not enforce_training_room(args.data_root, args.room, allow_unsafe=args.allow_unsafe, exclude_nodes=excluded):
         return 2
     recordings = load_room_dataset(args.data_root, args.room)
+    if excluded:
+        recordings = without_nodes(recordings, excluded)
+        print(f"excluding node(s) {', '.join(map(str, excluded))} from training")
     if not recordings:
         print(f"no recordings under {args.data_root}/{args.room} — see docs/DATASET_PROTOCOL.md", file=sys.stderr)
         return 1
@@ -59,7 +73,9 @@ def main() -> int:
 
     out_dir = Path(args.models_root) / args.room
     try:
-        report = train_activity(recordings, out_dir, group_by=args.group_by, n_permutations=args.permutations)
+        report = train_activity(
+            recordings, out_dir, group_by=args.group_by, n_permutations=args.permutations, excluded_nodes=excluded
+        )
     except TrainingRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2

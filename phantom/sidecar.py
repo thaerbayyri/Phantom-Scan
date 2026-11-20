@@ -77,12 +77,12 @@ def window_features_from_history(
 ) -> "np.ndarray | None":
     """Features of the trailing `window_s` of one node's history (None if sparse).
 
-    Uses the same extract_window_features as training, with the frame rate
-    estimated from the window's own timestamps.
+    Uses the same resampled_window_features as training: the window is resampled
+    onto the fixed RESAMPLE_HZ grid from its own timestamps.
     """
     import numpy as np
 
-    from phantom.features import extract_window_features
+    from phantom.features import resampled_window_features
 
     if len(timestamps_ms) < MIN_WINDOW_FRAMES:
         return None
@@ -90,12 +90,10 @@ def window_features_from_history(
     lo = int(np.searchsorted(t, t[-1] - window_s * 1000.0, side="left"))
     if len(t) - lo < MIN_WINDOW_FRAMES:
         return None
-    span_s = (t[-1] - t[lo]) / 1000.0
-    if span_s <= 0:
+    if t[-1] - t[lo] <= 0:
         return None
-    fs = (len(t) - lo - 1) / span_s
-    return extract_window_features(
-        np.asarray(amps_hist[lo:], dtype=np.float64), np.asarray(rssi_hist[lo:], dtype=np.float64), fs
+    return resampled_window_features(
+        t[lo:], np.asarray(amps_hist[lo:], dtype=np.float64), np.asarray(rssi_hist[lo:], dtype=np.float64)
     )
 
 

@@ -28,7 +28,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 from phantom.activity_model import ACTIVITY_CLASSES, LABEL_TO_ACTIVITY, ActivityModel
 from phantom.dataset import Recording
-from phantom.features import FEATURE_NAMES, sliding_windows
+from phantom.features import FEATURE_NAMES, RESAMPLE_HZ, sliding_windows
 
 MIN_GROUPS = 3
 MIN_RECORDINGS_PER_CLASS = 2
@@ -125,7 +125,9 @@ def train_activity(
     out_dir: Path | str,
     group_by: str = "recording",
     n_permutations: int = 50,
+    excluded_nodes: Sequence[int] = (),
 ) -> dict[str, Any]:
+    """`excluded_nodes` only records which node ids the caller left out (they must already be removed)."""
     if group_by not in {"recording", "day"}:
         raise ValueError("group_by must be 'recording' or 'day'")
     out = Path(out_dir)
@@ -170,6 +172,8 @@ def train_activity(
         "classes": labels,
         "class_counts": class_counts,
         "skipped_labels": sorted(set(skipped)),
+        "excluded_nodes": sorted(int(n) for n in excluded_nodes),
+        "features": f"resampled to {RESAMPLE_HZ:g} Hz per window",
         "metrics": metrics,
         "confusion_matrix": {
             "labels": labels,
@@ -205,6 +209,7 @@ def train_activity(
             "group_by": group_by,
             "data_sha256": digest.hexdigest(),
             "recordings": len(recordings),
+            "excluded_nodes": sorted(int(n) for n in excluded_nodes),
         },
     )
     model.save(out / "activity.json")

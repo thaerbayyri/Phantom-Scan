@@ -57,6 +57,12 @@ DOMINANT_MIN_HZ = 0.1
 MIN_RELATIVE_PEAK_POWER = 1e-7
 CHANGE_POINT_MULT = 3.0
 EPS = 1e-9
+# Every window is resampled onto this fixed grid before feature extraction, so the
+# features describe the scene and not the packet rate (nodes run 40-67 fps and the
+# rate drops when the AP bunches its frames; see
+# reports/campaign-2026-11/c2-20261119/RATE-DROP-DIAGNOSIS.md). 30 Hz keeps the
+# 4 Hz motion band far below Nyquist and is below the lowest healthy node rate.
+RESAMPLE_HZ = 30.0
 
 
 def _band_power(power: np.ndarray, freqs: np.ndarray, lo: float, hi: float) -> float:
@@ -148,6 +154,45 @@ def extract_window_features(amps: np.ndarray, rssi: np.ndarray, fs: float) -> np
     )
 
 
+def _merge_duplicate_times(t_ms: np.ndarray, amps: np.ndarray, rssi: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Average packets that share a timestamp (bursty arrival) so the time axis is strictly increasing."""
+    uniq, inverse, counts = np.unique(t_ms, return_inverse=True, return_counts=True)
+    if uniq.size == t_ms.size:
+        return t_ms, amps, rssi
+    merged_amps = np.zeros((uniq.size, amps.shape[1]))
+    np.add.at(merged_amps, inverse, amps)
+    merged_rssi = np.zeros(uniq.size)
+    np.add.at(merged_rssi, inverse, rssi)
+    return uniq, merged_amps / counts[:, None], merged_rssi / counts
+
+
+def resampled_window_features(
+    t_ms: np.ndarray, amps: np.ndarray, rssi: np.ndarray, target_hz: float = RESAMPLE_HZ
+) -> np.ndarray:
+    """Features of one window after linear resampling onto a fixed `target_hz` grid over its own time span.
+
+    The single entry point for training and the sidecar, so a 40 fps and a 66 fps window of the same scene give
+    the same features. Returns zeros (like extract_window_features) when the window cannot be analysed.
+    """
+    t_ms = np.asarray(t_ms, dtype=np.float64)
+    amps = np.asarray(amps, dtype=np.float64)
+    rssi = np.asarray(rssi, dtype=np.float64)
+    if t_ms.ndim != 1 or amps.ndim != 2 or amps.shape[0] != t_ms.size or rssi.shape != t_ms.shape or t_ms.size < 2:
+        return np.zeros(NUM_FEATURES)
+    order = np.argsort(t_ms, kind="stable")
+    t_ms, amps, rssi = _merge_duplicate_times(t_ms[order], amps[order], rssi[order])
+    span_s = (t_ms[-1] - t_ms[0]) / 1000.0
+    n = int(round(span_s * target_hz)) + 1
+    if span_s <= 0 or n < 2:
+        return np.zeros(NUM_FEATURES)
+    grid = np.linspace(t_ms[0], t_ms[-1], n)
+    res_amps = np.empty((n, amps.shape[1]))
+    for k in range(amps.shape[1]):
+        res_amps[:, k] = np.interp(grid, t_ms, amps[:, k])
+    res_rssi = np.interp(grid, t_ms, rssi)
+    return extract_window_features(res_amps, res_rssi, target_hz)
+
+
 def sliding_windows(
     t_ms: np.ndarray,
     amps: np.ndarray,
@@ -158,9 +203,9 @@ def sliding_windows(
 ) -> Iterator[tuple[np.ndarray, float]]:
     """Yield (features, window_end_ms) over one node's time-ordered stream.
 
-    The frame rate is estimated per window from its own timestamps, so bursty
-    or dropped packets don't skew the spectral features. Windows with fewer
-    than `min_frames` frames (gaps) are skipped.
+    Each window is resampled onto the fixed RESAMPLE_HZ grid from its own
+    timestamps, so bursty or dropped packets and node rate changes don't skew
+    the features. Windows with fewer than `min_frames` frames (gaps) are skipped.
     """
     t_ms = np.asarray(t_ms, dtype=np.float64)
     if t_ms.size == 0:
@@ -172,9 +217,6 @@ def sliding_windows(
     while end <= last + 1e-6:
         lo = np.searchsorted(t_ms, end - window_ms, side="left")
         hi = np.searchsorted(t_ms, end, side="right")
-        if hi - lo >= min_frames:
-            span_s = (t_ms[hi - 1] - t_ms[lo]) / 1000.0
-            fs = (hi - lo - 1) / span_s if span_s > 0 else 0.0
-            if fs > 0:
-                yield extract_window_features(amps[lo:hi], rssi[lo:hi], fs), float(end)
+        if hi - lo >= min_frames and t_ms[hi - 1] > t_ms[lo]:
+            yield resampled_window_features(t_ms[lo:hi], amps[lo:hi], rssi[lo:hi]), float(end)
         end += hop_ms

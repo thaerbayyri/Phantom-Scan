@@ -116,3 +116,15 @@ def test_load_room_dataset_round_trips_the_recorder_format(tmp_path: Path):
     assert len(recs) == 1 and recs[0].day == "20260901" and recs[0].label == "walking"
     assert recs[0].nodes[2].amps.shape == (6, 3)
     assert np.all(np.diff(recs[0].nodes[2].t_ms) > 0)
+
+
+def test_without_nodes_drops_the_excluded_streams_and_keeps_the_originals():
+    from phantom.dataset import NodeStream, Recording, without_nodes
+
+    stream = NodeStream(t_ms=np.zeros(2), amps=np.zeros((2, 3)), rssi=np.zeros(2))
+    rec = Recording("r1", "room", "s1", "still", 1, "20261119", nodes={1: stream, 3: stream})
+
+    kept = without_nodes([rec], (3,))
+
+    assert list(kept[0].nodes) == [1]
+    assert list(rec.nodes) == [1, 3]

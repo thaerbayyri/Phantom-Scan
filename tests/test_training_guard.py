@@ -123,3 +123,55 @@ def test_training_scripts_exit_2_on_a_refused_room_and_1_on_an_empty_safe_room(
     assert "REFUSED: room id 'campaign-raw-2026-11' matches 'campaign-*'" in refused_err
     assert empty_code == 1
     assert not (tmp_path / "models").exists()
+
+
+def _write_summary(path: Path, fps_by_node: dict[str, float], seconds: float = 300.0) -> None:
+    """A recorder part summary (.summary.json next to the .jsonl) with the given per-node mean rates."""
+    start = 1_795_000_000_000
+    per_node = {
+        n: {"frames": int(fps * seconds) + 1, "firstFrameMs": start, "lastFrameMs": start + int(seconds * 1000)}
+        for n, fps in fps_by_node.items()
+    }
+    summary = {"type": "part_summary", "schema": 1, "file": path.name, "perNode": per_node}
+    path.with_name(path.name[: -len(".jsonl")] + ".summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+
+def test_refuses_a_recording_made_at_a_collapsed_frame_rate(tmp_path: Path) -> None:
+    room = "train-ep2-2026-11"
+    ok = _write(tmp_path, room, f"{room}__s1__empty__20261119T184901Z.jsonl")
+    slow = _write(tmp_path, room, f"{room}__s1__empty__20261119T182022Z.jsonl")
+    _write_summary(ok, {"1": 66.0, "2": 65.8, "4": 66.1})
+    _write_summary(slow, {"1": 42.4, "2": 42.4, "4": 42.0})
+
+    reasons = room_refusals(tmp_path, room)
+
+    assert len(reasons) == 1
+    assert slow.name in reasons[0] and "fps" in reasons[0]
+
+
+def test_accepts_recordings_at_a_healthy_frame_rate_and_ignores_missing_summaries(tmp_path: Path) -> None:
+    room = "train-ep2-2026-11"
+    ok = _write(tmp_path, room, f"{room}__s1__walking__20261119T190257Z.jsonl")
+    _write(tmp_path, room, f"{room}__s1__still__20261119T184015Z.jsonl")  # no summary: says nothing
+    _write_summary(ok, {"1": 60.6, "2": 60.8, "3": 60.5, "4": 60.5})
+
+    assert room_refusals(tmp_path, room) == []
+
+
+def test_short_parts_are_not_judged_on_rate(tmp_path: Path) -> None:
+    room = "train-ep2-2026-11"
+    part = _write(tmp_path, room, f"{room}__s1__still__20261119T191745Z.part2.jsonl")
+    _write_summary(part, {"1": 20.0}, seconds=5.0)
+
+    assert room_refusals(tmp_path, room) == []
+
+
+def test_an_excluded_node_is_not_judged_on_rate(tmp_path: Path) -> None:
+    room = "train-ep2-2026-11"
+    part = _write(tmp_path, room, f"{room}__s1__still__20261119T195129Z.jsonl")
+    _write_summary(part, {"1": 65.2, "2": 64.6, "3": 37.3, "4": 63.1})
+
+    assert len(room_refusals(tmp_path, room)) == 1
+    assert room_refusals(tmp_path, room, exclude_nodes=(3,)) == []
+    assert check_training_room(tmp_path, room, exclude_nodes=(3,)) == []
+    assert enforce_training_room(tmp_path, room, exclude_nodes=(3,), stream=io.StringIO())
